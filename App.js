@@ -1,55 +1,34 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import ImageToPdfScreen from './ImageToPdfScreen';
-
-// Mỗi tiện ích = 1 mục trong danh sách này.
-// Thêm tiện ích mới: viết 1 màn hình, rồi thêm 1 dòng vào đây.
-const TOOLS = [
-  { id: 'pdf', title: 'Ảnh → PDF', emoji: '📄', screen: ImageToPdfScreen },
-  { id: 'qr', title: 'Quét QR', emoji: '🔳', screen: null },
-  { id: 'dup', title: 'Dọn ảnh trùng', emoji: '🧹', screen: null },
-  { id: 'ai', title: 'AI trả lời tin nhắn', emoji: '💬', screen: null },
-  { id: 'remind', title: 'Nhắc sử dụng', emoji: '⏰', screen: null },
-];
+import 'react-native-gesture-handler'; // phải nằm dòng đầu tiên (cần cho Drawer)
+import { StatusBar } from 'expo-status-bar';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AuthProvider } from './src/context/AuthContext';
+import RootNavigator from './src/navigation';
+import { useTheme } from './src/theme';
 
 export default function App() {
-  const [activeId, setActiveId] = useState(null);
-  const active = TOOLS.find((t) => t.id === activeId);
-
-  if (active?.screen) {
-    const Screen = active.screen;
-    return <Screen onBack={() => setActiveId(null)} />;
-  }
+  const { colors, isDark } = useTheme();
+  const base = isDark ? DarkTheme : DefaultTheme;
+  const navTheme = {
+    ...base,
+    colors: {
+      ...base.colors,
+      background: colors.bg,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+      primary: colors.primary,
+    },
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>My Toolbox</Text>
-      <View style={styles.grid}>
-        {TOOLS.map((t) => (
-          <TouchableOpacity
-            key={t.id}
-            style={styles.card}
-            onPress={() =>
-              t.screen ? setActiveId(t.id) : Alert.alert('Sắp có', `${t.title} chưa được làm.`)
-            }
-          >
-            <Text style={styles.emoji}>{t.emoji}</Text>
-            <Text style={styles.cardTitle}>{t.title}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NavigationContainer theme={navTheme}>
+          <StatusBar style={isDark ? 'light' : 'dark'} />
+          <RootNavigator />
+        </NavigationContainer>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f7', paddingTop: 70, paddingHorizontal: 16 },
-  heading: { fontSize: 28, fontWeight: '700', marginBottom: 20 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  card: {
-    width: '47.5%', backgroundColor: '#fff', borderRadius: 16,
-    paddingVertical: 24, alignItems: 'center',
-  },
-  emoji: { fontSize: 36, marginBottom: 8 },
-  cardTitle: { fontSize: 15, fontWeight: '600', textAlign: 'center' },
-});
