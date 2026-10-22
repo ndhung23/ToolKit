@@ -1,42 +1,264 @@
 import { useState } from 'react';
-import { View, TextInput, FlatList, Text } from 'react-native';
+import { View, TextInput, FlatList, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ToolRow } from '../components/ui';
+import { ToolRow, ScreenHeader, VipUpgradeModal } from '../components/ui';
 import { TOOLS, openTool } from '../tools';
-import { radius, useTheme } from '../theme';
+import { useTheme } from '../theme';
+import { useAuth } from '../context/AuthContext';
+import { canAccessTool } from '../constants/roles';
 
 export default function ToolsScreen({ navigation }) {
   const { colors } = useTheme();
+  const { user, upgradeToVip } = useAuth();
   const [q, setQ] = useState('');
-  const data = TOOLS.filter((t) => t.title.toLowerCase().includes(q.trim().toLowerCase()));
+  const [focused, setFocused] = useState(false);
+  const [upgradeModalVisible, setUpgradeModalVisible] = useState(false);
+  const [selectedTool, setSelectedTool] = useState(null);
+
+  const data = TOOLS.filter((t) =>
+    t.title.toLowerCase().includes(q.trim().toLowerCase()) ||
+    t.desc.toLowerCase().includes(q.trim().toLowerCase())
+  );
+
+  const handleToolPress = (tool) => {
+    openTool(navigation, tool, user, (lockedTool) => {
+      setSelectedTool(lockedTool);
+      setUpgradeModalVisible(true);
+    });
+  };
+
+  const handleUpgrade = async () => {
+    await upgradeToVip();
+    setUpgradeModalVisible(false);
+    setSelectedTool(null);
+    Alert.alert(
+      'Nâng cấp thành công! ✨',
+      'Chúc mừng bạn đã kích hoạt tài khoản VIP Gold. Toàn bộ 8/8 tính năng đã được mở khóa hoàn toàn.',
+      [{ text: 'Đồng ý' }]
+    );
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View
-        style={{
-          flexDirection: 'row', alignItems: 'center', margin: 16, marginBottom: 6,
-          paddingHorizontal: 14, backgroundColor: colors.card, borderRadius: radius.md,
-          borderWidth: 1, borderColor: colors.border,
-        }}
+    <View style={[styles.safeArea, { backgroundColor: colors.bg }]}>
+      {/* Header né tai thỏ iPhone */}
+      <ScreenHeader
+        title="Kho tiện ích"
+        rightAction={
+          <Pressable
+            onPress={() => navigation.navigate('Settings')}
+            style={styles.iconButton}
+            hitSlop={8}
+          >
+            <Ionicons name="settings-sharp" size={20} color="#FFFFFF" />
+          </Pressable>
+        }
+      />
+
+      {/* Featured Banner: Chuyển ảnh thành PDF */}
+      <Pressable
+        onPress={() => navigation.navigate('ImageToPdf')}
+        style={[styles.featuredCard, { backgroundColor: colors.card, borderColor: colors.primary }]}
       >
-        <Ionicons name="search" size={18} color={colors.sub} />
+        <View style={styles.featuredLeft}>
+          <View style={[styles.featuredIcon, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
+            <Ionicons name="document-text" size={26} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <View style={styles.tagHot}>
+              <Text style={styles.tagHotText}>TIỆN ÍCH NỔI BẬT</Text>
+            </View>
+            <Text style={styles.featuredTitle}>Chuyển ảnh thành PDF</Text>
+            <Text style={[styles.featuredSubtitle, { color: colors.sub }]}>
+              Chọn nhiều ảnh, sắp xếp thứ tự và xuất file PDF chất lượng cao
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.featuredAction, { backgroundColor: colors.primary }]}>
+          <Text style={styles.featuredActionText}>Mở công cụ ngay</Text>
+          <Ionicons name="arrow-forward" size={16} color="#121214" />
+        </View>
+      </Pressable>
+
+      {/* Thanh tìm kiếm */}
+      <View
+        style={[
+          styles.searchBox,
+          {
+            backgroundColor: colors.card,
+            borderColor: focused ? colors.primary : colors.cardBorder,
+          },
+        ]}
+      >
+        <Ionicons name="search" size={20} color={focused ? colors.primary : colors.sub} />
         <TextInput
           value={q}
           onChangeText={setQ}
-          placeholder="Tìm tiện ích..."
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="Tìm trong 8 tiện ích..."
           placeholderTextColor={colors.sub}
-          style={{ flex: 1, paddingVertical: 12, paddingLeft: 10, color: colors.text }}
+          style={[styles.searchInput, { color: colors.text }]}
         />
+        {q.length > 0 && (
+          <Pressable onPress={() => setQ('')} hitSlop={8}>
+            <Ionicons name="close-circle" size={18} color={colors.sub} />
+          </Pressable>
+        )}
       </View>
+
+      {/* Danh sách 8 tiện ích kèm trạng thái khóa */}
       <FlatList
         data={data}
         keyExtractor={(t) => t.id}
-        contentContainerStyle={{ padding: 16 }}
-        renderItem={({ item }) => <ToolRow tool={item} onPress={() => openTool(navigation, item)} />}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => {
+          const isLocked = !canAccessTool(user, item);
+          return (
+            <ToolRow
+              tool={item}
+              locked={isLocked}
+              onPress={() => handleToolPress(item)}
+            />
+          );
+        }}
         ListEmptyComponent={
-          <Text style={{ textAlign: 'center', color: colors.sub, marginTop: 40 }}>Không tìm thấy tiện ích.</Text>
+          <View style={styles.emptyContainer}>
+            <Ionicons name="search-outline" size={48} color={colors.sub} />
+            <Text style={[styles.emptyText, { color: colors.sub }]}>
+              Không tìm thấy tiện ích phù hợp.
+            </Text>
+          </View>
         }
+        ListFooterComponent={<View style={{ height: 100 }} />}
+      />
+
+      <VipUpgradeModal
+        visible={upgradeModalVisible}
+        tool={selectedTool}
+        onClose={() => {
+          setUpgradeModalVisible(false);
+          setSelectedTool(null);
+        }}
+        onUpgrade={handleUpgrade}
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 14,
+  },
+  headerTitle: {
+    fontSize: 27,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#26262C',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  featuredCard: {
+    marginHorizontal: 20,
+    marginBottom: 14,
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+  },
+  featuredLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  featuredIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  tagHot: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginBottom: 4,
+    overflow: 'hidden',
+  },
+  tagHotText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  featuredTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  featuredSubtitle: {
+    fontSize: 12.5,
+    marginTop: 2,
+  },
+  featuredAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    gap: 6,
+    overflow: 'hidden',
+  },
+  featuredActionText: {
+    color: '#121214',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 10,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 13,
+    paddingLeft: 10,
+    fontSize: 15,
+  },
+  listContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 6,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 60,
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 15,
+  },
+});

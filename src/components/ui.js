@@ -1,81 +1,326 @@
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Image, StyleSheet, Platform, StatusBar, Modal } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { radius, useTheme } from '../theme';
+import { ROLE_CONFIG } from '../constants/roles';
 
-// Thẻ tiện ích dạng lưới (màn Trang chủ)
+const FAVICON_ICON = require('../../assets/favicon1.png');
+
+// Hook tiện ích né tai thỏ (Notch) & Dynamic Island của iPhone trên mọi môi trường
+export function useSafeTop() {
+  const insets = useSafeAreaInsets();
+  // Tối thiểu 52px trên iOS để né hoàn toàn tai thỏ / Dynamic Island
+  return Math.max(insets.top, Platform.OS === 'ios' ? 52 : (StatusBar.currentHeight || 28));
+}
+
+// Huy hiệu vai trò người dùng (Free, VIP Gold, Admin)
+export function RoleBadge({ role }) {
+  const cfg = (role && ROLE_CONFIG[role]) || ROLE_CONFIG.free;
+  return (
+    <View style={[styles.roleBadgeBox, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
+      <Ionicons
+        name={cfg.icon === 'crown' ? 'sparkles' : cfg.icon}
+        size={11}
+        color={cfg.color}
+        style={{ marginRight: 4 }}
+      />
+      <Text style={[styles.roleBadgeText, { color: cfg.color }]}>{cfg.label}</Text>
+    </View>
+  );
+}
+
+// 1. Header chuẩn Derot (Logo favicon1.png bo tròn + chữ vàng + crown vàng + settings + Role badge)
+export function DerotHeader({ title = 'ToolKit', userRole, onCrownPress, onSettingsPress }) {
+  const { colors } = useTheme();
+  const safeTop = useSafeTop();
+
+  return (
+    <View style={[styles.headerContainer, { paddingTop: safeTop + 8 }]}>
+      <View style={styles.headerLeft}>
+        <View style={styles.headerLogoWrapper}>
+          <Image source={FAVICON_ICON} style={styles.headerLogo} resizeMode="contain" />
+        </View>
+        <View>
+          <Text style={[styles.headerTitle, { color: colors.primary }]}>
+            {title} <Text style={styles.headerSparkle}>✨</Text>
+          </Text>
+          {userRole && <RoleBadge role={userRole} />}
+        </View>
+      </View>
+
+      <View style={styles.headerRight}>
+        <Pressable
+          onPress={onCrownPress}
+          style={[styles.crownButton, { backgroundColor: colors.crownBg || colors.primary }]}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons name="crown" size={22} color={colors.crownIcon || '#121214'} />
+        </Pressable>
+
+        <Pressable
+          onPress={onSettingsPress}
+          style={[styles.gearButton, { backgroundColor: colors.gearBg || '#2B2B32' }]}
+          hitSlop={8}
+        >
+          <Ionicons name="settings-sharp" size={20} color="#FFFFFF" />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// Header dùng chung cho các màn hình chi tiết (Né tai thỏ + Nút Back/Settings)
+export function ScreenHeader({ title, onBack, rightAction }) {
+  const { colors } = useTheme();
+  const safeTop = useSafeTop();
+
+  return (
+    <View style={[styles.screenHeaderContainer, { paddingTop: safeTop + 8 }]}>
+      <View style={styles.screenHeaderLeft}>
+        {onBack && (
+          <Pressable onPress={onBack} style={styles.backButton} hitSlop={10}>
+            <Ionicons name="chevron-back" size={26} color={colors.primary} />
+          </Pressable>
+        )}
+        <Text style={[styles.screenHeaderTitle, { color: colors.primary }]} numberOfLines={1}>
+          {title}
+        </Text>
+      </View>
+
+      {rightAction && <View style={styles.screenHeaderRight}>{rightAction}</View>}
+    </View>
+  );
+}
+
+// 2. Vòng tròn chỉ số tiện ích sẵn sàng (8/8 tiện ích)
+export function FocusGauge({ score = '8/8', label = 'Tiện ích sẵn sàng', onPress }) {
+  const { colors } = useTheme();
+
+  return (
+    <Pressable onPress={onPress} style={styles.gaugeWrapper}>
+      <View style={[styles.gaugeOuterRing, { borderColor: colors.primary }]}>
+        <View style={[styles.gaugeInnerCircle, { backgroundColor: colors.circleBg || '#2A2A30' }]}>
+          <Text style={styles.gaugeNumber}>{score}</Text>
+          <Text style={[styles.gaugeLabel, { color: colors.primary }]}>{label}</Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+// 3. Card trợ lý ToolKit với Mascot favicon1.png bo tròn hoàn hảo
+export function MindInsightCard({
+  title = 'ToolKit Assistant',
+  desc = '8 tiện ích thông minh đã sẵn sàng phục vụ bạn.',
+  onPress,
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.insightCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.cardBorder,
+          opacity: pressed ? 0.9 : 1,
+        },
+      ]}
+    >
+      <View style={styles.insightImageContainer}>
+        <Image source={FAVICON_ICON} style={styles.insightMascot} resizeMode="contain" />
+      </View>
+      <View style={styles.insightContent}>
+        <Text style={styles.insightTitle}>{title}</Text>
+        <Text style={[styles.insightDesc, { color: colors.sub }]}>{desc}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+// 4. Card Tiến độ tính năng
+export function AchievementCard({
+  title = 'Tính năng hệ thống • 8 đã sẵn sàng',
+  subtitle = 'Ảnh PDF, QR, Auto Click, AI & Quản lý',
+  progress = 1.0,
+  onPress,
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.achievementCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.cardBorder,
+          opacity: pressed ? 0.9 : 1,
+        },
+      ]}
+    >
+      <View style={styles.hexagonIcon}>
+        <Ionicons name="shield-checkmark" size={22} color={colors.primary} />
+      </View>
+
+      <View style={styles.achievementContent}>
+        <Text style={styles.achievementTitle}>{title}</Text>
+        <View style={styles.progressTrack}>
+          <View
+            style={[
+              styles.progressFill,
+              { width: `${Math.min(100, Math.max(0, progress * 100))}%`, backgroundColor: colors.primary },
+            ]}
+          />
+        </View>
+        <Text style={[styles.achievementSubtitle, { color: colors.sub }]}>{subtitle}</Text>
+      </View>
+
+      <Ionicons name="chevron-forward" size={18} color="#9E9EA7" style={styles.chevron} />
+    </Pressable>
+  );
+}
+
+// 5. Thẻ tính năng dạng lưới (Grid Card)
 export function ToolCard({ tool, onPress }) {
   const { colors } = useTheme();
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => ({
-        width: '48%',
-        backgroundColor: colors.card,
-        borderRadius: radius.lg,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-        opacity: pressed ? 0.85 : 1,
-        transform: [{ scale: pressed ? 0.98 : 1 }],
-      })}
+      style={({ pressed }) => [
+        styles.toolCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.cardBorder,
+          opacity: pressed ? 0.85 : 1,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
+        },
+      ]}
     >
-      <IconBox tool={tool} />
-      <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{tool.title}</Text>
-      {!tool.ready && (
-        <Text style={{ color: colors.sub, fontSize: 12, marginTop: 4 }}>Sắp có</Text>
+      <View style={[styles.iconBoxGrid, { backgroundColor: tool.color + '22' }]}>
+        <Ionicons name={tool.icon} size={24} color={tool.color} />
+      </View>
+      <Text style={[styles.toolCardTitle, { color: colors.text }]} numberOfLines={2}>
+        {tool.title}
+      </Text>
+      {tool.badge && (
+        <View style={[styles.badgePill, { backgroundColor: 'rgba(255, 208, 0, 0.12)' }]}>
+          <Text style={[styles.badgePillText, { color: colors.primary }]}>{tool.badge}</Text>
+        </View>
       )}
     </Pressable>
   );
 }
 
-// Dòng tiện ích dạng danh sách (màn Tiện ích)
-export function ToolRow({ tool, onPress }) {
+// 6. Dòng tiện ích dạng danh sách (List Row) kèm trạng thái Locked
+export function ToolRow({ tool, locked = false, onPress }) {
   const { colors } = useTheme();
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: colors.card,
-        borderRadius: radius.lg,
-        padding: 14,
-        marginBottom: 10,
-        borderWidth: 1,
-        borderColor: colors.border,
-        opacity: pressed ? 0.85 : 1,
-      })}
+      style={({ pressed }) => [
+        styles.toolRow,
+        {
+          backgroundColor: colors.card,
+          borderColor: locked ? 'rgba(255, 208, 0, 0.35)' : colors.cardBorder,
+          opacity: pressed ? 0.85 : 1,
+        },
+      ]}
     >
-      <IconBox tool={tool} small />
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{tool.title}</Text>
-        <Text style={{ color: colors.sub, fontSize: 13, marginTop: 2 }}>{tool.desc}</Text>
+      <View
+        style={[
+          styles.iconBoxRow,
+          { backgroundColor: locked ? 'rgba(255, 208, 0, 0.12)' : tool.color + '22' },
+        ]}
+      >
+        <Ionicons name={tool.icon} size={22} color={locked ? '#FFD000' : tool.color} />
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.sub} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={[styles.toolRowTitle, { color: colors.text }]}>{tool.title}</Text>
+        </View>
+        <Text style={[styles.toolRowDesc, { color: colors.sub }]} numberOfLines={2}>
+          {tool.desc}
+        </Text>
+      </View>
+      {locked ? (
+        <View style={styles.lockedBadge}>
+          <Ionicons name="lock-closed" size={12} color="#FFD000" />
+          <Text style={styles.lockedBadgeText}>VIP</Text>
+        </View>
+      ) : (
+        <Ionicons name="chevron-forward" size={18} color={colors.sub} />
+      )}
     </Pressable>
   );
 }
 
-function IconBox({ tool, small }) {
-  const size = small ? 44 : 48;
+// Modal Mời Nâng cấp VIP chuyên nghiệp dùng chung
+export function VipUpgradeModal({ visible, tool, onClose, onUpgrade }) {
+  const { colors } = useTheme();
+  if (!visible) return null;
+
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: 14,
-        backgroundColor: tool.color + '22',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: small ? 0 : 12,
-      }}
-    >
-      <Ionicons name={tool.icon} size={24} color={tool.color} />
-    </View>
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View
+          style={[
+            styles.modalBox,
+            { backgroundColor: colors.card, borderColor: 'rgba(255, 208, 0, 0.4)' },
+          ]}
+        >
+          <View style={[styles.modalCrownIcon, { backgroundColor: colors.primary }]}>
+            <MaterialCommunityIcons name="crown" size={34} color="#121214" />
+          </View>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>
+            {tool ? `Mở khóa ${tool.title}` : 'Kích hoạt ToolKit VIP'}
+          </Text>
+          <Text style={[styles.modalDesc, { color: colors.sub }]}>
+            {tool
+              ? `Tiện ích "${tool.title}" là tính năng độc quyền dành riêng cho thành viên VIP. Nâng cấp ngay để mở khóa toàn bộ tiện ích.`
+              : 'Trải nghiệm không giới hạn toàn bộ 8 tiện ích thông minh: AI phân tích ngữ cảnh tin nhắn, Auto Click tự động chạm màn hình và Quản lý đa tài khoản Facebook.'}
+          </Text>
+
+          <Pressable
+            onPress={onUpgrade}
+            style={[styles.modalBtn, { backgroundColor: colors.primary, marginBottom: 12 }]}
+          >
+            <Text style={styles.modalBtnText}>Kích hoạt VIP ngay (Dùng thử miễn phí)</Text>
+          </Pressable>
+
+          <Pressable onPress={onClose} hitSlop={10} style={{ paddingVertical: 8 }}>
+            <Text style={{ color: colors.sub, fontSize: 14, fontWeight: '600' }}>Để sau</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
-// Dòng thông tin dùng cho màn Cài đặt / Cá nhân
+// 7. Banner Chia sẻ ToolKit
+export function ShareBanner({ onPress }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}>
+      <LinearGradient
+        colors={['#FFE57F', '#FFD000', '#F59E0B']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.shareBanner}
+      >
+        <View style={styles.shareIconCircle}>
+          <Ionicons name="sparkles" size={18} color="#FFD000" />
+        </View>
+        <Text style={styles.shareTitle}>Chia sẻ ToolKit cho bạn bè</Text>
+        <Ionicons name="chevron-forward" size={20} color="#121214" />
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
+// 8. Dòng thông tin dùng cho màn Cài đặt / Cá nhân
 export function Row({ icon, label, value, onPress, danger }) {
   const { colors } = useTheme();
   const tint = danger ? colors.danger : colors.text;
@@ -83,18 +328,432 @@ export function Row({ icon, label, value, onPress, danger }) {
     <Pressable
       onPress={onPress}
       disabled={!onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: colors.card,
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-      }}
+      style={({ pressed }) => [
+        styles.settingRow,
+        {
+          backgroundColor: colors.card,
+          borderBottomColor: colors.border,
+          opacity: pressed && onPress ? 0.8 : 1,
+        },
+      ]}
     >
       <Ionicons name={icon} size={20} color={danger ? colors.danger : colors.primary} />
-      <Text style={{ flex: 1, marginLeft: 12, fontSize: 15, color: tint }}>{label}</Text>
-      {value ? <Text style={{ color: colors.sub }}>{value}</Text> : null}
+      <Text style={[styles.settingRowLabel, { color: tint }]}>{label}</Text>
+      {value ? <Text style={{ color: colors.sub, fontSize: 14 }}>{value}</Text> : null}
+      {onPress && !value && <Ionicons name="chevron-forward" size={16} color={colors.sub} />}
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  // Header
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerLogoWrapper: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#1E1E22',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 208, 0, 0.25)',
+  },
+  headerLogo: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  headerSparkle: {
+    fontSize: 20,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  crownButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#FFD000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  gearButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Screen Header
+  screenHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  screenHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  backButton: {
+    marginRight: 8,
+    padding: 4,
+  },
+  screenHeaderTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  screenHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  // Gauge
+  gaugeWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 18,
+  },
+  gaugeOuterRing: {
+    width: 206,
+    height: 206,
+    borderRadius: 103,
+    borderWidth: 12,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#FFD000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  gaugeInnerCircle: {
+    width: 178,
+    height: 178,
+    borderRadius: 89,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gaugeNumber: {
+    fontSize: 48,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -1,
+  },
+  gaugeLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+
+  // Insight Card (Mascot bo tròn hoàn hảo)
+  insightCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  insightImageContainer: {
+    width: 62,
+    height: 62,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255, 208, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 208, 0, 0.2)',
+  },
+  insightMascot: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  insightContent: {
+    flex: 1,
+  },
+  insightTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  insightDesc: {
+    fontSize: 13.5,
+    lineHeight: 19,
+  },
+
+  // Achievement Card
+  achievementCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  hexagonIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#2F2F38',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  achievementContent: {
+    flex: 1,
+  },
+  achievementTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#383842',
+    marginVertical: 7,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  achievementSubtitle: {
+    fontSize: 12.5,
+  },
+  chevron: {
+    marginLeft: 8,
+  },
+
+  // Tool Grid Card
+  toolCard: {
+    width: '48%',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  iconBoxGrid: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  toolCardTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    minHeight: 40,
+  },
+  badgePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  badgePillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // Tool List Row
+  toolRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  iconBoxRow: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolRowTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  toolRowDesc: {
+    fontSize: 13,
+    marginTop: 3,
+    lineHeight: 18,
+  },
+
+  // Share Banner
+  shareBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    padding: 16,
+    marginTop: 6,
+    marginBottom: 20,
+    overflow: 'hidden',
+  },
+  shareIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  shareTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#121214',
+  },
+
+  // Setting Row
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  settingRowLabel: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+
+  // Role Badge Styles
+  roleBadgeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginTop: 3,
+    alignSelf: 'flex-start',
+  },
+  roleBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  // Locked Badge for ToolRow
+  lockedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 208, 0, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 208, 0, 0.3)',
+    gap: 4,
+  },
+  lockedBadgeText: {
+    color: '#FFD000',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // Modal Vip Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalBox: {
+    width: '100%',
+    borderRadius: 24,
+    overflow: 'hidden',
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1.5,
+  },
+  modalCrownIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 21,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalDesc: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: 20,
+  },
+  modalBtn: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 999,
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  modalBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#121214',
+  },
+});
+

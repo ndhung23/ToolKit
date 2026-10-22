@@ -169,9 +169,9 @@ export default function ImageToPdfScreen() {
           }}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color="#121214" />
           ) : (
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Tạo PDF ({images.length})</Text>
+            <Text style={{ color: '#121214', fontWeight: '800', fontSize: 16 }}>Tạo PDF ({images.length})</Text>
           )}
         </Pressable>
       </View>

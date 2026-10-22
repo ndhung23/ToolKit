@@ -1,11 +1,15 @@
-import { View, Text, Alert, ScrollView } from 'react-native';
+import { View, Text, Alert, ScrollView, Image, StyleSheet } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { Row } from '../components/ui';
-import { radius, useTheme } from '../theme';
+import { Row, RoleBadge } from '../components/ui';
+import { useTheme } from '../theme';
+import { ROLE_CONFIG } from '../constants/roles';
+
+const FAVICON_ICON = require('../../assets/favicon1.png');
 
 export default function AccountScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { user, signOut } = useAuth();
+  const roleName = user?.role ? (ROLE_CONFIG[user.role]?.name || user.role) : 'Thành viên Thường';
 
   const confirmLogout = () =>
     Alert.alert('Đăng xuất', 'Bạn muốn đăng xuất khỏi tài khoản?', [
@@ -14,25 +18,67 @@ export default function AccountScreen() {
     ]);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 16 }}>
-      <View style={{ alignItems: 'center', marginVertical: 24 }}>
-        <View
-          style={{
-            width: 88, height: 88, borderRadius: 44, backgroundColor: colors.primary,
-            alignItems: 'center', justifyContent: 'center', marginBottom: 12,
-          }}
-        >
-          <Text style={{ color: '#fff', fontSize: 36, fontWeight: '700' }}>{user.name[0].toUpperCase()}</Text>
+    <ScrollView style={[styles.container, { backgroundColor: colors.bg }]} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
+        <View style={[styles.avatarBox, { backgroundColor: 'rgba(255, 208, 0, 0.12)' }]}>
+          <Image source={FAVICON_ICON} style={styles.avatarImg} resizeMode="contain" />
         </View>
-        <Text style={{ color: colors.text, fontSize: 20, fontWeight: '700' }}>{user.name}</Text>
-        <Text style={{ color: colors.sub, marginTop: 4 }}>{user.email}</Text>
+        <Text style={[styles.name, { color: colors.text }]}>{user?.name || 'ToolKit User'}</Text>
+        <Text style={[styles.email, { color: colors.sub }]}>{user?.email}</Text>
+        <View style={{ marginTop: 8 }}>
+          <RoleBadge role={user?.role} />
+        </View>
       </View>
 
-      <View style={{ borderRadius: radius.lg, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
-        <Row icon="mail-outline" label="Email" value={user.email} />
-        <Row icon="moon-outline" label="Giao diện" value={isDark ? 'Tối' : 'Sáng'} />
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <Row icon="shield-checkmark-outline" label="Cấp bậc tài khoản" value={roleName} />
+        <Row icon="mail-outline" label="Email" value={user?.email} />
+        <Row icon="moon-outline" label="Giao diện" value="Tối (Derot)" />
         <Row icon="log-out-outline" label="Đăng xuất" onPress={confirmLogout} danger />
       </View>
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: 20,
+  },
+  header: {
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  avatarBox: {
+    width: 90,
+    height: 90,
+    borderRadius: 30,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 208, 0, 0.25)',
+  },
+  avatarImg: {
+    width: 74,
+    height: 74,
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  name: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  email: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  card: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+});
