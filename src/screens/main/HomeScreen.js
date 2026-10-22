@@ -1,11 +1,20 @@
-import { useState } from 'react';
-import { View, Text, ScrollView, Alert, Share, StyleSheet } from 'react-native';
+import { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  Alert,
+  Share,
+  StyleSheet,
+  Pressable,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 import {
   DerotHeader,
   FocusGauge,
   MindInsightCard,
   AchievementCard,
-  ToolRow,
   ShareBanner,
   VipUpgradeModal,
 } from '../../components/ui';
@@ -14,19 +23,81 @@ import { useTheme } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { canAccessTool, isVip } from '../../constants/roles';
 
+const STORAGE_TOOLS_ORDER = 'toolkit_home_tools_order';
+
 export default function HomeScreen({ navigation }) {
   const { colors } = useTheme();
-  const { user } = useAuth();
+  const { user, toolTiers } = useAuth();
   const [crownModalVisible, setCrownModalVisible] = useState(false);
   const [selectedLockedTool, setSelectedLockedTool] = useState(null);
 
+  // Danh sách tiện ích có thể tùy biến thứ tự
+  const [orderedTools, setOrderedTools] = useState(TOOLS);
+  const [isReordering, setIsReordering] = useState(false);
+
   const vipActive = isVip(user);
-  const accessibleCount = TOOLS.filter((t) => canAccessTool(user, t)).length;
+  const accessibleCount = TOOLS.filter((t) => canAccessTool(user, t, toolTiers)).length;
+
+  // Nạp thứ tự tùy chỉnh từ SecureStore
+  useEffect(() => {
+    loadToolsOrder();
+  }, []);
+
+  const loadToolsOrder = async () => {
+    try {
+      const raw = await SecureStore.getItemAsync(STORAGE_TOOLS_ORDER);
+      if (raw) {
+        const savedIds = JSON.parse(raw);
+        if (Array.isArray(savedIds) && savedIds.length > 0) {
+          const sorted = [];
+          savedIds.forEach((id) => {
+            const found = TOOLS.find((item) => item.id === id);
+            if (found) sorted.push(found);
+          });
+          // Bổ sung những tiện ích mới nếu chưa có trong savedIds
+          TOOLS.forEach((item) => {
+            if (!sorted.find((s) => s.id === item.id)) {
+              sorted.push(item);
+            }
+          });
+          setOrderedTools(sorted);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Lỗi đọc thứ tự tiện ích:', e);
+    }
+    setOrderedTools(TOOLS);
+  };
+
+  // Di chuyển vị trí tiện ích
+  const moveTool = async (fromIndex, delta) => {
+    const toIndex = fromIndex + delta;
+    if (toIndex < 0 || toIndex >= orderedTools.length) return;
+    const next = [...orderedTools];
+    [next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]];
+    setOrderedTools(next);
+    try {
+      const ids = next.map((t) => t.id);
+      await SecureStore.setItemAsync(STORAGE_TOOLS_ORDER, JSON.stringify(ids));
+    } catch (e) {
+      console.warn('Lỗi lưu thứ tự tiện ích:', e);
+    }
+  };
+
+  // Khôi phục thứ tự mặc định của hệ thống
+  const resetDefaultOrder = async () => {
+    setOrderedTools(TOOLS);
+    try {
+      await SecureStore.deleteItemAsync(STORAGE_TOOLS_ORDER);
+    } catch {}
+  };
 
   const handleShare = async () => {
     try {
       await Share.share({
-        message: 'Trải nghiệm trọn bộ 8 tiện ích thông minh trên ToolKit: Ghép ảnh PDF, Chuyển khoản QR, Auto Click, AI trả lời tin nhắn...',
+        message:
+          'Trải nghiệm trọn bộ 8 tiện ích thông minh trên ToolKit: Ghép ảnh PDF, Chuyển khoản QR, Auto Click, AI trả lời tin nhắn...',
       });
     } catch (e) {
       // ignore
@@ -56,13 +127,12 @@ export default function HomeScreen({ navigation }) {
     openTool(navigation, tool, user, (lockedTool) => {
       setSelectedLockedTool(lockedTool);
       setCrownModalVisible(true);
-    });
+    }, toolTiers);
   };
-
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      {/* 1. Header chuẩn Derot với Logo bo tròn + Huy hiệu vai trò (Role badge) */}
+      {/* 1. Header chuẩn Derot với Logo bo tròn + Huy hiệu vai trò */}
       <DerotHeader
         title="ToolKit"
         userRole={user?.role}
@@ -99,26 +169,165 @@ export default function HomeScreen({ navigation }) {
         {/* 4. Card tiến độ hệ thống */}
         <AchievementCard
           title={vipActive ? 'Hệ thống VIP • 8/8 hoàn thiện' : 'Hệ thống • 5/8 khả dụng'}
-          subtitle={vipActive ? 'Đầy đủ AI, Auto Click, Multi-FB & Quản lý' : 'Mở khóa 3 tính năng VIP để tối ưu trải nghiệm'}
+          subtitle={
+            vipActive
+              ? 'Đầy đủ AI, Auto Click, Multi-FB & Quản lý'
+              : 'Mở khóa 3 tính năng VIP để tối ưu trải nghiệm'
+          }
           progress={accessibleCount / 8}
           onPress={() => navigation.navigate('Tools')}
         />
 
-        {/* 5. Tiêu đề danh sách tính năng */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Danh sách tiện ích</Text>
+        {/* 5. Tiêu đề danh sách tính năng + Nút bật chế độ sắp xếp vị trí */}
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Danh sách tiện ích</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.sub }]}>
+              {isReordering
+                ? 'Chạm mũi tên ◀ ▶ để di chuyển vị trí'
+                : '3 tiện ích / hàng • Nhấn giữ để sắp xếp'}
+            </Text>
+          </View>
 
-        {/* 6. Danh sách 8 tính năng kèm trạng thái phân quyền */}
-        {TOOLS.map((t) => {
-          const isLocked = !canAccessTool(user, t);
-          return (
-            <ToolRow
-              key={t.id}
-              tool={t}
-              locked={isLocked}
-              onPress={() => handleToolPress(t)}
+          <Pressable
+            onPress={() => setIsReordering(!isReordering)}
+            style={[
+              styles.reorderToggleBtn,
+              {
+                backgroundColor: isReordering ? colors.primary : colors.card,
+                borderColor: isReordering ? colors.primary : colors.cardBorder,
+              },
+            ]}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={isReordering ? 'checkmark-circle' : 'swap-horizontal'}
+              size={16}
+              color={isReordering ? '#121214' : colors.primary}
             />
-          );
-        })}
+            <Text
+              style={[
+                styles.reorderToggleText,
+                { color: isReordering ? '#121214' : colors.primary },
+              ]}
+            >
+              {isReordering ? 'Xong' : 'Sắp xếp'}
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Banner hướng dẫn nhanh khi đang bật chế độ sắp xếp */}
+        {isReordering && (
+          <View
+            style={[
+              styles.reorderActionBar,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <Ionicons name="information-circle-outline" size={17} color={colors.primary} />
+            <Text style={[styles.reorderHintText, { color: colors.sub }]}>
+              Tùy biến vị trí theo thói quen của bạn
+            </Text>
+            <Pressable onPress={resetDefaultOrder} hitSlop={6} style={styles.resetBtn}>
+              <Text style={{ color: colors.danger, fontSize: 13, fontWeight: '700' }}>
+                Khôi phục
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* 6. Gallery lưới 3 tiện ích / 1 hàng gọn gàng & trực quan */}
+        <View style={styles.toolsGrid}>
+          {orderedTools.map((t, index) => {
+            const isLocked = !canAccessTool(user, t, toolTiers);
+            return (
+              <View
+                key={t.id}
+                style={[
+                  styles.gridItemWrapper,
+                  isReordering && styles.gridItemReordering,
+                ]}
+              >
+                <Pressable
+                  onPress={() => {
+                    if (isReordering) return;
+                    handleToolPress(t);
+                  }}
+                  onLongPress={() => setIsReordering(true)}
+                  style={({ pressed }) => [
+                    styles.gridCard,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: isLocked
+                        ? 'rgba(255, 208, 0, 0.35)'
+                        : isReordering
+                        ? colors.primary + '88'
+                        : colors.cardBorder,
+                      opacity: pressed && !isReordering ? 0.8 : 1,
+                    },
+                  ]}
+                >
+                  {/* Huy hiệu khóa VIP ở góc trên bên phải */}
+                  {isLocked && (
+                    <View style={styles.gridLockBadge}>
+                      <Ionicons name="lock-closed" size={10} color="#FFD000" />
+                    </View>
+                  )}
+
+                  {/* Icon tiện ích */}
+                  <View
+                    style={[
+                      styles.gridIconCircle,
+                      { backgroundColor: isLocked ? 'rgba(255, 208, 0, 0.12)' : t.color + '1F' },
+                    ]}
+                  >
+                    <Ionicons
+                      name={t.icon}
+                      size={22}
+                      color={isLocked ? '#FFD000' : t.color}
+                    />
+                  </View>
+
+                  {/* Tên tiện ích (gọn gàng, căn giữa) */}
+                  <Text
+                    style={[styles.gridTitle, { color: colors.text }]}
+                    numberOfLines={2}
+                  >
+                    {t.shortTitle || t.title}
+                  </Text>
+                </Pressable>
+
+                {/* Nút điều hướng vị trí khi bật chế độ sắp xếp */}
+                {isReordering && (
+                  <View style={[styles.arrowControls, { backgroundColor: colors.bg, borderColor: colors.cardBorder }]}>
+                    <Pressable
+                      onPress={() => moveTool(index, -1)}
+                      disabled={index === 0}
+                      hitSlop={6}
+                      style={[styles.arrowBtn, index === 0 && { opacity: 0.25 }]}
+                    >
+                      <Ionicons name="chevron-back" size={15} color={colors.primary} />
+                    </Pressable>
+                    <Text style={[styles.orderIndexText, { color: colors.primary }]}>
+                      {index + 1}
+                    </Text>
+                    <Pressable
+                      onPress={() => moveTool(index, 1)}
+                      disabled={index === orderedTools.length - 1}
+                      hitSlop={6}
+                      style={[
+                        styles.arrowBtn,
+                        index === orderedTools.length - 1 && { opacity: 0.25 },
+                      ]}
+                    >
+                      <Ionicons name="chevron-forward" size={15} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
 
         {/* 7. Banner chia sẻ */}
         <ShareBanner onPress={handleShare} />
@@ -145,61 +354,122 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 4,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 18,
+    marginBottom: 10,
+  },
   sectionTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '800',
-    marginTop: 14,
-    marginBottom: 14,
     letterSpacing: -0.3,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
+  sectionSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: '500',
   },
-  modalBox: {
-    width: '100%',
-    borderRadius: 24,
-    overflow: 'hidden',
-    padding: 24,
+  reorderToggleBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
     borderWidth: 1,
   },
-  modalCrownIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    overflow: 'hidden',
+  reorderToggleText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  reorderActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    gap: 8,
+  },
+  reorderHintText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  resetBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  // Lưới 3 tiện ích / hàng
+  toolsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+    marginBottom: 18,
+  },
+  gridItemWrapper: {
+    width: '31.3%',
+  },
+  gridItemReordering: {
+    marginBottom: 4,
+  },
+  gridCard: {
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    borderWidth: 1,
+    minHeight: 104,
+    position: 'relative',
   },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '800',
+  gridLockBadge: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 8,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 208, 0, 0.4)',
+  },
+  gridIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
   },
-  modalDesc: {
-    fontSize: 14,
+  gridTitle: {
+    fontSize: 12,
+    fontWeight: '700',
     textAlign: 'center',
-    lineHeight: 21,
-    marginBottom: 20,
+    lineHeight: 16,
+    minHeight: 32,
   },
-  modalBtn: {
-    width: '100%',
-    paddingVertical: 14,
-    borderRadius: 999,
-    overflow: 'hidden',
+  arrowControls: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 5,
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    borderWidth: 1,
   },
-  modalBtnText: {
-    fontSize: 16,
+  arrowBtn: {
+    padding: 4,
+  },
+  orderIndexText: {
+    fontSize: 11,
     fontWeight: '800',
-    color: '#121214',
   },
 });

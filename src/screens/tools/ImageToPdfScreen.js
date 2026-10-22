@@ -20,7 +20,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '../../components/ui';
 import { radius, useTheme } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { logToolUsageToFirestore } from '../../services/firebase';
 
 const MAX_WIDTH = 1600;
 const STORAGE_KEY = 'toolkit_pdf_history';
@@ -227,11 +226,6 @@ export default function ImageToPdfScreen({ navigation }) {
 
       const updatedHistory = [newRecord, ...history];
       await persistHistory(updatedHistory);
-
-      // Ghi nhật ký vào Firestore
-      if (user) {
-        logToolUsageToFirestore('pdf', user).catch(() => {});
-      }
 
       // Thông báo và mở chia sẻ
       Alert.alert(

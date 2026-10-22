@@ -1,12 +1,12 @@
 import { Alert } from 'react-native';
 import { canAccessTool } from './constants/roles';
-import { logToolUsageToFirestore } from './services/firebase';
 
 // Danh sách 8 tính năng cốt lõi của ToolKit kèm phân quyền (tier: 'free' | 'vip')
 export const TOOLS = [
   {
     id: 'pdf',
     title: 'Chuyển ảnh thành PDF',
+    shortTitle: 'Ghép PDF',
     desc: 'Ghép nhiều ảnh thành một file PDF chất lượng cao',
     icon: 'document-text',
     color: '#EF4444',
@@ -17,6 +17,7 @@ export const TOOLS = [
   {
     id: 'autoclick',
     title: 'Auto Click — tự động chạm màn hình',
+    shortTitle: 'Auto Click',
     desc: 'Tự động chạm màn hình theo chu kỳ & vị trí cài đặt',
     icon: 'finger-print',
     color: '#F59E0B',
@@ -27,6 +28,7 @@ export const TOOLS = [
   {
     id: 'qr_transfer',
     title: 'Hỗ trợ chuyển khoản bằng QR',
+    shortTitle: 'Chuyển QR',
     desc: 'Quét QR → nhập tiền, note → Chuyển qua ngân hàng để hoàn thành',
     icon: 'qr-code',
     color: '#10B981',
@@ -37,6 +39,7 @@ export const TOOLS = [
   {
     id: 'screentime',
     title: 'Nhắc nhở và theo dõi thời gian sử dụng điện thoại',
+    shortTitle: 'Thời gian dùng',
     desc: 'Kiểm soát thời gian dùng màn hình & cảnh báo khi dùng quá lâu',
     icon: 'timer',
     color: '#8B5CF6',
@@ -47,6 +50,7 @@ export const TOOLS = [
   {
     id: 'find_device',
     title: 'Tìm vị trí thiết bị của mình',
+    shortTitle: 'Tìm thiết bị',
     desc: 'Định vị vị trí GPS và phát chuông tìm điện thoại thất lạc',
     icon: 'location',
     color: '#06B6D4',
@@ -57,6 +61,7 @@ export const TOOLS = [
   {
     id: 'clean_photos',
     title: 'Tìm và dọn ảnh trùng lặp',
+    shortTitle: 'Dọn ảnh rác',
     desc: 'Quét bộ nhớ, lọc và dọn sạch các ảnh trùng lặp giải phóng dung lượng',
     icon: 'images',
     color: '#EC4899',
@@ -67,6 +72,7 @@ export const TOOLS = [
   {
     id: 'fb_multi',
     title: 'Quản lý nhiều tài khoản Facebook',
+    shortTitle: 'Đa nick FB',
     desc: 'Lưu phiên đăng nhập và chuyển đổi nhanh giữa các nick Facebook',
     icon: 'logo-facebook',
     color: '#1877F2',
@@ -77,6 +83,7 @@ export const TOOLS = [
   {
     id: 'ai_reply',
     title: 'AI đọc ngữ cảnh và gợi ý trả lời tin nhắn',
+    shortTitle: 'AI Trả lời tin',
     desc: 'Phân tích ngữ cảnh tin nhắn đến và gợi ý câu trả lời thông minh',
     icon: 'chatbubbles',
     color: '#FFD000',
@@ -86,11 +93,11 @@ export const TOOLS = [
   },
 ];
 
-export function openTool(navigation, tool, user, onUpgradeRequired) {
+export function openTool(navigation, tool, user, onUpgradeRequired, customTiers = null) {
   if (!tool) return;
 
-  // Kiểm tra quyền truy cập theo vai trò
-  if (!canAccessTool(user, tool)) {
+  // Kiểm tra quyền truy cập theo vai trò và cấu hình Admin
+  if (!canAccessTool(user, tool, customTiers)) {
     if (typeof onUpgradeRequired === 'function') {
       onUpgradeRequired(tool);
     } else {
@@ -102,9 +109,6 @@ export function openTool(navigation, tool, user, onUpgradeRequired) {
     }
     return;
   }
-
-  // Ghi nhận nhật ký sử dụng lên Firestore
-  logToolUsageToFirestore(tool.id, user).catch(() => {});
 
   if (tool.route) {
     navigation.navigate(tool.route, { tool });

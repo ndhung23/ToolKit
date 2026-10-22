@@ -8,9 +8,11 @@
     "icon": "./assets/favicon1.png",
     "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ndhung23.toolkit"
     },
     "android": {
+      "package": "com.ndhung23.toolkit",
       "adaptiveIcon": {
         "backgroundColor": "#141416",
         "foregroundImage": "./assets/favicon1.png"
@@ -24,6 +26,12 @@
       "expo-secure-store",
       "expo-font",
       "expo-web-browser"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "cc2f105c-eaed-4770-99e5-0fb47baf4ecd"
+      }
+    },
+    "owner": "ndhung23"
   }
 }

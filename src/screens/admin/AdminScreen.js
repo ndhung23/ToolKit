@@ -19,7 +19,7 @@ const INITIAL_USERS = [];
 
 export default function AdminScreen({ navigation }) {
   const { colors } = useTheme();
-  const { user } = useAuth();
+  const { user, toolTiers, updateToolTier, refreshToolTiers } = useAuth();
   const [loading, setLoading] = useState(false);
   const fbConnected = isFirebaseConfigured();
 
@@ -89,15 +89,28 @@ export default function AdminScreen({ navigation }) {
       const [remoteUsers, remoteToggles] = await Promise.all([
         getAllUsersFromFirestore(),
         getFeatureTogglesFromFirestore(),
+        refreshToolTiers(),
       ]);
       if (remoteUsers) setUsersList(remoteUsers);
       if (remoteToggles) setFeatureStatus((prev) => ({ ...prev, ...remoteToggles }));
-      Alert.alert('Đồng bộ thành công', 'Đã cập nhật danh sách người dùng mới nhất từ Cloud Firestore.');
+      Alert.alert('Đồng bộ thành công', 'Đã cập nhật danh sách người dùng và cấu hình VIP mới nhất từ Cloud Firestore.');
     } catch (err) {
       Alert.alert('Lỗi', 'Không thể đồng bộ dữ liệu: ' + (err?.message || 'Lỗi mạng'));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleToggleTier = async (toolId, currentTier) => {
+    const nextTier = currentTier === 'vip' ? 'free' : 'vip';
+    await updateToolTier(toolId, nextTier);
+    const tool = TOOLS.find((t) => t.id === toolId);
+    Alert.alert(
+      'Cập nhật thành công',
+      nextTier === 'vip'
+        ? `Tiện ích "${tool?.title}" hiện đã được đặt thành [YÊU CẦU VIP]. Tài khoản Free sẽ bị khóa.`
+        : `Tiện ích "${tool?.title}" hiện đã được mở thành [MIỄN PHÍ]. Tất cả người dùng đều có thể sử dụng.`
+    );
   };
 
   // Bảo vệ bảo mật: Chỉ tài khoản Admin mới được vào trang này
@@ -270,7 +283,98 @@ export default function AdminScreen({ navigation }) {
           })}
         </View>
 
-        {/* 3. Quản lý phân quyền người dùng */}
+        {/* 3. Cấu hình yêu cầu VIP cho tiện ích (VIP / Free Tier) */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
+            Cấu hình tiện ích VIP / Miễn phí
+          </Text>
+          <View style={[styles.badgePillSmall, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
+            <Text style={{ color: '#FFD000', fontSize: 11, fontWeight: '800' }}>RBAC TIERS</Text>
+          </View>
+        </View>
+        <Text style={[styles.sectionSubtitle, { color: colors.sub }]}>
+          Chỉ định tiện ích nào yêu cầu quyền VIP mới được dùng, tiện ích nào mở miễn phí cho tất cả.
+        </Text>
+
+        <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          {TOOLS.map((t, idx) => {
+            const currentTier = toolTiers?.[t.id] || t.tier || 'free';
+            const isVipTier = currentTier === 'vip';
+            return (
+              <View
+                key={t.id}
+                style={[
+                  styles.toolTierRow,
+                  {
+                    borderBottomWidth: idx < TOOLS.length - 1 ? 1 : 0,
+                    borderBottomColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={[styles.toolIconCircle, { backgroundColor: t.color + '22' }]}>
+                  <Ionicons name={t.icon} size={20} color={t.color} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.toolToggleName, { color: colors.text }]}>{t.title}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                    <View
+                      style={[
+                        styles.tierBadge,
+                        {
+                          backgroundColor: isVipTier ? 'rgba(255, 208, 0, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          borderColor: isVipTier ? '#FFD000' : '#10B981',
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={isVipTier ? 'sparkles' : 'checkmark-circle'}
+                        size={11}
+                        color={isVipTier ? '#FFD000' : '#10B981'}
+                      />
+                      <Text
+                        style={[
+                          styles.tierBadgeText,
+                          { color: isVipTier ? '#FFD000' : '#10B981' },
+                        ]}
+                      >
+                        {isVipTier ? 'Yêu cầu VIP' : 'Miễn phí'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Nút chuyển đổi trạng thái VIP / Free */}
+                <Pressable
+                  onPress={() => handleToggleTier(t.id, currentTier)}
+                  style={[
+                    styles.tierToggleBtn,
+                    {
+                      backgroundColor: isVipTier ? 'rgba(255, 208, 0, 0.18)' : colors.bg,
+                      borderColor: isVipTier ? '#FFD000' : colors.cardBorder,
+                    },
+                  ]}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={isVipTier ? 'lock-closed' : 'lock-open-outline'}
+                    size={13}
+                    color={isVipTier ? '#FFD000' : colors.sub}
+                  />
+                  <Text
+                    style={[
+                      styles.tierToggleBtnText,
+                      { color: isVipTier ? '#FFD000' : colors.text },
+                    ]}
+                  >
+                    {isVipTier ? 'Đang là VIP' : 'Đang Free'}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* 4. Quản lý phân quyền người dùng */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Phân quyền người dùng</Text>
         <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           {usersList.length === 0 ? (
@@ -449,6 +553,54 @@ const styles = StyleSheet.create({
   roleActionBtnText: {
     fontSize: 11,
     color: '#FFD000',
+    fontWeight: '700',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 12.5,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  badgePillSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  toolTierRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+  },
+  tierBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  tierBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  tierToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  tierToggleBtnText: {
+    fontSize: 12,
     fontWeight: '700',
   },
   dbStatusPill: {

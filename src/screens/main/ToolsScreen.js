@@ -9,7 +9,7 @@ import { canAccessTool } from '../../constants/roles';
 
 export default function ToolsScreen({ navigation }) {
   const { colors } = useTheme();
-  const { user } = useAuth();
+  const { user, toolTiers } = useAuth();
   const [q, setQ] = useState('');
   const [focused, setFocused] = useState(false);
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false);
@@ -24,7 +24,7 @@ export default function ToolsScreen({ navigation }) {
     openTool(navigation, tool, user, (lockedTool) => {
       setSelectedTool(lockedTool);
       setUpgradeModalVisible(true);
-    });
+    }, toolTiers);
   };
 
 
@@ -104,7 +104,7 @@ export default function ToolsScreen({ navigation }) {
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => {
-          const isLocked = !canAccessTool(user, item);
+          const isLocked = !canAccessTool(user, item, toolTiers);
           return (
             <ToolRow
               tool={item}

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { ROLES } from '../constants/roles';
+import { TOOLS } from '../tools';
 import {
   isFirebaseConfigured,
   firebaseSignIn,
@@ -10,14 +11,42 @@ import {
   saveUserToFirestore,
   getUserFromFirestore,
   updateUserRoleInFirestore,
+  saveToolTierToFirestore,
+  getToolTiersFromFirestore,
 } from '../services/firebase';
 
 const KEY = 'session';
+const TIERS_STORAGE_KEY = 'toolkit_tool_tiers';
+const DEFAULT_TIERS = TOOLS.reduce((acc, t) => ({ ...acc, [t.id]: t.tier || 'free' }), {});
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [toolTiers, setToolTiers] = useState(DEFAULT_TIERS);
+
+  // Mở app: khôi phục phiên đăng nhập và cấu hình tool tiers
+  useEffect(() => {
+    (async () => {
+      try {
+        const localTiers = await SecureStore.getItemAsync(TIERS_STORAGE_KEY);
+        if (localTiers) {
+          const parsed = JSON.parse(localTiers);
+          setToolTiers((prev) => ({ ...prev, ...parsed }));
+        }
+        if (isFirebaseConfigured()) {
+          const remoteTiers = await getToolTiersFromFirestore();
+          if (remoteTiers) {
+            setToolTiers((prev) => ({ ...prev, ...remoteTiers }));
+            await SecureStore.setItemAsync(TIERS_STORAGE_KEY, JSON.stringify(remoteTiers));
+          }
+        }
+      } catch (e) {
+        console.warn('Lỗi đọc tool tiers:', e);
+      }
+    })();
+  }, []);
 
   // Mở app: khôi phục phiên đăng nhập đã lưu
   useEffect(() => {
@@ -59,15 +88,33 @@ export function AuthProvider({ children }) {
       signIn: async (email, password) => {
         const cleanEmail = email ? email.trim().toLowerCase() : '';
 
-        if (!cleanEmail || !cleanEmail.includes('@') || !password || password.length < 6) {
-          throw new Error('Vui lòng nhập email hợp lệ và mật khẩu từ 6 ký tự trở lên.');
+        if (!cleanEmail || !cleanEmail.includes('@') || !password) {
+          throw new Error('Vui lòng nhập email và mật khẩu.');
         }
 
-        let role = ROLES.FREE;
+        // Lấy thông tin tài khoản Admin từ biến môi trường (.env), bảo mật và không hardcode trong mã nguồn
+        const envAdminEmail = (
+          process.env.EXPO_PUBLIC_ADMIN_EMAIL ||
+          process.env.acc_admin ||
+          ''
+        ).trim().toLowerCase();
+
+        const envAdminPassword =
+          process.env.EXPO_PUBLIC_ADMIN_PASSWORD ||
+          process.env.pw_admin ||
+          '';
+
+        const isEnvAdmin = Boolean(
+          envAdminEmail &&
+          cleanEmail === envAdminEmail &&
+          (!envAdminPassword || password === envAdminPassword)
+        );
 
         const namePart = cleanEmail.split('@')[0];
-        let formattedName = namePart;
-        let uid = 'user_' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '_');
+        let role = isEnvAdmin ? ROLES.ADMIN : ROLES.FREE;
+        let formattedName = isEnvAdmin ? 'Quản trị viên' : namePart;
+        const defaultDocId = 'user_' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '_');
+        let uid = defaultDocId;
 
         // Xác thực qua Firebase Auth nếu có cấu hình
         if (isFirebaseConfigured()) {
@@ -75,20 +122,34 @@ export function AuthProvider({ children }) {
             const fbUser = await firebaseSignIn(cleanEmail, password);
             if (fbUser) {
               uid = fbUser.uid;
-              const remoteData = await getUserFromFirestore(uid);
-              if (remoteData?.role) {
-                role = remoteData.role;
-              } else {
-                await saveUserToFirestore(uid, {
-                  email: cleanEmail,
-                  name: formattedName,
-                  role,
-                });
-              }
-              if (remoteData?.name) formattedName = remoteData.name;
             }
           } catch (e) {
             console.log('[Auth] Đăng nhập Firebase Auth không thành công, tiếp tục với Fallback Session');
+          }
+
+          // Tải thông tin người dùng và vai trò trực tiếp từ Cloud Firestore một cách linh hoạt
+          try {
+            const remoteData =
+              (await getUserFromFirestore(uid)) ||
+              (uid !== defaultDocId ? await getUserFromFirestore(defaultDocId) : null);
+
+            if (remoteData?.role) {
+              role = remoteData.role;
+            }
+            if (remoteData?.name) {
+              formattedName = remoteData.name;
+            }
+
+            // Nếu người dùng chưa tồn tại trên Firestore thì tự động tạo bản ghi mới
+            if (!remoteData) {
+              await saveUserToFirestore(uid, {
+                email: cleanEmail,
+                name: formattedName,
+                role,
+              });
+            }
+          } catch (err) {
+            console.warn('[Auth] Không thể nạp thông tin Firestore:', err?.message);
           }
         }
 
@@ -98,13 +159,6 @@ export function AuthProvider({ children }) {
           name: formattedName,
           role,
         };
-
-        // Lưu bản ghi vào Firestore nếu có thể
-        saveUserToFirestore(uid, {
-          email: cleanEmail,
-          name: formattedName,
-          role,
-        }).catch(() => {});
 
         await SecureStore.setItemAsync(KEY, JSON.stringify(u));
         setUser(u);
@@ -172,8 +226,37 @@ export function AuthProvider({ children }) {
         await SecureStore.deleteItemAsync(KEY);
         setUser(null);
       },
+
+      // Quản lý cấp bậc VIP cho từng tiện ích (Dành cho Admin)
+      toolTiers,
+      updateToolTier: async (toolId, newTier) => {
+        const next = { ...toolTiers, [toolId]: newTier };
+        setToolTiers(next);
+        try {
+          await SecureStore.setItemAsync(TIERS_STORAGE_KEY, JSON.stringify(next));
+          if (isFirebaseConfigured()) {
+            await saveToolTierToFirestore(toolId, newTier);
+          }
+        } catch (e) {
+          console.warn('Lỗi cập nhật tool tier:', e);
+        }
+        return next;
+      },
+      refreshToolTiers: async () => {
+        if (isFirebaseConfigured()) {
+          try {
+            const remoteTiers = await getToolTiersFromFirestore();
+            if (remoteTiers) {
+              setToolTiers((prev) => ({ ...prev, ...remoteTiers }));
+              await SecureStore.setItemAsync(TIERS_STORAGE_KEY, JSON.stringify(remoteTiers));
+              return remoteTiers;
+            }
+          } catch {}
+        }
+        return toolTiers;
+      },
     }),
-    [user, loading]
+    [user, loading, toolTiers]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

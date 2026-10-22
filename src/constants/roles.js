@@ -35,12 +35,18 @@ export const ROLE_CONFIG = {
   },
 };
 
-// Helper kiểm tra quyền truy cập công cụ
-export function canAccessTool(user, tool) {
+// Helper kiểm tra quyền truy cập công cụ (Hỗ trợ cấu hình động từ Admin)
+export function canAccessTool(user, tool, customTiers = null) {
   if (!tool) return false;
+  const currentTier = customTiers?.[tool.id] || tool.tier || 'free';
   // Nếu công cụ không yêu cầu VIP hoặc người dùng là VIP / ADMIN -> Được truy cập
-  if (tool.tier !== 'vip') return true;
+  if (currentTier !== 'vip') return true;
   return user?.role === ROLES.VIP || user?.role === ROLES.ADMIN;
+}
+
+export function getToolTier(tool, customTiers = null) {
+  if (!tool) return 'free';
+  return customTiers?.[tool.id] || tool.tier || 'free';
 }
 
 export function isVip(user) {

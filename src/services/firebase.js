@@ -311,23 +311,30 @@ export async function getFeatureTogglesFromFirestore() {
   return null;
 }
 
-/* ===================================================================
- * 4. CLOUD FIRESTORE: NHẬT KÝ SỬ DỤNG TIỆN ÍCH (USAGE LOGS)
- * =================================================================== */
-
-// Ghi nhật ký mỗi khi người dùng truy cập tiện ích
-export async function logToolUsageToFirestore(toolId, user) {
-  if (!isFirebaseConfigured() || !db) return;
+// Lưu cấu hình phân quyền VIP của tiện ích lên Cloud Firestore
+export async function saveToolTierToFirestore(toolId, tier) {
+  if (!isFirebaseConfigured() || !db) return false;
   try {
-    const colRef = collection(db, 'usage_logs');
-    await addDoc(colRef, {
-      toolId,
-      userEmail: user?.email || 'anonymous',
-      role: user?.role || ROLES.FREE,
-      createdAt: new Date().toISOString(),
-    });
+    const docRef = doc(db, 'system_config', 'tool_tiers');
+    await setDoc(docRef, { [toolId]: tier }, { merge: true });
+    return true;
   } catch (err) {
-    // Không làm gián đoạn người dùng nếu ghi log thất bại
-    console.warn('[Firestore] Lỗi ghi nhật ký tiện ích:', err.message);
+    console.warn('[Firestore] Lỗi lưu tool tier:', err.message);
+    return false;
   }
+}
+
+// Lấy cấu hình phân quyền VIP của các tiện ích từ Cloud Firestore
+export async function getToolTiersFromFirestore() {
+  if (!isFirebaseConfigured() || !db) return null;
+  try {
+    const docRef = doc(db, 'system_config', 'tool_tiers');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data();
+    }
+  } catch (err) {
+    console.warn('[Firestore] Lỗi đọc tool tiers:', err.message);
+  }
+  return null;
 }
