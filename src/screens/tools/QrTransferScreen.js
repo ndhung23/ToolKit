@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, TextInput, Alert, ScrollView, Linking } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScreenHeader } from '../components/ui';
-import { useTheme } from '../theme';
+import { ScreenHeader } from '../../components/ui';
+import { useTheme } from '../../theme';
 
 const BANKS = [
   { id: 'vcb', name: 'Vietcombank', code: 'VCB' },

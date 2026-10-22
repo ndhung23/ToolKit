@@ -8,15 +8,15 @@ import {
   ToolRow,
   ShareBanner,
   VipUpgradeModal,
-} from '../components/ui';
-import { TOOLS, openTool } from '../tools';
-import { useTheme } from '../theme';
-import { useAuth } from '../context/AuthContext';
-import { canAccessTool, isVip } from '../constants/roles';
+} from '../../components/ui';
+import { TOOLS, openTool } from '../../tools';
+import { useTheme } from '../../theme';
+import { useAuth } from '../../context/AuthContext';
+import { canAccessTool, isVip } from '../../constants/roles';
 
 export default function HomeScreen({ navigation }) {
   const { colors } = useTheme();
-  const { user, upgradeToVip } = useAuth();
+  const { user } = useAuth();
   const [crownModalVisible, setCrownModalVisible] = useState(false);
   const [selectedLockedTool, setSelectedLockedTool] = useState(null);
 
@@ -43,10 +43,10 @@ export default function HomeScreen({ navigation }) {
     } else {
       Alert.alert(
         'Tài khoản Free',
-        `Bạn đang sử dụng ${accessibleCount}/8 tiện ích cơ bản. Nâng cấp VIP để mở khóa thêm 3 tính năng AI và Tự động hóa.`,
+        `Bạn đang sử dụng ${accessibleCount}/8 tiện ích cơ bản. Quyền nâng cấp VIP do Quản trị viên hệ thống chỉ định.`,
         [
-          { text: 'Để sau', style: 'cancel' },
-          { text: 'Nâng cấp VIP', onPress: () => setCrownModalVisible(true) },
+          { text: 'Đóng', style: 'cancel' },
+          { text: 'Xem đặc quyền VIP', onPress: () => setCrownModalVisible(true) },
         ]
       );
     }
@@ -59,16 +59,6 @@ export default function HomeScreen({ navigation }) {
     });
   };
 
-  const handleUpgrade = async () => {
-    await upgradeToVip();
-    setCrownModalVisible(false);
-    setSelectedLockedTool(null);
-    Alert.alert(
-      'Nâng cấp thành công! ✨',
-      'Chúc mừng bạn đã kích hoạt tài khoản VIP Gold. Toàn bộ 8/8 tính năng đã được mở khóa hoàn toàn.',
-      [{ text: 'Bắt đầu sử dụng' }]
-    );
-  };
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.bg }]}>
@@ -145,7 +135,6 @@ export default function HomeScreen({ navigation }) {
           setCrownModalVisible(false);
           setSelectedLockedTool(null);
         }}
-        onUpgrade={handleUpgrade}
       />
     </View>
   );

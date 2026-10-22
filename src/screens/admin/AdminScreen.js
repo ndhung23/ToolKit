@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScreenHeader, RoleBadge } from '../components/ui';
-import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../theme';
-import { ROLES } from '../constants/roles';
-import { TOOLS } from '../tools';
+import { ScreenHeader, RoleBadge } from '../../components/ui';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../theme';
+import { ROLES } from '../../constants/roles';
+import { TOOLS } from '../../tools';
 import {
   isFirebaseConfigured,
   getAllUsersFromFirestore,
@@ -13,20 +13,13 @@ import {
   getFeatureTogglesFromFirestore,
   saveFeatureToggleToFirestore,
   saveUserToFirestore,
-} from '../services/firebase';
+} from '../../services/firebase';
 
-// Dữ liệu người dùng mô phỏng (Dùng làm Fallback khi offline)
-const INITIAL_USERS = [
-  { id: '1', email: 'nguyenvana@gmail.com', name: 'Nguyễn Văn A', role: ROLES.FREE },
-  { id: '2', email: 'tranvanb@vip.com', name: 'Trần Văn B', role: ROLES.VIP },
-  { id: '3', email: 'lethic@gmail.com', name: 'Lê Thị C', role: ROLES.FREE },
-  { id: '4', email: 'phamduyd@vip.com', name: 'Phạm Duy D', role: ROLES.VIP },
-  { id: '5', email: 'hoangminhe@toolkit.com', name: 'Hoàng Minh E', role: ROLES.ADMIN },
-];
+const INITIAL_USERS = [];
 
 export default function AdminScreen({ navigation }) {
   const { colors } = useTheme();
-  const { user, switchRole, demoAccounts } = useAuth();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const fbConnected = isFirebaseConfigured();
 
@@ -85,31 +78,56 @@ export default function AdminScreen({ navigation }) {
     }
   };
 
-  // Nạp dữ liệu mẫu lên Cloud Firestore
-  const handleSeedCloudData = async () => {
+  // Làm mới dữ liệu từ Cloud Firestore
+  const handleRefreshCloudData = async () => {
+    if (!fbConnected) {
+      Alert.alert('Thông báo', 'Hệ thống đang hoạt động ở chế độ ngoại tuyến (Local).');
+      return;
+    }
     setLoading(true);
     try {
-      for (const u of INITIAL_USERS) {
-        await saveUserToFirestore('user_' + u.id, u);
-      }
-      for (const t of TOOLS) {
-        await saveFeatureToggleToFirestore(t.id, true);
-      }
-      Alert.alert(
-        'Đã gửi yêu cầu Cloud',
-        'Đã đồng bộ danh sách người dùng và trạng thái 8 tiện ích lên Cloud Firestore!'
-      );
-      const freshUsers = await getAllUsersFromFirestore();
-      if (freshUsers.length > 0) setUsersList(freshUsers);
+      const [remoteUsers, remoteToggles] = await Promise.all([
+        getAllUsersFromFirestore(),
+        getFeatureTogglesFromFirestore(),
+      ]);
+      if (remoteUsers) setUsersList(remoteUsers);
+      if (remoteToggles) setFeatureStatus((prev) => ({ ...prev, ...remoteToggles }));
+      Alert.alert('Đồng bộ thành công', 'Đã cập nhật danh sách người dùng mới nhất từ Cloud Firestore.');
     } catch (err) {
-      Alert.alert(
-        'Lưu ý Firebase Rules',
-        'Vui lòng đảm bảo Firestore Rules trong Firebase Console đã được chuyển sang Test Mode (allow read, write: if true).'
-      );
+      Alert.alert('Lỗi', 'Không thể đồng bộ dữ liệu: ' + (err?.message || 'Lỗi mạng'));
     } finally {
       setLoading(false);
     }
   };
+
+  // Bảo vệ bảo mật: Chỉ tài khoản Admin mới được vào trang này
+  if (user?.role !== ROLES.ADMIN) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.bg }]}>
+        <ScreenHeader
+          title="Quản trị hệ thống"
+          onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
+        />
+        <View style={styles.unauthorizedBox}>
+          <View style={styles.unauthorizedIconCircle}>
+            <Ionicons name="shield-outline" size={48} color={colors.danger} />
+          </View>
+          <Text style={[styles.unauthorizedTitle, { color: colors.text }]}>
+            Quyền truy cập bị từ chối
+          </Text>
+          <Text style={[styles.unauthorizedDesc, { color: colors.sub }]}>
+            Trang Quản trị hệ thống và tính năng thiết lập phân quyền chỉ dành riêng cho tài khoản Quản trị viên (Admin).
+          </Text>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={[styles.backBtn, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.backBtnText}>Quay lại</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -174,9 +192,9 @@ export default function AdminScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Nút bấm Seed Data lên Firestore */}
+          {/* Nút bấm làm mới dữ liệu từ Firestore */}
           <Pressable
-            onPress={handleSeedCloudData}
+            onPress={handleRefreshCloudData}
             disabled={loading}
             style={[styles.seedCloudBtn, { backgroundColor: colors.primary }]}
           >
@@ -184,29 +202,32 @@ export default function AdminScreen({ navigation }) {
               <ActivityIndicator color="#121214" size="small" />
             ) : (
               <>
-                <Ionicons name="cloud-upload" size={16} color="#121214" />
-                <Text style={styles.seedCloudBtnText}>Nạp dữ liệu mẫu lên Cloud Firestore (1-chạm)</Text>
+                <Ionicons name="sync" size={16} color="#121214" />
+                <Text style={styles.seedCloudBtnText}>Làm mới danh sách từ Cloud Firestore</Text>
               </>
             )}
           </Pressable>
         </View>
 
-
         {/* 1. Thống kê hệ thống */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Tổng quan tài khoản</Text>
         <View style={styles.statsGrid}>
           <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.statNum, { color: colors.text }]}>1,280</Text>
+            <Text style={[styles.statNum, { color: colors.text }]}>{usersList.length}</Text>
             <Text style={[styles.statLabel, { color: colors.sub }]}>Tổng người dùng</Text>
           </View>
 
           <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.statNum, { color: '#FFD000' }]}>342</Text>
+            <Text style={[styles.statNum, { color: '#FFD000' }]}>
+              {usersList.filter((u) => u.role === ROLES.VIP).length}
+            </Text>
             <Text style={[styles.statLabel, { color: colors.sub }]}>Thành viên VIP</Text>
           </View>
 
           <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.statNum, { color: '#10B981' }]}>938</Text>
+            <Text style={[styles.statNum, { color: '#10B981' }]}>
+              {usersList.filter((u) => u.role === ROLES.FREE).length}
+            </Text>
             <Text style={[styles.statLabel, { color: colors.sub }]}>Người dùng Free</Text>
           </View>
         </View>
@@ -252,71 +273,49 @@ export default function AdminScreen({ navigation }) {
         {/* 3. Quản lý phân quyền người dùng */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Phân quyền người dùng</Text>
         <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          {usersList.map((u, idx) => (
-            <View
-              key={u.id}
-              style={[
-                styles.userRow,
-                {
-                  borderBottomWidth: idx < usersList.length - 1 ? 1 : 0,
-                  borderBottomColor: colors.border,
-                },
-              ]}
-            >
-              <View style={styles.userAvatar}>
-                <Ionicons name="person-circle" size={38} color={colors.sub} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={[styles.userName, { color: colors.text }]}>{u.name}</Text>
-                <Text style={[styles.userEmail, { color: colors.sub }]}>{u.email}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                <RoleBadge role={u.role} />
-                {u.role !== ROLES.ADMIN && (
-                  <Pressable
-                    onPress={() => toggleUserRole(u.id)}
-                    style={styles.roleActionBtn}
-                    hitSlop={6}
-                  >
-                    <Text style={styles.roleActionBtnText}>
-                      {u.role === ROLES.FREE ? 'Cấp VIP' : 'Hạ Free'}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
+          {usersList.length === 0 ? (
+            <View style={{ padding: 24, alignItems: 'center' }}>
+              <Ionicons name="people-outline" size={32} color={colors.sub} />
+              <Text style={{ color: colors.sub, marginTop: 8, fontSize: 13 }}>
+                Chưa có tài khoản nào trong danh sách.
+              </Text>
             </View>
-          ))}
-        </View>
-
-        {/* 4. Bộ chuyển vai trò tức thì để kiểm thử đồ án */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Chuyển nhanh vai trò kiểm thử (MMA301)
-        </Text>
-        <View style={styles.quickRoleContainer}>
-          {demoAccounts.map((acc) => (
-            <Pressable
-              key={acc.role}
-              onPress={() => {
-                switchRole(acc.role);
-                Alert.alert(
-                  'Đổi vai trò thành công',
-                  `Bạn hiện đang trải nghiệm ứng dụng với vai trò: ${acc.name}.`,
-                  [{ text: 'Đồng ý' }]
-                );
-              }}
-              style={[
-                styles.quickRoleBtn,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: user?.role === acc.role ? colors.primary : colors.cardBorder,
-                  borderWidth: user?.role === acc.role ? 2 : 1,
-                },
-              ]}
-            >
-              <Text style={[styles.quickRoleLabel, { color: colors.text }]}>{acc.name}</Text>
-              <RoleBadge role={acc.role} />
-            </Pressable>
-          ))}
+          ) : (
+            usersList.map((u, idx) => (
+              <View
+                key={u.id || u.uid || idx}
+                style={[
+                  styles.userRow,
+                  {
+                    borderBottomWidth: idx < usersList.length - 1 ? 1 : 0,
+                    borderBottomColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={styles.userAvatar}>
+                  <Ionicons name="person-circle" size={38} color={colors.sub} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.userName, { color: colors.text }]}>{u.name || 'Người dùng'}</Text>
+                  <Text style={[styles.userEmail, { color: colors.sub }]}>{u.email}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                  <RoleBadge role={u.role} />
+                  {u.role !== ROLES.ADMIN && (
+                    <Pressable
+                      onPress={() => toggleUserRole(u.id || u.uid)}
+                      style={styles.roleActionBtn}
+                      hitSlop={6}
+                    >
+                      <Text style={styles.roleActionBtnText}>
+                        {u.role === ROLES.FREE ? 'Cấp VIP' : 'Hạ Free'}
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={{ height: 60 }} />
@@ -452,25 +451,6 @@ const styles = StyleSheet.create({
     color: '#FFD000',
     fontWeight: '700',
   },
-  quickRoleContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 20,
-  },
-  quickRoleBtn: {
-    flex: 1,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    gap: 6,
-    overflow: 'hidden',
-  },
-  quickRoleLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
   dbStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -500,6 +480,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#121214',
+  },
+  unauthorizedBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  unauthorizedIconCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  unauthorizedTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  unauthorizedDesc: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+    maxWidth: 320,
+  },
+  backBtn: {
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backBtnText: {
+    color: '#121214',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

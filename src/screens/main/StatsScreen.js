@@ -1,11 +1,11 @@
 import { View, Text, ScrollView, Image, Pressable, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useAuth } from '../context/AuthContext';
-import { Row, ScreenHeader, RoleBadge } from '../components/ui';
-import { useTheme } from '../theme';
+import { useAuth } from '../../context/AuthContext';
+import { Row, ScreenHeader, RoleBadge } from '../../components/ui';
+import { useTheme } from '../../theme';
 
-const FAVICON_ICON = require('../../assets/favicon1.png');
+const FAVICON_ICON = require('../../../assets/favicon1.png');
 
 const WEEK_DATA = [
   { day: 'T2', hours: 2.5, percent: 50 },

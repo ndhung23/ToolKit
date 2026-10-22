@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { ROLES, DEMO_ACCOUNTS } from '../constants/roles';
+import { ROLES } from '../constants/roles';
 import {
   isFirebaseConfigured,
   firebaseSignIn,
   firebaseSignOut,
+  firebaseSignInWithGoogle,
+  firebaseSendPasswordReset,
   saveUserToFirestore,
   getUserFromFirestore,
   updateUserRoleInFirestore,
@@ -49,41 +51,25 @@ export function AuthProvider({ children }) {
       user,
       loading,
       roles: ROLES,
-      demoAccounts: DEMO_ACCOUNTS,
       isFirebaseReady: isFirebaseConfigured(),
       isVip: user?.role === ROLES.VIP || user?.role === ROLES.ADMIN,
       isAdmin: user?.role === ROLES.ADMIN,
 
-      // Đăng nhập (Hỗ trợ Firebase Auth + Firestore hoặc Fallback Mock)
-      signIn: async (email, password = 'password123', roleOverride = null) => {
-        const cleanEmail = email.trim().toLowerCase();
+      // Đăng nhập an toàn (Xác thực Firebase Auth hoặc Fallback Session)
+      signIn: async (email, password) => {
+        const cleanEmail = email ? email.trim().toLowerCase() : '';
 
-        if (!cleanEmail.includes('@') || (password && password.length < 6)) {
-          throw new Error('Email không hợp lệ hoặc mật khẩu dưới 6 ký tự.');
+        if (!cleanEmail || !cleanEmail.includes('@') || !password || password.length < 6) {
+          throw new Error('Vui lòng nhập email hợp lệ và mật khẩu từ 6 ký tự trở lên.');
         }
 
-        let role = roleOverride;
-        if (!role) {
-          if (cleanEmail.includes('admin')) {
-            role = ROLES.ADMIN;
-          } else if (cleanEmail.includes('vip')) {
-            role = ROLES.VIP;
-          } else {
-            role = ROLES.FREE;
-          }
-        }
+        let role = ROLES.FREE;
 
-        const namePart = email.split('@')[0];
-        const formattedName =
-          role === ROLES.ADMIN
-            ? 'Quản trị viên'
-            : role === ROLES.VIP
-            ? 'VIP ' + namePart
-            : namePart;
+        const namePart = cleanEmail.split('@')[0];
+        let formattedName = namePart;
+        let uid = 'user_' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '_');
 
-        let uid = 'local_' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '_');
-
-        // Thử kết nối Firebase Auth & Firestore nếu có cấu hình
+        // Xác thực qua Firebase Auth nếu có cấu hình
         if (isFirebaseConfigured()) {
           try {
             const fbUser = await firebaseSignIn(cleanEmail, password);
@@ -99,6 +85,7 @@ export function AuthProvider({ children }) {
                   role,
                 });
               }
+              if (remoteData?.name) formattedName = remoteData.name;
             }
           } catch (e) {
             console.log('[Auth] Đăng nhập Firebase Auth không thành công, tiếp tục với Fallback Session');
@@ -124,56 +111,59 @@ export function AuthProvider({ children }) {
         return u;
       },
 
-      // Đăng nhập nhanh với tài khoản Demo 1-chạm (Có lưu Firestore)
-      signInDemo: async (demoAccount) => {
-        const uid = 'demo_' + demoAccount.role;
+      // Đăng nhập bằng tài khoản Google
+      signInWithGoogle: async () => {
+        if (!isFirebaseConfigured()) {
+          throw new Error('Tính năng đăng nhập Google yêu cầu cấu hình Firebase.');
+        }
+
+        const googleUser = await firebaseSignInWithGoogle();
+        if (!googleUser) {
+          throw new Error('Không thể đăng nhập tài khoản Google.');
+        }
+
+        const email = googleUser.email.toLowerCase();
+        const uid = googleUser.uid;
+        const name = googleUser.displayName || email.split('@')[0];
+
+        // Đồng bộ vai trò người dùng từ Firestore (mặc định FREE)
+        let role = ROLES.FREE;
+        const remoteProfile = await getUserFromFirestore(uid);
+        if (remoteProfile?.role) {
+          role = remoteProfile.role;
+        } else {
+          await saveUserToFirestore(uid, {
+            email,
+            name,
+            role,
+            photoURL: googleUser.photoURL || null,
+          });
+        }
+
         const u = {
           uid,
-          email: demoAccount.email,
-          name: demoAccount.name,
-          role: demoAccount.role,
+          email,
+          name: remoteProfile?.name || name,
+          role,
+          photoURL: googleUser.photoURL || null,
         };
-
-        // Ghi nhận lên Firestore nếu online
-        saveUserToFirestore(uid, {
-          email: demoAccount.email,
-          name: demoAccount.name,
-          role: demoAccount.role,
-        }).catch(() => {});
 
         await SecureStore.setItemAsync(KEY, JSON.stringify(u));
         setUser(u);
         return u;
       },
 
-      // Nâng cấp trực tiếp lên VIP (Đồng bộ Firestore + Local)
-      upgradeToVip: async () => {
-        if (!user) return;
-        const updated = {
-          ...user,
-          role: ROLES.VIP,
-        };
-        if (user.uid) {
-          updateUserRoleInFirestore(user.uid, ROLES.VIP).catch(() => {});
+      // Gửi email đặt lại mật khẩu (Thời hạn link: 5 phút)
+      sendPasswordReset: async (email) => {
+        const cleanEmail = email ? email.trim().toLowerCase() : '';
+        if (!cleanEmail || !cleanEmail.includes('@')) {
+          throw new Error('Vui lòng nhập địa chỉ email hợp lệ.');
         }
-        await SecureStore.setItemAsync(KEY, JSON.stringify(updated));
-        setUser(updated);
-        return updated;
-      },
 
-      // Chuyển đổi vai trò nhanh (Đồng bộ Firestore + Local)
-      switchRole: async (newRole) => {
-        if (!user) return;
-        const updated = {
-          ...user,
-          role: newRole,
-        };
-        if (user.uid) {
-          updateUserRoleInFirestore(user.uid, newRole).catch(() => {});
+        if (isFirebaseConfigured()) {
+          await firebaseSendPasswordReset(cleanEmail);
         }
-        await SecureStore.setItemAsync(KEY, JSON.stringify(updated));
-        setUser(updated);
-        return updated;
+        return true;
       },
 
       // Đăng xuất

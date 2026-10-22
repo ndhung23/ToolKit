@@ -1,10 +1,10 @@
 import { View, Text, Alert, ScrollView, Image, StyleSheet } from 'react-native';
-import { useAuth } from '../context/AuthContext';
-import { Row, RoleBadge } from '../components/ui';
-import { useTheme } from '../theme';
-import { ROLE_CONFIG } from '../constants/roles';
+import { useAuth } from '../../context/AuthContext';
+import { Row, RoleBadge } from '../../components/ui';
+import { useTheme } from '../../theme';
+import { ROLE_CONFIG } from '../../constants/roles';
 
-const FAVICON_ICON = require('../../assets/favicon1.png');
+const FAVICON_ICON = require('../../../assets/favicon1.png');
 
 export default function AccountScreen() {
   const { colors } = useTheme();

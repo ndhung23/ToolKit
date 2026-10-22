@@ -13,9 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { useTheme } from '../theme';
+import { useTheme } from '../../theme';
 
-const FAVICON_ICON = require('../../assets/favicon1.png');
+const FAVICON_ICON = require('../../../assets/favicon1.png');
 
 const CATEGORIES = [
   { id: 'work', label: 'Làm việc', icon: '💼' },

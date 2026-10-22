@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScreenHeader } from '../components/ui';
-import { useTheme } from '../theme';
+import { ScreenHeader } from '../../components/ui';
+import { useTheme } from '../../theme';
 
 const DUPLICATE_GROUPS = [
   { id: '1', title: 'Chụp liên tiếp (Burst shots)', count: 4, sizeMb: 14.2, thumbColor: '#EC4899' },

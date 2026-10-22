@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, StyleSheet, TextInput, Alert, ScrollView } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScreenHeader } from '../components/ui';
-import { useTheme } from '../theme';
+import { ScreenHeader } from '../../components/ui';
+import { useTheme } from '../../theme';
 
 export default function AutoClickScreen({ navigation }) {
   const { colors } = useTheme();

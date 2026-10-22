@@ -10,20 +10,20 @@ import {
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../theme';
-import LoginScreen from '../screens/LoginScreen';
-import HomeScreen from '../screens/HomeScreen';
-import ScreenTimeScreen from '../screens/ScreenTimeScreen';
-import QrTransferScreen from '../screens/QrTransferScreen';
-import ToolsScreen from '../screens/ToolsScreen';
-import StatsScreen from '../screens/StatsScreen';
-import SettingsScreen from '../screens/SettingsScreen';
-import ImageToPdfScreen from '../screens/ImageToPdfScreen';
-import AutoClickScreen from '../screens/AutoClickScreen';
-import FindDeviceScreen from '../screens/FindDeviceScreen';
-import CleanPhotosScreen from '../screens/CleanPhotosScreen';
-import FbMultiScreen from '../screens/FbMultiScreen';
-import AiReplyScreen from '../screens/AiReplyScreen';
-import AdminScreen from '../screens/AdminScreen';
+// Màn hình theo các packages chức năng
+import { LoginScreen } from '../screens/auth';
+import { HomeScreen, ScreenTimeScreen, ToolsScreen, StatsScreen } from '../screens/main';
+import {
+  QrTransferScreen,
+  ImageToPdfScreen,
+  AutoClickScreen,
+  FindDeviceScreen,
+  CleanPhotosScreen,
+  FbMultiScreen,
+  AiReplyScreen,
+} from '../screens/tools';
+import { SettingsScreen } from '../screens/settings';
+import { AdminScreen } from '../screens/admin';
 import FloatingTabBar from '../components/FloatingTabBar';
 import { RoleBadge } from '../components/ui';
 import { ROLES } from '../constants/roles';
@@ -68,11 +68,7 @@ function AppStack() {
   return (
     <AppStackNav.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerShadowVisible: false,
-        headerTintColor: colors.primary,
-        headerTitleStyle: { color: colors.text, fontWeight: '800' },
-        headerBackButtonDisplayMode: 'minimal',
+        headerShown: false,
         contentStyle: { backgroundColor: colors.bg },
       }}
     >

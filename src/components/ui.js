@@ -259,7 +259,7 @@ export function ToolRow({ tool, locked = false, onPress }) {
 }
 
 // Modal Mời Nâng cấp VIP chuyên nghiệp dùng chung
-export function VipUpgradeModal({ visible, tool, onClose, onUpgrade }) {
+export function VipUpgradeModal({ visible, tool, onClose }) {
   const { colors } = useTheme();
   if (!visible) return null;
 
@@ -276,23 +276,19 @@ export function VipUpgradeModal({ visible, tool, onClose, onUpgrade }) {
             <MaterialCommunityIcons name="crown" size={34} color="#121214" />
           </View>
           <Text style={[styles.modalTitle, { color: colors.text }]}>
-            {tool ? `Mở khóa ${tool.title}` : 'Kích hoạt ToolKit VIP'}
+            {tool ? 'Tính năng VIP' : 'Đặc quyền VIP'}
           </Text>
           <Text style={[styles.modalDesc, { color: colors.sub }]}>
             {tool
-              ? `Tiện ích "${tool.title}" là tính năng độc quyền dành riêng cho thành viên VIP. Nâng cấp ngay để mở khóa toàn bộ tiện ích.`
-              : 'Trải nghiệm không giới hạn toàn bộ 8 tiện ích thông minh: AI phân tích ngữ cảnh tin nhắn, Auto Click tự động chạm màn hình và Quản lý đa tài khoản Facebook.'}
+              ? `Tiện ích "${tool.title}" là tính năng độc quyền dành cho thành viên VIP. Quyền truy cập do Quản trị viên (Admin) chỉ định và phân quyền trong hệ thống.`
+              : 'Để sử dụng không giới hạn các tính năng VIP, vui lòng liên hệ Quản trị viên (Admin) để được cấp quyền tài khoản.'}
           </Text>
 
           <Pressable
-            onPress={onUpgrade}
-            style={[styles.modalBtn, { backgroundColor: colors.primary, marginBottom: 12 }]}
+            onPress={onClose}
+            style={[styles.modalBtn, { backgroundColor: colors.primary }]}
           >
-            <Text style={styles.modalBtnText}>Kích hoạt VIP ngay (Dùng thử miễn phí)</Text>
-          </Pressable>
-
-          <Pressable onPress={onClose} hitSlop={10} style={{ paddingVertical: 8 }}>
-            <Text style={{ color: colors.sub, fontSize: 14, fontWeight: '600' }}>Để sau</Text>
+            <Text style={styles.modalBtnText}>Đã hiểu</Text>
           </Pressable>
         </View>
       </View>

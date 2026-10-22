@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useTheme } from '../theme';
+import { useTheme } from '../../theme';
 
 const INITIAL_APPS = [
   { id: 'momo', name: 'MoMo', iconBg: '#A50064', used: 5, limit: 30, enabled: true },

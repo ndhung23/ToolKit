@@ -1,13 +1,22 @@
 // src/services/firebase.js
-// Dịch vụ tích hợp Firebase Authentication và Cloud Firestore cho ToolKit (MMA301)
+// Dịch vụ tích hợp Firebase Authentication và Cloud Firestore cho ToolKit
 
+import { Platform } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import * as AuthSession from 'expo-auth-session';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithCredential,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
+
+WebBrowser.maybeCompleteAuthSession();
 import {
   getFirestore,
   doc,
@@ -101,6 +110,108 @@ export async function firebaseSignOut() {
     try {
       await signOut(auth);
     } catch {}
+  }
+}
+
+// Đăng nhập bằng Google (Hỗ trợ đa nền tảng Web & Mobile)
+export async function firebaseSignInWithGoogle() {
+  if (!isFirebaseConfigured() || !auth) {
+    throw new Error('Firebase chưa được cấu hình với API Key.');
+  }
+
+  // 1. Nền tảng Web: Sử dụng popup trực tiếp của Firebase
+  if (Platform.OS === 'web' && typeof signInWithPopup === 'function') {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.addScope('profile');
+      provider.addScope('email');
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      return result.user;
+    } catch (err) {
+      console.warn('[Firebase Auth Web] Đăng nhập Google lỗi:', err.message);
+      throw err;
+    }
+  }
+
+  // 2. Nền tảng Native (iOS / Android trong Expo):
+  const googleClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+
+  if (!googleClientId) {
+    throw new Error(
+      'Để đăng nhập Google trên điện thoại, vui lòng cấu hình Google Web Client ID trong file .env:\n' +
+      'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your-client-id.apps.googleusercontent.com\n\n' +
+      '(Bạn có thể đăng nhập Google ngay trên bản Web tại http://localhost:8082).'
+    );
+  }
+
+  try {
+    const redirectUri = AuthSession.makeRedirectUri({
+      scheme: 'toolkit',
+      preferLocalhost: false,
+    });
+    console.log('[Google Auth] Redirect URI cấu hình:', redirectUri);
+
+    const authUrl =
+      `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${encodeURIComponent(googleClientId)}` +
+      `&response_type=id_token%20token` +
+      `&scope=${encodeURIComponent('openid profile email')}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&nonce=${Date.now()}`;
+
+    const authResult = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+
+    if (authResult.type !== 'success' || !authResult.url) {
+      if (authResult.type === 'cancel' || authResult.type === 'dismiss') {
+        throw new Error('Bạn đã đóng cửa sổ đăng nhập Google.');
+      }
+      throw new Error('Xác thực Google không thành công.');
+    }
+
+    const hashIndex = authResult.url.indexOf('#');
+    const queryIndex = authResult.url.indexOf('?');
+    const queryString =
+      hashIndex !== -1
+        ? authResult.url.substring(hashIndex + 1)
+        : queryIndex !== -1
+        ? authResult.url.substring(queryIndex + 1)
+        : '';
+
+    const params = new URLSearchParams(queryString);
+    const errorParam = params.get('error') || params.get('error_description');
+    if (errorParam) {
+      throw new Error(`Google trả về lỗi: ${errorParam}`);
+    }
+
+    const idToken = params.get('id_token');
+
+    if (!idToken) {
+      throw new Error('Không nhận được mã định danh id_token từ Google.');
+    }
+
+    const credential = GoogleAuthProvider.credential(idToken);
+    const userCredential = await signInWithCredential(auth, credential);
+    return userCredential.user;
+  } catch (err) {
+    console.warn('[Firebase Auth Native] Đăng nhập Google lỗi:', err.message);
+    throw err;
+  }
+}
+
+// Gửi email đặt lại mật khẩu kèm liên kết (Hiệu lực 5 phút)
+export async function firebaseSendPasswordReset(email) {
+  if (!isFirebaseConfigured() || !auth) {
+    throw new Error('Firebase chưa được cấu hình với API Key.');
+  }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    return true;
+  } catch (err) {
+    console.warn('[Firebase Auth] Lỗi gửi email reset password:', err.message);
+    throw err;
   }
 }
 

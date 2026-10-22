@@ -1,5 +1,5 @@
 // src/constants/roles.js
-// Định nghĩa vai trò (RBAC) và danh sách tài khoản demo cho đồ án ToolKit
+// Định nghĩa các cấp bậc vai trò (RBAC) cho ToolKit
 
 export const ROLES = {
   FREE: 'free',
@@ -34,28 +34,6 @@ export const ROLE_CONFIG = {
     icon: 'person',
   },
 };
-
-// Danh sách tài khoản demo 1-chạm (Dùng cho giảng viên & kiểm thử)
-export const DEMO_ACCOUNTS = [
-  {
-    role: ROLES.ADMIN,
-    email: 'admin@toolkit.com',
-    name: 'Admin Quản Trị',
-    desc: 'Toàn quyền hệ thống + Trang Quản trị',
-  },
-  {
-    role: ROLES.VIP,
-    email: 'vip@toolkit.com',
-    name: 'Người dùng VIP',
-    desc: 'Mở khóa toàn bộ 8/8 tiện ích',
-  },
-  {
-    role: ROLES.FREE,
-    email: 'user@toolkit.com',
-    name: 'Người dùng Thường',
-    desc: 'Dùng 5 tiện ích cơ bản, khóa 3 VIP',
-  },
-];
 
 // Helper kiểm tra quyền truy cập công cụ
 export function canAccessTool(user, tool) {

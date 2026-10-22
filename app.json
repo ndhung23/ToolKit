@@ -2,6 +2,7 @@
   "expo": {
     "name": "ToolKit",
     "slug": "ToolKit",
+    "scheme": "toolkit",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/favicon1.png",
@@ -21,7 +22,8 @@
     "plugins": [
       "expo-sharing",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ]
   }
 }

@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { View, TextInput, FlatList, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ToolRow, ScreenHeader, VipUpgradeModal } from '../components/ui';
-import { TOOLS, openTool } from '../tools';
-import { useTheme } from '../theme';
-import { useAuth } from '../context/AuthContext';
-import { canAccessTool } from '../constants/roles';
+import { ToolRow, ScreenHeader, VipUpgradeModal } from '../../components/ui';
+import { TOOLS, openTool } from '../../tools';
+import { useTheme } from '../../theme';
+import { useAuth } from '../../context/AuthContext';
+import { canAccessTool } from '../../constants/roles';
 
 export default function ToolsScreen({ navigation }) {
   const { colors } = useTheme();
-  const { user, upgradeToVip } = useAuth();
+  const { user } = useAuth();
   const [q, setQ] = useState('');
   const [focused, setFocused] = useState(false);
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false);
@@ -27,16 +27,6 @@ export default function ToolsScreen({ navigation }) {
     });
   };
 
-  const handleUpgrade = async () => {
-    await upgradeToVip();
-    setUpgradeModalVisible(false);
-    setSelectedTool(null);
-    Alert.alert(
-      'Nâng cấp thành công! ✨',
-      'Chúc mừng bạn đã kích hoạt tài khoản VIP Gold. Toàn bộ 8/8 tính năng đã được mở khóa hoàn toàn.',
-      [{ text: 'Đồng ý' }]
-    );
-  };
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.bg }]}>
@@ -141,7 +131,6 @@ export default function ToolsScreen({ navigation }) {
           setUpgradeModalVisible(false);
           setSelectedTool(null);
         }}
-        onUpgrade={handleUpgrade}
       />
     </View>
   );

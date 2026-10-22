@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet, Alert } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScreenHeader } from '../components/ui';
-import { useTheme } from '../theme';
+import { ScreenHeader } from '../../components/ui';
+import { useTheme } from '../../theme';
 
 const APPS_USAGE = [
   { id: 'fb', name: 'Facebook', usedMinutes: 65, limitMinutes: 90, icon: 'logo-facebook', color: '#1877F2' },
