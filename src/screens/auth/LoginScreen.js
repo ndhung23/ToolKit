@@ -20,7 +20,7 @@ import { useSafeTop } from '../../components/ui';
 
 const FAVICON_ICON = require('../../../assets/favicon1.png');
 
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }) {
   const { colors } = useTheme();
   const { signIn, signInWithGoogle, sendPasswordReset } = useAuth();
   const safeTop = useSafeTop();
@@ -59,11 +59,26 @@ export default function LoginScreen() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const navigateToHome = () => {
+    try {
+      navigation?.navigate('AppStack', { screen: 'Tabs', params: { screen: 'Home' } });
+      return;
+    } catch {}
+    try {
+      navigation?.navigate('Tabs', { screen: 'Home' });
+      return;
+    } catch {}
+    try {
+      navigation?.navigate('Home');
+    } catch {}
+  };
+
   const submit = async () => {
     setErr('');
     setBusy(true);
     try {
       await signIn(email.trim(), pw);
+      navigateToHome();
     } catch (e) {
       setErr(e?.message || 'Đăng nhập không thành công.');
     } finally {
@@ -76,6 +91,7 @@ export default function LoginScreen() {
     setGoogleBusy(true);
     try {
       await signInWithGoogle();
+      navigateToHome();
     } catch (e) {
       const msg = e?.message || 'Đăng nhập bằng Google không thành công.';
       setErr(msg);
@@ -125,9 +141,22 @@ export default function LoginScreen() {
     >
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.scrollContent, { paddingTop: safeTop + 24 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: safeTop + 16 }]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Nút quay lại nếu đến từ màn hình khác */}
+        {navigation?.canGoBack() && (
+          <View style={styles.topNavRow}>
+            <Pressable
+              onPress={() => navigation.goBack()}
+              style={[styles.backBtnPill, { borderColor: colors.border }]}
+              hitSlop={10}
+            >
+              <Ionicons name="chevron-back" size={20} color={colors.primary} />
+              <Text style={[styles.backBtnText, { color: colors.primary }]}>Quay lại</Text>
+            </Pressable>
+          </View>
+        )}
         {/* Logo & Mascot Area */}
         <View style={styles.topSection}>
           <View style={[styles.mascotBadge, { backgroundColor: 'rgba(255, 208, 0, 0.12)' }]}>
@@ -151,14 +180,13 @@ export default function LoginScreen() {
           <Text style={[styles.formTitle, { color: colors.text }]}>Đăng nhập</Text>
 
           <View style={[styles.inputBox, { borderColor: colors.border, backgroundColor: colors.bg }]}>
-            <Ionicons name="mail-outline" size={20} color={colors.sub} />
+            <Ionicons name="person-outline" size={20} color={colors.sub} />
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="Email của bạn"
+              placeholder="Tên đăng nhập hoặc Email"
               placeholderTextColor={colors.sub}
               autoCapitalize="none"
-              keyboardType="email-address"
               style={[styles.inputField, { color: colors.text }]}
             />
           </View>
@@ -234,6 +262,14 @@ export default function LoginScreen() {
               </View>
             )}
           </Pressable>
+
+          {/* Chuyển sang màn hình Đăng ký */}
+          <View style={styles.bottomSwitchRow}>
+            <Text style={{ color: colors.sub, fontSize: 14 }}>Chưa có tài khoản? </Text>
+            <Pressable onPress={() => navigation?.navigate('Register')} hitSlop={8}>
+              <Text style={[styles.switchLink, { color: colors.primary }]}>Đăng ký ngay</Text>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
 
@@ -613,5 +649,34 @@ const styles = StyleSheet.create({
   modalCancelBtnText: {
     fontSize: 13.5,
     fontWeight: '600',
+  },
+  topNavRow: {
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backBtnPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255, 208, 0, 0.08)',
+  },
+  backBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  bottomSwitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  switchLink: {
+    fontWeight: '800',
+    fontSize: 14,
   },
 });

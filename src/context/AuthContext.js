@@ -5,6 +5,7 @@ import { TOOLS } from '../tools';
 import {
   isFirebaseConfigured,
   firebaseSignIn,
+  firebaseSignUp,
   firebaseSignOut,
   firebaseSignInWithGoogle,
   firebaseSendPasswordReset,
@@ -55,20 +56,45 @@ export function AuthProvider({ children }) {
         const raw = await SecureStore.getItemAsync(KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (!parsed.role) parsed.role = ROLES.FREE;
+          const envAdminEmail = (
+            process.env.EXPO_PUBLIC_ADMIN_EMAIL ||
+            process.env.acc_admin ||
+            ''
+          ).trim().toLowerCase();
+          const envAdminUser = envAdminEmail.split('@')[0];
+
+          const isUserEnvAdmin = Boolean(
+            envAdminEmail &&
+            (parsed.email?.toLowerCase() === envAdminEmail ||
+             parsed.username?.toLowerCase() === envAdminUser ||
+             parsed.username?.toLowerCase() === envAdminEmail ||
+             parsed.name?.toLowerCase() === envAdminUser)
+          );
+
+          if (isUserEnvAdmin) {
+            parsed.role = ROLES.ADMIN;
+          } else if (!parsed.role) {
+            parsed.role = ROLES.FREE;
+          }
 
           // Nếu có uid và Firebase sẵn sàng, đồng bộ role mới nhất từ Firestore
           if (parsed.uid && isFirebaseConfigured()) {
             try {
               const remoteProfile = await getUserFromFirestore(parsed.uid);
-              if (remoteProfile && remoteProfile.role) {
-                parsed.role = remoteProfile.role;
+              if (remoteProfile?.role) {
+                parsed.role = isUserEnvAdmin ? ROLES.ADMIN : remoteProfile.role;
                 if (remoteProfile.name) parsed.name = remoteProfile.name;
               }
             } catch {}
           }
 
+          if (isUserEnvAdmin) {
+            parsed.role = ROLES.ADMIN;
+            parsed.name = 'Admin Quản Trị';
+          }
+
           setUser(parsed);
+          await SecureStore.setItemAsync(KEY, JSON.stringify(parsed));
         }
       } catch {}
       setLoading(false);
@@ -84,13 +110,17 @@ export function AuthProvider({ children }) {
       isVip: user?.role === ROLES.VIP || user?.role === ROLES.ADMIN,
       isAdmin: user?.role === ROLES.ADMIN,
 
-      // Đăng nhập an toàn (Xác thực Firebase Auth hoặc Fallback Session)
-      signIn: async (email, password) => {
-        const cleanEmail = email ? email.trim().toLowerCase() : '';
+      // Đăng nhập an toàn bằng Tên đăng nhập hoặc Email
+      signIn: async (identifier, password) => {
+        const cleanId = identifier ? identifier.trim() : '';
 
-        if (!cleanEmail || !cleanEmail.includes('@') || !password) {
-          throw new Error('Vui lòng nhập email và mật khẩu.');
+        if (!cleanId || !password) {
+          throw new Error('Vui lòng nhập tên đăng nhập và mật khẩu.');
         }
+
+        let cleanEmail = cleanId.includes('@')
+          ? cleanId.toLowerCase()
+          : `${cleanId.toLowerCase()}@toolkit.app`;
 
         // Lấy thông tin tài khoản Admin từ biến môi trường (.env), bảo mật và không hardcode trong mã nguồn
         const envAdminEmail = (
@@ -98,6 +128,7 @@ export function AuthProvider({ children }) {
           process.env.acc_admin ||
           ''
         ).trim().toLowerCase();
+        const envAdminUser = envAdminEmail.split('@')[0];
 
         const envAdminPassword =
           process.env.EXPO_PUBLIC_ADMIN_PASSWORD ||
@@ -106,15 +137,22 @@ export function AuthProvider({ children }) {
 
         const isEnvAdmin = Boolean(
           envAdminEmail &&
-          cleanEmail === envAdminEmail &&
+          (cleanId.toLowerCase() === envAdminEmail || cleanId.toLowerCase() === envAdminUser) &&
           (!envAdminPassword || password === envAdminPassword)
         );
 
-        const namePart = cleanEmail.split('@')[0];
+        const namePart = cleanId.includes('@') ? cleanId.split('@')[0] : cleanId;
         let role = isEnvAdmin ? ROLES.ADMIN : ROLES.FREE;
-        let formattedName = isEnvAdmin ? 'Quản trị viên' : namePart;
-        const defaultDocId = 'user_' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '_');
+        let formattedName = isEnvAdmin ? 'Admin Quản Trị' : namePart;
+        let defaultDocId = 'user_' + cleanId.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
         let uid = defaultDocId;
+
+        if (isEnvAdmin) {
+          cleanEmail = envAdminEmail;
+          defaultDocId = 'user_' + envAdminEmail.replace(/[^a-zA-Z0-9]/g, '_');
+          uid = defaultDocId;
+          role = ROLES.ADMIN;
+        }
 
         // Xác thực qua Firebase Auth nếu có cấu hình
         if (isFirebaseConfigured()) {
@@ -133,16 +171,20 @@ export function AuthProvider({ children }) {
               (await getUserFromFirestore(uid)) ||
               (uid !== defaultDocId ? await getUserFromFirestore(defaultDocId) : null);
 
-            if (remoteData?.role) {
+            if (isEnvAdmin) {
+              role = ROLES.ADMIN;
+            } else if (remoteData?.role) {
               role = remoteData.role;
             }
-            if (remoteData?.name) {
-              formattedName = remoteData.name;
+
+            if (remoteData?.name || remoteData?.username) {
+              formattedName = remoteData.name || remoteData.username;
             }
 
-            // Nếu người dùng chưa tồn tại trên Firestore thì tự động tạo bản ghi mới
-            if (!remoteData) {
+            // Nếu người dùng chưa tồn tại trên Firestore hoặc cần cập nhật role admin
+            if (!remoteData || (isEnvAdmin && remoteData.role !== ROLES.ADMIN)) {
               await saveUserToFirestore(uid, {
+                username: isEnvAdmin ? envAdminUser : cleanId,
                 email: cleanEmail,
                 name: formattedName,
                 role,
@@ -155,6 +197,78 @@ export function AuthProvider({ children }) {
 
         const u = {
           uid,
+          username: cleanId,
+          email: cleanEmail,
+          name: formattedName,
+          role,
+        };
+
+        await SecureStore.setItemAsync(KEY, JSON.stringify(u));
+        setUser(u);
+        return u;
+      },
+
+      // Đăng ký tài khoản người dùng mới (Chỉ cần Tên đăng nhập & Mật khẩu)
+      signUp: async (username, password) => {
+        const cleanUser = username ? username.trim() : '';
+
+        if (!cleanUser) {
+          throw new Error('Vui lòng nhập tên đăng nhập.');
+        }
+        if (cleanUser.length < 3) {
+          throw new Error('Tên đăng nhập phải có độ dài tối thiểu từ 3 ký tự trở lên.');
+        }
+        if (!password || password.length < 6) {
+          throw new Error('Mật khẩu đăng ký phải có ít nhất 6 ký tự.');
+        }
+
+        const envAdminEmail = (
+          process.env.EXPO_PUBLIC_ADMIN_EMAIL ||
+          process.env.acc_admin ||
+          ''
+        ).trim().toLowerCase();
+        const envAdminUser = envAdminEmail.split('@')[0];
+
+        const isSigningUpAdmin = Boolean(
+          envAdminEmail &&
+          (cleanUser.toLowerCase() === envAdminEmail || cleanUser.toLowerCase() === envAdminUser)
+        );
+
+        const cleanEmail = cleanUser.includes('@')
+          ? cleanUser.toLowerCase()
+          : (isSigningUpAdmin ? envAdminEmail : `${cleanUser.toLowerCase()}@toolkit.app`);
+
+        const formattedName = isSigningUpAdmin ? 'Admin Quản Trị' : cleanUser;
+        const defaultDocId = 'user_' + cleanEmail.replace(/[^a-zA-Z0-9]/g, '_');
+        let uid = defaultDocId;
+        const role = isSigningUpAdmin ? ROLES.ADMIN : ROLES.FREE;
+
+        if (isFirebaseConfigured()) {
+          try {
+            const fbUser = await firebaseSignUp(cleanEmail, password, formattedName, role);
+            if (fbUser) {
+              uid = fbUser.uid;
+            }
+          } catch (err) {
+            console.warn('[Firebase Auth] Đăng ký trực tiếp thất bại, kiểm tra lỗi:', err?.code, err?.message);
+            if (err?.code === 'auth/email-already-in-use') {
+              throw new Error('Tên đăng nhập này đã có người sử dụng. Vui lòng chọn tên khác.');
+            } else if (err?.code === 'auth/weak-password') {
+              throw new Error('Mật khẩu quá yếu. Vui lòng chọn mật khẩu từ 6 ký tự trở lên.');
+            }
+            // Nếu lỗi khác (ví dụ offline), lưu bản ghi trực tiếp vào Firestore
+            await saveUserToFirestore(uid, {
+              username: cleanUser,
+              email: cleanEmail,
+              name: formattedName,
+              role,
+            }).catch(() => {});
+          }
+        }
+
+        const u = {
+          uid,
+          username: cleanUser,
           email: cleanEmail,
           name: formattedName,
           role,
@@ -180,10 +294,19 @@ export function AuthProvider({ children }) {
         const uid = googleUser.uid;
         const name = googleUser.displayName || email.split('@')[0];
 
+        const envAdminEmail = (
+          process.env.EXPO_PUBLIC_ADMIN_EMAIL ||
+          process.env.acc_admin ||
+          ''
+        ).trim().toLowerCase();
+        const isGoogleAdmin = Boolean(envAdminEmail && email === envAdminEmail);
+
         // Đồng bộ vai trò người dùng từ Firestore (mặc định FREE)
-        let role = ROLES.FREE;
+        let role = isGoogleAdmin ? ROLES.ADMIN : ROLES.FREE;
         const remoteProfile = await getUserFromFirestore(uid);
-        if (remoteProfile?.role) {
+        if (isGoogleAdmin) {
+          role = ROLES.ADMIN;
+        } else if (remoteProfile?.role) {
           role = remoteProfile.role;
         } else {
           await saveUserToFirestore(uid, {

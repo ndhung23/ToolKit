@@ -12,7 +12,7 @@ const TAB_ICONS = {
 };
 
 export default function FloatingTabBar({ state, descriptors, navigation }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
@@ -21,8 +21,8 @@ export default function FloatingTabBar({ state, descriptors, navigation }) {
         styles.container,
         {
           bottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 24 : 16),
-          backgroundColor: '#26262B',
-          borderColor: '#36363E',
+          backgroundColor: isDark ? '#26262B' : colors.card,
+          borderColor: isDark ? '#36363E' : colors.cardBorder,
         },
       ]}
     >
@@ -56,12 +56,24 @@ export default function FloatingTabBar({ state, descriptors, navigation }) {
             hitSlop={8}
           >
             {isFocused ? (
-              <View style={styles.activeCircle}>
+              <View
+                style={[
+                  styles.activeCircle,
+                  {
+                    backgroundColor: isDark ? '#18181B' : colors.circleBg,
+                    borderColor: isDark ? 'rgba(255, 208, 0, 0.25)' : 'rgba(217, 119, 6, 0.3)',
+                  },
+                ]}
+              >
                 <Ionicons name={config.name} size={config.size} color={colors.primary} />
               </View>
             ) : (
               <View style={styles.inactiveSlot}>
-                <Ionicons name={config.name} size={config.size} color="#FFFFFF" />
+                <Ionicons
+                  name={config.name}
+                  size={config.size}
+                  color={isDark ? '#FFFFFF' : colors.sub}
+                />
               </View>
             )}
           </Pressable>

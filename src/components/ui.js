@@ -5,6 +5,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { radius, useTheme } from '../theme';
 import { ROLE_CONFIG } from '../constants/roles';
+import { useAuth } from '../context/AuthContext';
 
 const FAVICON_ICON = require('../../assets/favicon1.png');
 
@@ -32,7 +33,7 @@ export function RoleBadge({ role }) {
 }
 
 // 1. Header chuẩn Derot (Logo favicon1.png bo tròn + chữ vàng + crown vàng + settings + Role badge)
-export function DerotHeader({ title = 'ToolKit', userRole, onCrownPress, onSettingsPress }) {
+export function DerotHeader({ title = 'ToolKit', userRole, onCrownPress, onSettingsPress, onLoginPress }) {
   const { colors } = useTheme();
   const safeTop = useSafeTop();
 
@@ -46,7 +47,29 @@ export function DerotHeader({ title = 'ToolKit', userRole, onCrownPress, onSetti
           <Text style={[styles.headerTitle, { color: colors.primary }]}>
             {title} <Text style={styles.headerSparkle}>✨</Text>
           </Text>
-          {userRole && <RoleBadge role={userRole} />}
+          {userRole ? (
+            <RoleBadge role={userRole} />
+          ) : (
+            <Pressable
+              onPress={onLoginPress}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: 'rgba(255, 208, 0, 0.12)',
+                borderColor: 'rgba(255, 208, 0, 0.3)',
+                borderWidth: 1,
+                paddingHorizontal: 7,
+                paddingVertical: 2,
+                borderRadius: 8,
+                alignSelf: 'flex-start',
+                marginTop: 2,
+              }}
+              hitSlop={6}
+            >
+              <Ionicons name="log-in-outline" size={11} color="#FFD000" style={{ marginRight: 3 }} />
+              <Text style={{ color: '#FFD000', fontSize: 10, fontWeight: '800' }}>ĐĂNG NHẬP</Text>
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -102,7 +125,7 @@ export function FocusGauge({ score = '8/8', label = 'Tiện ích sẵn sàng', o
     <Pressable onPress={onPress} style={styles.gaugeWrapper}>
       <View style={[styles.gaugeOuterRing, { borderColor: colors.primary }]}>
         <View style={[styles.gaugeInnerCircle, { backgroundColor: colors.circleBg || '#2A2A30' }]}>
-          <Text style={styles.gaugeNumber}>{score}</Text>
+          <Text style={[styles.gaugeNumber, { color: colors.text }]}>{score}</Text>
           <Text style={[styles.gaugeLabel, { color: colors.primary }]}>{label}</Text>
         </View>
       </View>
@@ -134,7 +157,7 @@ export function MindInsightCard({
         <Image source={FAVICON_ICON} style={styles.insightMascot} resizeMode="contain" />
       </View>
       <View style={styles.insightContent}>
-        <Text style={styles.insightTitle}>{title}</Text>
+        <Text style={[styles.insightTitle, { color: colors.text }]}>{title}</Text>
         <Text style={[styles.insightDesc, { color: colors.sub }]}>{desc}</Text>
       </View>
     </Pressable>
@@ -167,8 +190,8 @@ export function AchievementCard({
       </View>
 
       <View style={styles.achievementContent}>
-        <Text style={styles.achievementTitle}>{title}</Text>
-        <View style={styles.progressTrack}>
+        <Text style={[styles.achievementTitle, { color: colors.text }]}>{title}</Text>
+        <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
           <View
             style={[
               styles.progressFill,
@@ -179,7 +202,7 @@ export function AchievementCard({
         <Text style={[styles.achievementSubtitle, { color: colors.sub }]}>{subtitle}</Text>
       </View>
 
-      <Ionicons name="chevron-forward" size={18} color="#9E9EA7" style={styles.chevron} />
+      <Ionicons name="chevron-forward" size={18} color={colors.sub} style={styles.chevron} />
     </Pressable>
   );
 }
@@ -258,13 +281,17 @@ export function ToolRow({ tool, locked = false, onPress }) {
   );
 }
 
-// Modal Mời Nâng cấp VIP chuyên nghiệp dùng chung
-export function VipUpgradeModal({ visible, tool, onClose }) {
+// Modal Mời Nâng cấp VIP chuyên nghiệp dùng chung (Hỗ trợ Khách & Thành viên)
+export function VipUpgradeModal({ visible, tool, onClose, onLoginPress }) {
   const { colors } = useTheme();
+  const auth = useAuth ? useAuth() : null;
+  const user = auth?.user;
   if (!visible) return null;
 
+  const isGuest = !user;
+
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View
           style={[
@@ -276,20 +303,42 @@ export function VipUpgradeModal({ visible, tool, onClose }) {
             <MaterialCommunityIcons name="crown" size={34} color="#121214" />
           </View>
           <Text style={[styles.modalTitle, { color: colors.text }]}>
-            {tool ? 'Tính năng VIP' : 'Đặc quyền VIP'}
+            {isGuest ? 'Yêu cầu đăng nhập' : (tool ? 'Tính năng VIP' : 'Đặc quyền VIP')}
           </Text>
           <Text style={[styles.modalDesc, { color: colors.sub }]}>
-            {tool
-              ? `Tiện ích "${tool.title}" là tính năng độc quyền dành cho thành viên VIP. Quyền truy cập do Quản trị viên (Admin) chỉ định và phân quyền trong hệ thống.`
-              : 'Để sử dụng không giới hạn các tính năng VIP, vui lòng liên hệ Quản trị viên (Admin) để được cấp quyền tài khoản.'}
+            {isGuest
+              ? `Tiện ích "${tool?.title || 'này'}" yêu cầu đăng nhập tài khoản để sử dụng. Vui lòng đăng nhập hoặc tạo tài khoản mới để trải nghiệm.`
+              : (tool
+                  ? `Tiện ích "${tool.title}" là tính năng độc quyền dành cho thành viên VIP. Quyền truy cập do Quản trị viên (Admin) chỉ định và phân quyền trong hệ thống.`
+                  : 'Để sử dụng không giới hạn các tính năng VIP, vui lòng liên hệ Quản trị viên (Admin) để được cấp quyền tài khoản.')}
           </Text>
 
-          <Pressable
-            onPress={onClose}
-            style={[styles.modalBtn, { backgroundColor: colors.primary }]}
-          >
-            <Text style={styles.modalBtnText}>Đã hiểu</Text>
-          </Pressable>
+          {isGuest && onLoginPress ? (
+            <View style={{ width: '100%', gap: 10 }}>
+              <Pressable
+                onPress={() => {
+                  onClose();
+                  onLoginPress();
+                }}
+                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.modalBtnText}>Đăng nhập / Đăng ký</Text>
+              </Pressable>
+              <Pressable
+                onPress={onClose}
+                style={[styles.modalBtnSecondary, { borderColor: colors.border }]}
+              >
+                <Text style={[styles.modalBtnSecondaryText, { color: colors.sub }]}>Khám phá tiện ích khác</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={onClose}
+              style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.modalBtnText}>Đã hiểu</Text>
+            </Pressable>
+          )}
         </View>
       </View>
     </Modal>
@@ -750,6 +799,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#121214',
+  },
+  modalBtnSecondary: {
+    width: '100%',
+    paddingVertical: 13,
+    borderRadius: 999,
+    overflow: 'hidden',
+    alignItems: 'center',
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  modalBtnSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
 

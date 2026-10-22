@@ -101,11 +101,22 @@ export function openTool(navigation, tool, user, onUpgradeRequired, customTiers 
     if (typeof onUpgradeRequired === 'function') {
       onUpgradeRequired(tool);
     } else {
-      Alert.alert(
-        'Yêu cầu VIP',
-        `Tiện ích "${tool.title}" là tính năng độc quyền dành cho thành viên VIP. Vui lòng nâng cấp tài khoản để sử dụng.`,
-        [{ text: 'Đóng', style: 'cancel' }]
-      );
+      if (!user) {
+        Alert.alert(
+          'Yêu cầu đăng nhập',
+          `Tiện ích "${tool.title}" là tính năng VIP. Vui lòng đăng nhập hoặc đăng ký tài khoản để tiếp tục trải nghiệm.`,
+          [
+            { text: 'Để sau', style: 'cancel' },
+            { text: 'Đăng nhập', onPress: () => navigation?.navigate('Login') },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Yêu cầu VIP',
+          `Tiện ích "${tool.title}" là tính năng độc quyền dành cho thành viên VIP. Vui lòng liên hệ Quản trị viên để được nâng cấp tài khoản.`,
+          [{ text: 'Đóng', style: 'cancel' }]
+        );
+      }
     }
     return;
   }

@@ -9,9 +9,10 @@ import {
 } from '@react-navigation/drawer';
 
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../theme';
 // Màn hình theo các packages chức năng
-import { LoginScreen } from '../screens/auth';
+import { LoginScreen, RegisterScreen } from '../screens/auth';
 import { HomeScreen, ScreenTimeScreen, ToolsScreen, StatsScreen } from '../screens/main';
 import {
   QrTransferScreen,
@@ -46,6 +47,7 @@ function AuthStack() {
 
 /* ---------- 2. TAB (5 tab nổi) ---------- */
 function Tabs() {
+  const { t } = useLanguage();
   return (
     <TabNav.Navigator
       tabBar={(props) => <FloatingTabBar {...props} />}
@@ -53,11 +55,11 @@ function Tabs() {
         headerShown: false,
       }}
     >
-      <TabNav.Screen name="Home" component={HomeScreen} options={{ title: 'Trang chủ' }} />
-      <TabNav.Screen name="ScreenTime" component={ScreenTimeScreen} options={{ title: 'Thời gian dùng' }} />
-      <TabNav.Screen name="QrTransfer" component={QrTransferScreen} options={{ title: 'Chuyển khoản QR' }} />
-      <TabNav.Screen name="Tools" component={ToolsScreen} options={{ title: 'Tiện ích' }} />
-      <TabNav.Screen name="Stats" component={StatsScreen} options={{ title: 'Thống kê' }} />
+      <TabNav.Screen name="Home" component={HomeScreen} options={{ title: t('nav.home') }} />
+      <TabNav.Screen name="ScreenTime" component={ScreenTimeScreen} options={{ title: t('tools.screentime.shortTitle') }} />
+      <TabNav.Screen name="QrTransfer" component={QrTransferScreen} options={{ title: t('tools.qr_transfer.shortTitle') }} />
+      <TabNav.Screen name="Tools" component={ToolsScreen} options={{ title: t('nav.tools') }} />
+      <TabNav.Screen name="Stats" component={StatsScreen} options={{ title: t('nav.stats') }} />
     </TabNav.Navigator>
   );
 }
@@ -123,6 +125,16 @@ function AppStack() {
         component={AdminScreen}
         options={{ title: 'Quản trị hệ thống' }}
       />
+      <AppStackNav.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{ title: 'Đăng nhập', headerShown: false }}
+      />
+      <AppStackNav.Screen
+        name="Register"
+        component={RegisterScreen}
+        options={{ title: 'Đăng ký tài khoản', headerShown: false }}
+      />
     </AppStackNav.Navigator>
   );
 }
@@ -131,11 +143,12 @@ function AppStack() {
 function CustomDrawer(props) {
   const { colors } = useTheme();
   const { user, signOut } = useAuth();
+  const { t, isVietnamese } = useLanguage();
 
   const confirmLogout = () =>
-    Alert.alert('Đăng xuất', 'Bạn muốn đăng xuất khỏi tài khoản?', [
-      { text: 'Hủy', style: 'cancel' },
-      { text: 'Đăng xuất', style: 'destructive', onPress: signOut },
+    Alert.alert(t('settings.logoutConfirmTitle'), t('settings.logoutConfirmMsg'), [
+      { text: t('settings.cancel'), style: 'cancel' },
+      { text: t('settings.logout'), style: 'destructive', onPress: signOut },
     ]);
 
   return (
@@ -171,33 +184,72 @@ function CustomDrawer(props) {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Text style={{ color: colors.text, fontSize: 19, fontWeight: '800' }}>
-            {user?.name || 'ToolKit User'}
+            {user?.name || t('settings.guest')}
           </Text>
-          <RoleBadge role={user?.role} />
+          {user ? (
+            <RoleBadge role={user?.role} />
+          ) : (
+            <Pressable
+              onPress={() => props.navigation.navigate('Login')}
+              style={{
+                backgroundColor: 'rgba(255, 208, 0, 0.15)',
+                borderColor: '#FFD000',
+                borderWidth: 1,
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{ color: '#FFD000', fontSize: 11, fontWeight: '800' }}>
+                {isVietnamese ? 'ĐĂNG NHẬP' : 'SIGN IN'}
+              </Text>
+            </Pressable>
+          )}
         </View>
-        <Text style={{ color: colors.sub, marginTop: 4, fontSize: 13 }}>{user?.email}</Text>
+        <Text style={{ color: colors.sub, marginTop: 4, fontSize: 13 }}>
+          {user?.email || (isVietnamese ? 'Đăng nhập để trải nghiệm đầy đủ tính năng VIP' : 'Sign in to unlock all VIP features')}
+        </Text>
       </View>
 
       <DrawerContentScrollView {...props} contentContainerStyle={{ paddingTop: 8 }}>
         <DrawerItemList {...props} />
       </DrawerContentScrollView>
 
-      <Pressable
-        onPress={confirmLogout}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          padding: 20,
-          paddingBottom: 40,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-        }}
-      >
-        <Ionicons name="log-out-outline" size={22} color={colors.danger} />
-        <Text style={{ marginLeft: 12, color: colors.danger, fontWeight: '700', fontSize: 15 }}>
-          Đăng xuất
-        </Text>
-      </Pressable>
+      {user ? (
+        <Pressable
+          onPress={confirmLogout}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 20,
+            paddingBottom: 40,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+          }}
+        >
+          <Ionicons name="log-out-outline" size={22} color={colors.danger} />
+          <Text style={{ marginLeft: 12, color: colors.danger, fontWeight: '700', fontSize: 15 }}>
+            {t('settings.logout')}
+          </Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={() => props.navigation.navigate('Login')}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 20,
+            paddingBottom: 40,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+          }}
+        >
+          <Ionicons name="log-in-outline" size={22} color={colors.primary} />
+          <Text style={{ marginLeft: 12, color: colors.primary, fontWeight: '800', fontSize: 15 }}>
+            {t('nav.login')} / {t('nav.register')}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -205,6 +257,7 @@ function CustomDrawer(props) {
 function AppDrawer() {
   const { colors } = useTheme();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const isAdmin = user?.role === ROLES.ADMIN;
 
   return (
@@ -227,7 +280,7 @@ function AppDrawer() {
         component={AppStack}
         options={{
           headerShown: false,
-          title: 'Trang chủ ToolKit',
+          title: t('nav.homeTitle'),
           drawerIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
           ),
@@ -238,7 +291,7 @@ function AppDrawer() {
           name="DrawerAdmin"
           component={AdminScreen}
           options={{
-            title: 'Quản trị hệ thống',
+            title: t('nav.admin'),
             drawerIcon: ({ color, size }) => (
               <Ionicons name="shield-checkmark-outline" size={size} color="#EF4444" />
             ),
@@ -249,10 +302,26 @@ function AppDrawer() {
         name="DrawerSettings"
         component={SettingsScreen}
         options={{
-          title: 'Cài đặt hệ thống',
+          title: t('nav.settingsDrawer'),
           drawerIcon: ({ color, size }) => (
             <Ionicons name="settings-outline" size={size} color={color} />
           ),
+        }}
+      />
+      <DrawerNav.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{
+          drawerItemStyle: { display: 'none' },
+          headerShown: false,
+        }}
+      />
+      <DrawerNav.Screen
+        name="Register"
+        component={RegisterScreen}
+        options={{
+          drawerItemStyle: { display: 'none' },
+          headerShown: false,
         }}
       />
     </DrawerNav.Navigator>
@@ -261,7 +330,7 @@ function AppDrawer() {
 
 /* ---------- 5. GỐC ---------- */
 export default function RootNavigator() {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   const { colors } = useTheme();
 
   if (loading) {
@@ -278,5 +347,6 @@ export default function RootNavigator() {
       </View>
     );
   }
-  return user ? <AppDrawer /> : <AuthStack />;
+  // Mở thẳng ứng dụng chính cho cả Khách và Người dùng đã đăng nhập
+  return <AppDrawer />;
 }

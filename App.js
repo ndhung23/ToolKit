@@ -3,10 +3,11 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
+import { LanguageProvider } from './src/context/LanguageContext';
+import { ThemeProvider, useTheme } from './src/theme';
 import RootNavigator from './src/navigation';
-import { useTheme } from './src/theme';
 
-export default function App() {
+function MainApp() {
   const { colors, isDark } = useTheme();
   const base = isDark ? DarkTheme : DefaultTheme;
   const navTheme = {
@@ -22,13 +23,23 @@ export default function App() {
   };
 
   return (
+    <NavigationContainer theme={navTheme}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <RootNavigator />
+    </NavigationContainer>
+  );
+}
+
+export default function App() {
+  return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <NavigationContainer theme={navTheme}>
-          <StatusBar style={isDark ? 'light' : 'dark'} />
-          <RootNavigator />
-        </NavigationContainer>
-      </AuthProvider>
+      <ThemeProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <MainApp />
+          </AuthProvider>
+        </LanguageProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

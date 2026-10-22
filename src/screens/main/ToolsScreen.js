@@ -131,6 +131,7 @@ export default function ToolsScreen({ navigation }) {
           setUpgradeModalVisible(false);
           setSelectedTool(null);
         }}
+        onLoginPress={() => navigation.navigate('Login')}
       />
     </View>
   );

@@ -21,6 +21,7 @@ import {
 import { TOOLS, openTool } from '../../tools';
 import { useTheme } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { canAccessTool, isVip } from '../../constants/roles';
 
 const STORAGE_TOOLS_ORDER = 'toolkit_home_tools_order';
@@ -28,6 +29,7 @@ const STORAGE_TOOLS_ORDER = 'toolkit_home_tools_order';
 export default function HomeScreen({ navigation }) {
   const { colors } = useTheme();
   const { user, toolTiers } = useAuth();
+  const { t, isVietnamese } = useLanguage();
   const [crownModalVisible, setCrownModalVisible] = useState(false);
   const [selectedLockedTool, setSelectedLockedTool] = useState(null);
 
@@ -36,7 +38,7 @@ export default function HomeScreen({ navigation }) {
   const [isReordering, setIsReordering] = useState(false);
 
   const vipActive = isVip(user);
-  const accessibleCount = TOOLS.filter((t) => canAccessTool(user, t, toolTiers)).length;
+  const accessibleCount = TOOLS.filter((item) => canAccessTool(user, item, toolTiers)).length;
 
   // Nạp thứ tự tùy chỉnh từ SecureStore
   useEffect(() => {
@@ -141,6 +143,7 @@ export default function HomeScreen({ navigation }) {
           setCrownModalVisible(true);
         }}
         onSettingsPress={() => navigation.navigate('Settings')}
+        onLoginPress={() => navigation.navigate('Login')}
       />
 
       <ScrollView
@@ -151,7 +154,11 @@ export default function HomeScreen({ navigation }) {
         {/* 2. Vòng tròn hiển thị số tiện ích được phép dùng */}
         <FocusGauge
           score={`${accessibleCount}/8`}
-          label={vipActive ? 'Tiện ích VIP sẵn sàng' : 'Tiện ích khả dụng'}
+          label={
+            vipActive
+              ? (isVietnamese ? 'Tiện ích VIP sẵn sàng' : 'VIP Utilities Ready')
+              : (isVietnamese ? 'Tiện ích khả dụng' : 'Accessible Utilities')
+          }
           onPress={handleStatusPress}
         />
 
@@ -160,19 +167,23 @@ export default function HomeScreen({ navigation }) {
           title={vipActive ? 'ToolKit Assistant (VIP)' : 'ToolKit Assistant'}
           desc={
             vipActive
-              ? 'Tất cả 8 tiện ích thông minh đã mở khóa đầy đủ quyền hạn.'
-              : 'Đang dùng gói cơ bản. Nhấn vào vương miện để mở khóa toàn bộ tiện ích.'
+              ? (isVietnamese ? 'Tất cả 8 tiện ích thông minh đã mở khóa đầy đủ quyền hạn.' : 'All 8 smart tools unlocked with full privileges.')
+              : (isVietnamese ? 'Đang dùng gói cơ bản. Nhấn vào vương miện để mở khóa toàn bộ tiện ích.' : 'Using standard tier. Tap the crown to unlock all tools.')
           }
           onPress={handleStatusPress}
         />
 
         {/* 4. Card tiến độ hệ thống */}
         <AchievementCard
-          title={vipActive ? 'Hệ thống VIP • 8/8 hoàn thiện' : 'Hệ thống • 5/8 khả dụng'}
+          title={
+            vipActive
+              ? (isVietnamese ? 'Hệ thống VIP • 8/8 hoàn thiện' : 'VIP System • 8/8 Ready')
+              : (isVietnamese ? `Hệ thống • ${accessibleCount}/8 khả dụng` : `System • ${accessibleCount}/8 accessible`)
+          }
           subtitle={
             vipActive
-              ? 'Đầy đủ AI, Auto Click, Multi-FB & Quản lý'
-              : 'Mở khóa 3 tính năng VIP để tối ưu trải nghiệm'
+              ? (isVietnamese ? 'Đầy đủ AI, Auto Click, Multi-FB & Quản lý' : 'Full AI, Auto Click, Multi-FB & Tools')
+              : (isVietnamese ? 'Mở khóa 3 tính năng VIP để tối ưu trải nghiệm' : 'Unlock 3 VIP features to maximize efficiency')
           }
           progress={accessibleCount / 8}
           onPress={() => navigation.navigate('Tools')}
@@ -181,11 +192,13 @@ export default function HomeScreen({ navigation }) {
         {/* 5. Tiêu đề danh sách tính năng + Nút bật chế độ sắp xếp vị trí */}
         <View style={styles.sectionHeaderRow}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Danh sách tiện ích</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              {isVietnamese ? 'Danh sách tiện ích' : 'Utility Tools'}
+            </Text>
             <Text style={[styles.sectionSubtitle, { color: colors.sub }]}>
               {isReordering
-                ? 'Chạm mũi tên ◀ ▶ để di chuyển vị trí'
-                : '3 tiện ích / hàng • Nhấn giữ để sắp xếp'}
+                ? (isVietnamese ? 'Chạm mũi tên ◀ ▶ để di chuyển vị trí' : 'Tap arrows ◀ ▶ to reorder')
+                : (isVietnamese ? '3 tiện ích / hàng • Nhấn giữ để sắp xếp' : '3 items / row • Long press to reorder')}
             </Text>
           </View>
 
@@ -211,7 +224,7 @@ export default function HomeScreen({ navigation }) {
                 { color: isReordering ? '#121214' : colors.primary },
               ]}
             >
-              {isReordering ? 'Xong' : 'Sắp xếp'}
+              {isReordering ? (isVietnamese ? 'Xong' : 'Done') : (isVietnamese ? 'Sắp xếp' : 'Reorder')}
             </Text>
           </Pressable>
         </View>
@@ -226,11 +239,11 @@ export default function HomeScreen({ navigation }) {
           >
             <Ionicons name="information-circle-outline" size={17} color={colors.primary} />
             <Text style={[styles.reorderHintText, { color: colors.sub }]}>
-              Tùy biến vị trí theo thói quen của bạn
+              {isVietnamese ? 'Tùy biến vị trí theo thói quen của bạn' : 'Customize positions to your workflow'}
             </Text>
             <Pressable onPress={resetDefaultOrder} hitSlop={6} style={styles.resetBtn}>
               <Text style={{ color: colors.danger, fontSize: 13, fontWeight: '700' }}>
-                Khôi phục
+                {isVietnamese ? 'Khôi phục' : 'Reset'}
               </Text>
             </Pressable>
           </View>
@@ -238,11 +251,11 @@ export default function HomeScreen({ navigation }) {
 
         {/* 6. Gallery lưới 3 tiện ích / 1 hàng gọn gàng & trực quan */}
         <View style={styles.toolsGrid}>
-          {orderedTools.map((t, index) => {
-            const isLocked = !canAccessTool(user, t, toolTiers);
+          {orderedTools.map((toolItem, index) => {
+            const isLocked = !canAccessTool(user, toolItem, toolTiers);
             return (
               <View
-                key={t.id}
+                key={toolItem.id}
                 style={[
                   styles.gridItemWrapper,
                   isReordering && styles.gridItemReordering,
@@ -251,7 +264,7 @@ export default function HomeScreen({ navigation }) {
                 <Pressable
                   onPress={() => {
                     if (isReordering) return;
-                    handleToolPress(t);
+                    handleToolPress(toolItem);
                   }}
                   onLongPress={() => setIsReordering(true)}
                   style={({ pressed }) => [
@@ -278,13 +291,13 @@ export default function HomeScreen({ navigation }) {
                   <View
                     style={[
                       styles.gridIconCircle,
-                      { backgroundColor: isLocked ? 'rgba(255, 208, 0, 0.12)' : t.color + '1F' },
+                      { backgroundColor: isLocked ? 'rgba(255, 208, 0, 0.12)' : toolItem.color + '1F' },
                     ]}
                   >
                     <Ionicons
-                      name={t.icon}
+                      name={toolItem.icon}
                       size={22}
-                      color={isLocked ? '#FFD000' : t.color}
+                      color={isLocked ? '#FFD000' : toolItem.color}
                     />
                   </View>
 
@@ -293,7 +306,7 @@ export default function HomeScreen({ navigation }) {
                     style={[styles.gridTitle, { color: colors.text }]}
                     numberOfLines={2}
                   >
-                    {t.shortTitle || t.title}
+                    {t(`tools.${toolItem.id}.shortTitle`) || toolItem.shortTitle || toolItem.title}
                   </Text>
                 </Pressable>
 
@@ -344,6 +357,7 @@ export default function HomeScreen({ navigation }) {
           setCrownModalVisible(false);
           setSelectedLockedTool(null);
         }}
+        onLoginPress={() => navigation.navigate('Login')}
       />
     </View>
   );
