@@ -6,7 +6,6 @@ import { useTheme } from '../theme';
 const TAB_ICONS = {
   Home: { name: 'home', size: 22 },
   ScreenTime: { name: 'timer', size: 22 },
-  QrTransfer: { name: 'qr-code', size: 22 },
   Tools: { name: 'apps', size: 22 },
   Stats: { name: 'bar-chart', size: 22 },
 };

@@ -66,7 +66,7 @@ export const translations = {
       greetingAfternoon: 'Chào buổi chiều,',
       greetingEvening: 'Chào buổi tối,',
       guest: 'Khách',
-      toolsReadyBadge: '8 công cụ đã sẵn sàng',
+      toolsReadyBadge: '6 công cụ đã sẵn sàng',
       reorder: 'Đổi vị trí',
       doneReorder: 'Xong',
       accessibleCount: 'Khả dụng {accessible}/{total}',
@@ -99,37 +99,25 @@ export const translations = {
       loginBtn: 'Đăng nhập',
     },
 
-    // Công cụ hệ thống (8 tools)
+    // Công cụ hệ thống
     tools: {
+      fap_exam: {
+        title: 'Nhắc nhở lịch thi FAP',
+        shortTitle: 'Nhắc nhở',
+        desc: 'Đăng nhập tài khoản FAP (FeID/Email trường), tự động lấy lịch thi & hẹn giờ nhắc trước',
+        badge: 'FPT Edu',
+      },
       pdf: {
         title: 'Chuyển ảnh thành PDF',
         shortTitle: 'Ghép PDF',
         desc: 'Ghép nhiều ảnh thành một file PDF chất lượng cao',
         badge: 'Sẵn sàng',
       },
-      autoclick: {
-        title: 'Auto Click — tự động chạm màn hình',
-        shortTitle: 'Auto Click',
-        desc: 'Tự động chạm màn hình theo chu kỳ & vị trí cài đặt',
-        badge: 'VIP Pro',
-      },
-      qr_transfer: {
-        title: 'Hỗ trợ chuyển khoản bằng QR',
-        shortTitle: 'Chuyển QR',
-        desc: 'Quét QR → nhập tiền, note → Chuyển qua ngân hàng để hoàn thành',
-        badge: 'Tiện lợi',
-      },
       screentime: {
         title: 'Nhắc nhở và theo dõi thời gian sử dụng điện thoại',
         shortTitle: 'Thời gian dùng',
         desc: 'Kiểm soát thời gian dùng màn hình & cảnh báo khi dùng quá lâu',
         badge: 'Bảo vệ',
-      },
-      find_device: {
-        title: 'Tìm vị trí thiết bị của mình',
-        shortTitle: 'Tìm thiết bị',
-        desc: 'Định vị vị trí GPS và phát chuông tìm điện thoại thất lạc',
-        badge: 'GPS',
       },
       clean_photos: {
         title: 'Tìm và dọn ảnh trùng lặp',
@@ -228,7 +216,7 @@ export const translations = {
       greetingAfternoon: 'Good afternoon,',
       greetingEvening: 'Good evening,',
       guest: 'Guest',
-      toolsReadyBadge: '8 tools ready to use',
+      toolsReadyBadge: '6 tools ready to use',
       reorder: 'Reorder',
       doneReorder: 'Done',
       accessibleCount: 'Accessible {accessible}/{total}',
@@ -263,35 +251,23 @@ export const translations = {
 
     // Tools
     tools: {
+      fap_exam: {
+        title: 'FAP Exam Schedule Reminder',
+        shortTitle: 'FAP Reminder',
+        desc: 'Sign in with FAP (FeID/FPT Email), auto-sync exam schedule & set custom alerts',
+        badge: 'FPT Edu',
+      },
       pdf: {
         title: 'Image to PDF Converter',
         shortTitle: 'Image PDF',
         desc: 'Merge multiple images into a high-quality PDF document',
         badge: 'Ready',
       },
-      autoclick: {
-        title: 'Auto Click — Screen Auto Tapper',
-        shortTitle: 'Auto Click',
-        desc: 'Automatically tap on screen with custom cycles and positions',
-        badge: 'VIP Pro',
-      },
-      qr_transfer: {
-        title: 'QR Code Bank Transfer Assistant',
-        shortTitle: 'QR Transfer',
-        desc: 'Scan QR → input amount & note → transfer seamlessly to bank',
-        badge: 'Convenient',
-      },
       screentime: {
         title: 'Screen Time & Digital Wellbeing Tracker',
         shortTitle: 'Screen Time',
         desc: 'Monitor screen usage duration and receive over-usage alerts',
         badge: 'Protection',
-      },
-      find_device: {
-        title: 'Find My Lost Device',
-        shortTitle: 'Find Device',
-        desc: 'Locate device via GPS and sound alarm to find misplaced phone',
-        badge: 'GPS',
       },
       clean_photos: {
         title: 'Duplicate Photo Cleaner',

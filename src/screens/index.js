@@ -7,7 +7,7 @@ export * from './auth';
 // 2. Package Main (Tabs chính)
 export * from './main';
 
-// 3. Package Tools (8 tiện ích thông minh)
+// 3. Package Tools (Gói tiện ích thông minh)
 export * from './tools';
 
 // 4. Package Settings & Profile

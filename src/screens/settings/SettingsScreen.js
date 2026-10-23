@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Image, StyleSheet, Pressable, Alert } from 'react-native';
+import { View, Text, FlatList, Image, StyleSheet, Pressable, Alert, Platform } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Row, ScreenHeader, RoleBadge } from '../../components/ui';
 import { useTheme } from '../../theme';
@@ -13,11 +13,22 @@ export default function SettingsScreen({ navigation }) {
   const { language, setLanguage, toggleLanguage, t } = useLanguage();
   const { user, signOut } = useAuth();
 
-  const confirmLogout = () =>
+  const confirmLogout = () => {
+    if (Platform.OS === 'web') {
+      const ok = typeof window !== 'undefined'
+        ? window.confirm(`${t('settings.logoutConfirmTitle')}\n${t('settings.logoutConfirmMsg')}`)
+        : true;
+      if (ok) {
+        signOut();
+      }
+      return;
+    }
+
     Alert.alert(t('settings.logoutConfirmTitle'), t('settings.logoutConfirmMsg'), [
       { text: t('settings.cancel'), style: 'cancel' },
       { text: t('settings.logout'), style: 'destructive', onPress: signOut },
     ]);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -25,8 +36,12 @@ export default function SettingsScreen({ navigation }) {
         title={t('settings.title')}
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
-        {/* Logo & App Info */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Logo & App Info */}
         <View style={styles.appBadgeContainer}>
           <View
             style={[
@@ -297,7 +312,12 @@ export default function SettingsScreen({ navigation }) {
           {t('settings.footerNote')}
         </Text>
         <View style={{ height: 40 }} />
-      </ScrollView>
+          </>
+        }
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }

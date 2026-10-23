@@ -15,7 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../../utils/storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '../../components/ui';
 import { radius, useTheme } from '../../theme';

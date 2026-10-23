@@ -17,6 +17,7 @@ export async function getStoredItem(key, defaultValue = null) {
         const val = window.localStorage.getItem(key);
         return val !== null ? val : defaultValue;
       }
+      return defaultValue;
     }
     const val = await SecureStore.getItemAsync(key);
     return val !== null ? val : defaultValue;
@@ -42,7 +43,9 @@ export async function setStoredItem(key, value) {
     if (Platform.OS === 'web') {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(key, String(value));
+        return true;
       }
+      return false;
     }
     await SecureStore.setItemAsync(key, String(value));
     return true;
@@ -67,7 +70,9 @@ export async function removeStoredItem(key) {
     if (Platform.OS === 'web') {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.removeItem(key);
+        return true;
       }
+      return false;
     }
     await SecureStore.deleteItemAsync(key);
     return true;
@@ -81,3 +86,17 @@ export async function removeStoredItem(key) {
     return false;
   }
 }
+
+// Drop-in alias tương thích hoàn toàn với SecureStore API
+export const getItemAsync = (key) => getStoredItem(key);
+export const setItemAsync = (key, value) => setStoredItem(key, value);
+export const deleteItemAsync = (key) => removeStoredItem(key);
+
+export default {
+  getItemAsync,
+  setItemAsync,
+  deleteItemAsync,
+  getStoredItem,
+  setStoredItem,
+  removeStoredItem,
+};

@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Image, Pressable, StyleSheet, Alert } from 'react-native';
+import { View, Text, FlatList, Image, Pressable, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../../context/AuthContext';
@@ -43,12 +43,12 @@ export default function StatsScreen({ navigation }) {
         }
       />
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Profile Card with favicon1.png */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Profile Card with favicon1.png */}
         <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <View style={[styles.avatarCircle, { backgroundColor: 'rgba(255, 208, 0, 0.12)' }]}>
             <Image source={FAVICON_ICON} style={styles.avatarImg} resizeMode="contain" />
@@ -153,7 +153,12 @@ export default function StatsScreen({ navigation }) {
         </View>
 
         <View style={{ height: 100 }} />
-      </ScrollView>
+          </>
+        }
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }

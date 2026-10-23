@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert, FlatList } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
@@ -32,8 +32,12 @@ export default function FbMultiScreen({ navigation }) {
         title="Quản lý Facebook"
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
-      {/* Banner thông tin */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Banner thông tin */}
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.topIconBox}>
           <Ionicons name="logo-facebook" size={32} color="#1877F2" />
@@ -92,7 +96,12 @@ export default function FbMultiScreen({ navigation }) {
           )}
         </View>
       ))}
-    </ScrollView>
+          </>
+        }
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }

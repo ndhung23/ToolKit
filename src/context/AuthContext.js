@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../utils/storage';
 import { ROLES } from '../constants/roles';
 import { TOOLS } from '../tools';
 import {

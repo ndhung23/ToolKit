@@ -1,8 +1,19 @@
 import { Alert } from 'react-native';
 import { canAccessTool } from './constants/roles';
 
-// Danh sách 8 tính năng cốt lõi của ToolKit kèm phân quyền (tier: 'free' | 'vip')
+// Danh sách các tính năng cốt lõi của ToolKit kèm phân quyền (tier: 'free' | 'vip')
 export const TOOLS = [
+  {
+    id: 'fap_exam',
+    title: 'Nhắc nhở lịch thi FAP',
+    shortTitle: 'Nhắc nhở',
+    desc: 'Đăng nhập tài khoản FAP (FeID/Email trường), tự động lấy lịch thi & hẹn giờ nhắc trước',
+    icon: 'notifications',
+    color: '#F37021',
+    route: 'FapExam',
+    badge: 'FPT Edu',
+    tier: 'free',
+  },
   {
     id: 'pdf',
     title: 'Chuyển ảnh thành PDF',
@@ -15,28 +26,6 @@ export const TOOLS = [
     tier: 'free',
   },
   {
-    id: 'autoclick',
-    title: 'Auto Click — tự động chạm màn hình',
-    shortTitle: 'Auto Click',
-    desc: 'Tự động chạm màn hình theo chu kỳ & vị trí cài đặt',
-    icon: 'finger-print',
-    color: '#F59E0B',
-    route: 'AutoClick',
-    badge: 'VIP Pro',
-    tier: 'vip',
-  },
-  {
-    id: 'qr_transfer',
-    title: 'Hỗ trợ chuyển khoản bằng QR',
-    shortTitle: 'Chuyển QR',
-    desc: 'Quét QR → nhập tiền, note → Chuyển qua ngân hàng để hoàn thành',
-    icon: 'qr-code',
-    color: '#10B981',
-    route: 'QrTransfer',
-    badge: 'Tiện lợi',
-    tier: 'free',
-  },
-  {
     id: 'screentime',
     title: 'Nhắc nhở và theo dõi thời gian sử dụng điện thoại',
     shortTitle: 'Thời gian dùng',
@@ -45,17 +34,6 @@ export const TOOLS = [
     color: '#8B5CF6',
     route: 'ScreenTime',
     badge: 'Bảo vệ',
-    tier: 'free',
-  },
-  {
-    id: 'find_device',
-    title: 'Tìm vị trí thiết bị của mình',
-    shortTitle: 'Tìm thiết bị',
-    desc: 'Định vị vị trí GPS và phát chuông tìm điện thoại thất lạc',
-    icon: 'location',
-    color: '#06B6D4',
-    route: 'FindDevice',
-    badge: 'GPS',
     tier: 'free',
   },
   {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert, FlatList } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
@@ -33,8 +33,12 @@ export default function CleanPhotosScreen({ navigation }) {
         title="Dọn ảnh trùng lặp"
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
-      {/* Banner tổng quan dung lượng trùng */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Banner tổng quan dung lượng trùng */}
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.iconCircle}>
           <Ionicons name="images" size={36} color={colors.primary} />
@@ -92,7 +96,12 @@ export default function CleanPhotosScreen({ navigation }) {
           </View>
         ))
       )}
-    </ScrollView>
+          </>
+        }
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }

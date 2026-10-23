@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet, Alert } from 'react-native';
+import { View, Text, FlatList, Pressable, Switch, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../../theme';
@@ -44,12 +44,12 @@ export default function LimitsScreen({ navigation }) {
         </Pressable>
       </View>
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Banner Tổng quan */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Banner Tổng quan */}
         <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <View style={styles.summaryTop}>
             <View style={[styles.shieldIconWrapper, { backgroundColor: 'rgba(255, 208, 0, 0.12)' }]}>
@@ -152,7 +152,12 @@ export default function LimitsScreen({ navigation }) {
         })}
 
         <View style={{ height: 100 }} />
-      </ScrollView>
+          </>
+        }
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      />
     </SafeAreaView>
   );
 }

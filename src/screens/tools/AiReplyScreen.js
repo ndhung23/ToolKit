@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Pressable, StyleSheet, TextInput, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, TextInput, Alert, FlatList } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
@@ -57,8 +57,12 @@ export default function AiReplyScreen({ navigation }) {
         title="AI Gợi ý trả lời"
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
-      {/* Khung nhập tin nhắn nhận được */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Khung nhập tin nhắn nhận được */}
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.cardHeaderRow}>
           <Ionicons name="chatbubbles" size={20} color={colors.primary} />
@@ -127,7 +131,12 @@ export default function AiReplyScreen({ navigation }) {
           <Text style={styles.replyContent}>{reply.text}</Text>
         </View>
       ))}
-    </ScrollView>
+          </>
+        }
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }

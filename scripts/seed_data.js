@@ -101,13 +101,11 @@ const SEED_USERS = [
   },
 ];
 
-// 2. Trạng thái 8 tiện ích
+// 2. Trạng thái các tiện ích
 const SEED_TOGGLES = {
+  fap_exam: true,
   pdf: true,
-  autoclick: true,
-  qr_transfer: true,
   screentime: true,
-  find_device: true,
   clean_photos: true,
   fb_multi: true,
   ai_reply: true,
@@ -115,10 +113,8 @@ const SEED_TOGGLES = {
 
 // 3. Nhật ký sử dụng mẫu
 const SEED_LOGS = [
-  { toolId: 'qr_transfer', userEmail: 'user@toolkit.com', role: 'free', createdAt: new Date(Date.now() - 3600000 * 5).toISOString() },
   { toolId: 'pdf', userEmail: 'user@toolkit.com', role: 'free', createdAt: new Date(Date.now() - 3600000 * 4).toISOString() },
   { toolId: 'ai_reply', userEmail: 'vip@toolkit.com', role: 'vip', createdAt: new Date(Date.now() - 3600000 * 3).toISOString() },
-  { toolId: 'autoclick', userEmail: 'vip@toolkit.com', role: 'vip', createdAt: new Date(Date.now() - 3600000 * 2).toISOString() },
   { toolId: 'fb_multi', userEmail: 'vip@toolkit.com', role: 'vip', createdAt: new Date(Date.now() - 3600000 * 1).toISOString() },
   { toolId: 'screentime', userEmail: 'admin@toolkit.com', role: 'admin', createdAt: new Date().toISOString() },
 ];

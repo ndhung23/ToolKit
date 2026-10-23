@@ -1,4 +1,4 @@
-import { View, Text, Pressable, ActivityIndicator, Alert, Image } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Alert, Image, Platform } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -15,10 +15,8 @@ import { useTheme } from '../theme';
 import { LoginScreen, RegisterScreen } from '../screens/auth';
 import { HomeScreen, ScreenTimeScreen, ToolsScreen, StatsScreen } from '../screens/main';
 import {
-  QrTransferScreen,
   ImageToPdfScreen,
-  AutoClickScreen,
-  FindDeviceScreen,
+  FapExamScreen,
   CleanPhotosScreen,
   FbMultiScreen,
   AiReplyScreen,
@@ -45,7 +43,7 @@ function AuthStack() {
   );
 }
 
-/* ---------- 2. TAB (5 tab nổi) ---------- */
+/* ---------- 2. TAB (4 tab nổi) ---------- */
 function Tabs() {
   const { t } = useLanguage();
   return (
@@ -57,14 +55,13 @@ function Tabs() {
     >
       <TabNav.Screen name="Home" component={HomeScreen} options={{ title: t('nav.home') }} />
       <TabNav.Screen name="ScreenTime" component={ScreenTimeScreen} options={{ title: t('tools.screentime.shortTitle') }} />
-      <TabNav.Screen name="QrTransfer" component={QrTransferScreen} options={{ title: t('tools.qr_transfer.shortTitle') }} />
       <TabNav.Screen name="Tools" component={ToolsScreen} options={{ title: t('nav.tools') }} />
       <TabNav.Screen name="Stats" component={StatsScreen} options={{ title: t('nav.stats') }} />
     </TabNav.Navigator>
   );
 }
 
-/* ---------- 3. APP STACK (Tab + 8 tính năng chi tiết) ---------- */
+/* ---------- 3. APP STACK (Tab + các tính năng chi tiết) ---------- */
 function AppStack() {
   const { colors } = useTheme();
   return (
@@ -76,29 +73,19 @@ function AppStack() {
     >
       <AppStackNav.Screen name="Tabs" component={Tabs} options={{ headerShown: false }} />
       <AppStackNav.Screen
+        name="FapExam"
+        component={FapExamScreen}
+        options={{ title: 'Nhắc nhở lịch thi FAP' }}
+      />
+      <AppStackNav.Screen
         name="ImageToPdf"
         component={ImageToPdfScreen}
         options={{ title: 'Chuyển ảnh thành PDF' }}
       />
       <AppStackNav.Screen
-        name="AutoClick"
-        component={AutoClickScreen}
-        options={{ title: 'Auto Click' }}
-      />
-      <AppStackNav.Screen
-        name="QrTransfer"
-        component={QrTransferScreen}
-        options={{ title: 'Chuyển khoản bằng QR' }}
-      />
-      <AppStackNav.Screen
         name="ScreenTime"
         component={ScreenTimeScreen}
         options={{ title: 'Thời gian sử dụng' }}
-      />
-      <AppStackNav.Screen
-        name="FindDevice"
-        component={FindDeviceScreen}
-        options={{ title: 'Tìm vị trí thiết bị' }}
       />
       <AppStackNav.Screen
         name="CleanPhotos"
@@ -145,11 +132,22 @@ function CustomDrawer(props) {
   const { user, signOut } = useAuth();
   const { t, isVietnamese } = useLanguage();
 
-  const confirmLogout = () =>
+  const confirmLogout = () => {
+    if (Platform.OS === 'web') {
+      const ok = typeof window !== 'undefined'
+        ? window.confirm(`${t('settings.logoutConfirmTitle')}\n${t('settings.logoutConfirmMsg')}`)
+        : true;
+      if (ok) {
+        signOut();
+      }
+      return;
+    }
+
     Alert.alert(t('settings.logoutConfirmTitle'), t('settings.logoutConfirmMsg'), [
       { text: t('settings.cancel'), style: 'cancel' },
       { text: t('settings.logout'), style: 'destructive', onPress: signOut },
     ]);
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>

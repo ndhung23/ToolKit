@@ -3,7 +3,7 @@ import {
   View,
   Text,
   Pressable,
-  ScrollView,
+  FlatList,
   StyleSheet,
   Alert,
   Modal,
@@ -198,12 +198,12 @@ export default function FocusScreen({ navigation }) {
         </View>
       ) : (
         /* NẾU CHƯA CHẠY: HIỂN THỊ GIAO DIỆN CHUẨN ẢNH 2 */
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.contentContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* 2. Mục: Danh mục */}
+        <FlatList
+          data={[]}
+          renderItem={null}
+          ListHeaderComponent={
+            <>
+              {/* 2. Mục: Danh mục */}
           <Text style={[styles.sectionLabel, { color: colors.subLight || '#CCCCCC' }]}>
             Danh mục
           </Text>
@@ -304,7 +304,12 @@ export default function FocusScreen({ navigation }) {
 
           {/* Khoảng trống để không bị Floating Tab Bar che */}
           <View style={{ height: 100 }} />
-        </ScrollView>
+            </>
+          }
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        />
       )}
 
       {/* Modal chỉnh thời gian tùy chỉnh */}

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { useState, useEffect, useMemo } from 'react';
+import { View, Text, FlatList, Pressable, Switch, StyleSheet, Alert, ActivityIndicator, TextInput } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader, RoleBadge } from '../../components/ui';
 import { useAuth } from '../../context/AuthContext';
@@ -16,11 +16,15 @@ import {
 } from '../../services/firebase';
 
 const INITIAL_USERS = [];
+const ITEMS_PER_PAGE = 10;
 
 export default function AdminScreen({ navigation }) {
   const { colors } = useTheme();
   const { user, toolTiers, updateToolTier, refreshToolTiers } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('tools'); // 'tools' | 'users'
+  const [userSearch, setUserSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const fbConnected = isFirebaseConfigured();
 
   // Trạng thái bật/tắt tính năng (Feature Toggles)
@@ -30,6 +34,38 @@ export default function AdminScreen({ navigation }) {
 
   // Danh sách người dùng quản trị
   const [usersList, setUsersList] = useState(INITIAL_USERS);
+
+  // Lọc danh sách người dùng theo từ khóa tìm kiếm
+  const filteredUsers = useMemo(() => {
+    if (!userSearch.trim()) return usersList;
+    const q = userSearch.toLowerCase();
+    return usersList.filter(
+      (u) =>
+        (u.name && u.name.toLowerCase().includes(q)) ||
+        (u.email && u.email.toLowerCase().includes(q)) ||
+        (u.username && u.username.toLowerCase().includes(q))
+    );
+  }, [usersList, userSearch]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / ITEMS_PER_PAGE));
+
+  // Tự động quay về trang 1 khi người dùng đổi từ khóa tìm kiếm
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [userSearch]);
+
+  // Điều chỉnh nếu trang hiện tại vượt quá tổng số trang
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  // Cắt danh sách người dùng cho trang hiện tại (10 items / trang)
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredUsers.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredUsers, currentPage]);
 
   // Tải dữ liệu từ Cloud Firestore khi mở màn hình
   useEffect(() => {
@@ -149,12 +185,12 @@ export default function AdminScreen({ navigation }) {
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Banner Admin Info & Firebase Status */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Banner Admin Info & Firebase Status */}
         <View
           style={[
             styles.adminCard,
@@ -222,208 +258,357 @@ export default function AdminScreen({ navigation }) {
           </Pressable>
         </View>
 
-        {/* 1. Thống kê hệ thống */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Tổng quan tài khoản</Text>
-        <View style={styles.statsGrid}>
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.statNum, { color: colors.text }]}>{usersList.length}</Text>
-            <Text style={[styles.statLabel, { color: colors.sub }]}>Tổng người dùng</Text>
-          </View>
-
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.statNum, { color: '#FFD000' }]}>
-              {usersList.filter((u) => u.role === ROLES.VIP).length}
+        {/* Thanh chuyển phân chia Tab: Các tiện ích vs User */}
+        <View
+          style={[
+            styles.tabSegmentContainer,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.cardBorder,
+            },
+          ]}
+        >
+          <Pressable
+            onPress={() => setActiveTab('tools')}
+            style={[
+              styles.tabSegmentButton,
+              activeTab === 'tools' && {
+                backgroundColor: colors.primary,
+              },
+            ]}
+          >
+            <Ionicons
+              name="construct-outline"
+              size={17}
+              color={activeTab === 'tools' ? '#121214' : colors.sub}
+            />
+            <Text
+              style={[
+                styles.tabSegmentText,
+                { color: activeTab === 'tools' ? '#121214' : colors.sub },
+              ]}
+            >
+              Các tiện ích ({TOOLS.length})
             </Text>
-            <Text style={[styles.statLabel, { color: colors.sub }]}>Thành viên VIP</Text>
-          </View>
+          </Pressable>
 
-          <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.statNum, { color: '#10B981' }]}>
-              {usersList.filter((u) => u.role === ROLES.FREE).length}
+          <Pressable
+            onPress={() => setActiveTab('users')}
+            style={[
+              styles.tabSegmentButton,
+              activeTab === 'users' && {
+                backgroundColor: colors.primary,
+              },
+            ]}
+          >
+            <Ionicons
+              name="people-outline"
+              size={17}
+              color={activeTab === 'users' ? '#121214' : colors.sub}
+            />
+            <Text
+              style={[
+                styles.tabSegmentText,
+                { color: activeTab === 'users' ? '#121214' : colors.sub },
+              ]}
+            >
+              Quản lý User ({usersList.length})
             </Text>
-            <Text style={[styles.statLabel, { color: colors.sub }]}>Người dùng Free</Text>
-          </View>
+          </Pressable>
         </View>
 
-        {/* 2. Điều khiển trạng thái 8 tiện ích (Feature Flags) */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Trạng thái hoạt động 8 tiện ích
-        </Text>
-        <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          {TOOLS.map((t, idx) => {
-            const isEnabled = featureStatus[t.id];
-            return (
-              <View
-                key={t.id}
-                style={[
-                  styles.toolToggleRow,
-                  {
-                    borderBottomWidth: idx < TOOLS.length - 1 ? 1 : 0,
-                    borderBottomColor: colors.border,
-                  },
-                ]}
-              >
-                <View style={[styles.toolIconCircle, { backgroundColor: t.color + '22' }]}>
-                  <Ionicons name={t.icon} size={20} color={t.color} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={[styles.toolToggleName, { color: colors.text }]}>{t.title}</Text>
-                  <Text style={[styles.toolToggleSub, { color: isEnabled ? '#10B981' : colors.danger }]}>
-                    {isEnabled ? '● Đang hoạt động' : '○ Tạm khóa bảo trì'}
-                  </Text>
-                </View>
-                <Switch
-                  value={isEnabled}
-                  onValueChange={() => toggleFeature(t.id)}
-                  trackColor={{ false: '#3E3E42', true: colors.primary }}
-                  thumbColor={isEnabled ? '#121214' : '#9E9EA7'}
-                />
+        {activeTab === 'tools' ? (
+          <>
+            {/* 1. Điều khiển trạng thái các tiện ích (Feature Flags) */}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Trạng thái hoạt động các tiện ích
+            </Text>
+            <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              {TOOLS.map((t, idx) => {
+                const isEnabled = featureStatus[t.id];
+                return (
+                  <View
+                    key={t.id}
+                    style={[
+                      styles.toolToggleRow,
+                      {
+                        borderBottomWidth: idx < TOOLS.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.toolIconCircle, { backgroundColor: t.color + '22' }]}>
+                      <Ionicons name={t.icon} size={20} color={t.color} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[styles.toolToggleName, { color: colors.text }]}>{t.title}</Text>
+                      <Text style={[styles.toolToggleSub, { color: isEnabled ? '#10B981' : colors.danger }]}>
+                        {isEnabled ? '● Đang hoạt động' : '○ Tạm khóa bảo trì'}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={isEnabled}
+                      onValueChange={() => toggleFeature(t.id)}
+                      trackColor={{ false: '#3E3E42', true: colors.primary }}
+                      thumbColor={isEnabled ? '#121214' : '#9E9EA7'}
+                    />
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* 2. Cấu hình yêu cầu VIP cho tiện ích (VIP / Free Tier) */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
+                Cấu hình tiện ích VIP / Miễn phí
+              </Text>
+              <View style={[styles.badgePillSmall, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
+                <Text style={{ color: '#FFD000', fontSize: 11, fontWeight: '800' }}>RBAC TIERS</Text>
               </View>
-            );
-          })}
-        </View>
+            </View>
+            <Text style={[styles.sectionSubtitle, { color: colors.sub }]}>
+              Chỉ định tiện ích nào yêu cầu quyền VIP mới được dùng, tiện ích nào mở miễn phí cho tất cả.
+            </Text>
 
-        {/* 3. Cấu hình yêu cầu VIP cho tiện ích (VIP / Free Tier) */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
-            Cấu hình tiện ích VIP / Miễn phí
-          </Text>
-          <View style={[styles.badgePillSmall, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
-            <Text style={{ color: '#FFD000', fontSize: 11, fontWeight: '800' }}>RBAC TIERS</Text>
-          </View>
-        </View>
-        <Text style={[styles.sectionSubtitle, { color: colors.sub }]}>
-          Chỉ định tiện ích nào yêu cầu quyền VIP mới được dùng, tiện ích nào mở miễn phí cho tất cả.
-        </Text>
+            <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              {TOOLS.map((t, idx) => {
+                const currentTier = toolTiers?.[t.id] || t.tier || 'free';
+                const isVipTier = currentTier === 'vip';
+                return (
+                  <View
+                    key={t.id}
+                    style={[
+                      styles.toolTierRow,
+                      {
+                        borderBottomWidth: idx < TOOLS.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.toolIconCircle, { backgroundColor: t.color + '22' }]}>
+                      <Ionicons name={t.icon} size={20} color={t.color} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[styles.toolToggleName, { color: colors.text }]}>{t.title}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                        <View
+                          style={[
+                            styles.tierBadge,
+                            {
+                              backgroundColor: isVipTier ? 'rgba(255, 208, 0, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                              borderColor: isVipTier ? '#FFD000' : '#10B981',
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={isVipTier ? 'sparkles' : 'checkmark-circle'}
+                            size={11}
+                            color={isVipTier ? '#FFD000' : '#10B981'}
+                          />
+                          <Text
+                            style={[
+                              styles.tierBadgeText,
+                              { color: isVipTier ? '#FFD000' : '#10B981' },
+                            ]}
+                          >
+                            {isVipTier ? 'Yêu cầu VIP' : 'Miễn phí'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
 
-        <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          {TOOLS.map((t, idx) => {
-            const currentTier = toolTiers?.[t.id] || t.tier || 'free';
-            const isVipTier = currentTier === 'vip';
-            return (
-              <View
-                key={t.id}
-                style={[
-                  styles.toolTierRow,
-                  {
-                    borderBottomWidth: idx < TOOLS.length - 1 ? 1 : 0,
-                    borderBottomColor: colors.border,
-                  },
-                ]}
-              >
-                <View style={[styles.toolIconCircle, { backgroundColor: t.color + '22' }]}>
-                  <Ionicons name={t.icon} size={20} color={t.color} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={[styles.toolToggleName, { color: colors.text }]}>{t.title}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                    <View
+                    {/* Nút chuyển đổi trạng thái VIP / Free */}
+                    <Pressable
+                      onPress={() => handleToggleTier(t.id, currentTier)}
                       style={[
-                        styles.tierBadge,
+                        styles.tierToggleBtn,
                         {
-                          backgroundColor: isVipTier ? 'rgba(255, 208, 0, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                          borderColor: isVipTier ? '#FFD000' : '#10B981',
+                          backgroundColor: isVipTier ? 'rgba(255, 208, 0, 0.18)' : colors.bg,
+                          borderColor: isVipTier ? '#FFD000' : colors.cardBorder,
                         },
                       ]}
+                      hitSlop={8}
                     >
                       <Ionicons
-                        name={isVipTier ? 'sparkles' : 'checkmark-circle'}
-                        size={11}
-                        color={isVipTier ? '#FFD000' : '#10B981'}
+                        name={isVipTier ? 'lock-closed' : 'lock-open-outline'}
+                        size={13}
+                        color={isVipTier ? '#FFD000' : colors.sub}
                       />
                       <Text
                         style={[
-                          styles.tierBadgeText,
-                          { color: isVipTier ? '#FFD000' : '#10B981' },
+                          styles.tierToggleBtnText,
+                          { color: isVipTier ? '#FFD000' : colors.text },
                         ]}
                       >
-                        {isVipTier ? 'Yêu cầu VIP' : 'Miễn phí'}
+                        {isVipTier ? 'Đang là VIP' : 'Đang Free'}
                       </Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : (
+          <>
+            {/* 1. Thống kê hệ thống */}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Tổng quan tài khoản</Text>
+            <View style={styles.statsGrid}>
+              <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <Text style={[styles.statNum, { color: colors.text }]}>{usersList.length}</Text>
+                <Text style={[styles.statLabel, { color: colors.sub }]}>Tổng người dùng</Text>
+              </View>
+
+              <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <Text style={[styles.statNum, { color: '#FFD000' }]}>
+                  {usersList.filter((u) => u.role === ROLES.VIP).length}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.sub }]}>Thành viên VIP</Text>
+              </View>
+
+              <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <Text style={[styles.statNum, { color: '#10B981' }]}>
+                  {usersList.filter((u) => u.role === ROLES.FREE).length}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.sub }]}>Người dùng Free</Text>
+              </View>
+            </View>
+
+            {/* 2. Quản lý phân quyền người dùng */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
+                Danh sách & Phân quyền ({filteredUsers.length})
+              </Text>
+              {totalPages > 1 && (
+                <View style={[styles.badgePillSmall, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
+                  <Text style={{ color: '#FFD000', fontSize: 11, fontWeight: '800' }}>
+                    Trang {currentPage}/{totalPages}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Thanh tìm kiếm người dùng */}
+            <View style={[styles.searchUserBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              <Ionicons name="search" size={16} color={colors.sub} />
+              <TextInput
+                placeholder="Tìm kiếm theo tên hoặc email..."
+                placeholderTextColor={colors.sub}
+                value={userSearch}
+                onChangeText={setUserSearch}
+                style={[styles.searchUserInput, { color: colors.text }]}
+              />
+              {userSearch.length > 0 && (
+                <Pressable onPress={() => setUserSearch('')} hitSlop={6}>
+                  <Ionicons name="close-circle" size={16} color={colors.sub} />
+                </Pressable>
+              )}
+            </View>
+
+            <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              {paginatedUsers.length === 0 ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <Ionicons name="people-outline" size={32} color={colors.sub} />
+                  <Text style={{ color: colors.sub, marginTop: 8, fontSize: 13 }}>
+                    {userSearch.length > 0
+                      ? 'Không tìm thấy người dùng phù hợp với từ khóa.'
+                      : 'Chưa có tài khoản nào trong danh sách.'}
+                  </Text>
+                </View>
+              ) : (
+                paginatedUsers.map((u, idx) => (
+                  <View
+                    key={u.id || u.uid || idx}
+                    style={[
+                      styles.userRow,
+                      {
+                        borderBottomWidth: idx < paginatedUsers.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={styles.userAvatar}>
+                      <Ionicons name="person-circle" size={38} color={colors.sub} />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={[styles.userName, { color: colors.text }]}>{u.name || 'Người dùng'}</Text>
+                      <Text style={[styles.userEmail, { color: colors.sub }]}>{u.email}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                      <RoleBadge role={u.role} />
+                      {u.role !== ROLES.ADMIN && (
+                        <Pressable
+                          onPress={() => toggleUserRole(u.id || u.uid)}
+                          style={styles.roleActionBtn}
+                          hitSlop={6}
+                        >
+                          <Text style={styles.roleActionBtnText}>
+                            {u.role === ROLES.FREE ? 'Cấp VIP' : 'Hạ Free'}
+                          </Text>
+                        </Pressable>
+                      )}
                     </View>
                   </View>
-                </View>
+                ))
+              )}
+            </View>
 
-                {/* Nút chuyển đổi trạng thái VIP / Free */}
+            {/* Điều hướng phân trang (10 items / trang) */}
+            {totalPages > 1 && (
+              <View style={styles.paginationRow}>
                 <Pressable
-                  onPress={() => handleToggleTier(t.id, currentTier)}
+                  onPress={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
                   style={[
-                    styles.tierToggleBtn,
+                    styles.pageNavBtn,
                     {
-                      backgroundColor: isVipTier ? 'rgba(255, 208, 0, 0.18)' : colors.bg,
-                      borderColor: isVipTier ? '#FFD000' : colors.cardBorder,
+                      backgroundColor: colors.card,
+                      borderColor: colors.cardBorder,
+                      opacity: currentPage === 1 ? 0.35 : 1,
                     },
                   ]}
                   hitSlop={8}
                 >
-                  <Ionicons
-                    name={isVipTier ? 'lock-closed' : 'lock-open-outline'}
-                    size={13}
-                    color={isVipTier ? '#FFD000' : colors.sub}
-                  />
-                  <Text
-                    style={[
-                      styles.tierToggleBtnText,
-                      { color: isVipTier ? '#FFD000' : colors.text },
-                    ]}
-                  >
-                    {isVipTier ? 'Đang là VIP' : 'Đang Free'}
+                  <Ionicons name="chevron-back" size={16} color={colors.text} />
+                  <Text style={[styles.pageNavText, { color: colors.text }]}>Trang trước</Text>
+                </Pressable>
+
+                <View style={styles.pageInfoBox}>
+                  <Text style={[styles.pageInfoText, { color: colors.text }]}>
+                    Trang <Text style={{ color: colors.primary, fontWeight: '800' }}>{currentPage}</Text> / {totalPages}
                   </Text>
+                  <Text style={[styles.pageSubText, { color: colors.sub }]}>
+                    ({(currentPage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, filteredUsers.length)} trong {filteredUsers.length} user)
+                  </Text>
+                </View>
+
+                <Pressable
+                  onPress={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  style={[
+                    styles.pageNavBtn,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.cardBorder,
+                      opacity: currentPage === totalPages ? 0.35 : 1,
+                    },
+                  ]}
+                  hitSlop={8}
+                >
+                  <Text style={[styles.pageNavText, { color: colors.text }]}>Trang sau</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.text} />
                 </Pressable>
               </View>
-            );
-          })}
-        </View>
-
-        {/* 4. Quản lý phân quyền người dùng */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Phân quyền người dùng</Text>
-        <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          {usersList.length === 0 ? (
-            <View style={{ padding: 24, alignItems: 'center' }}>
-              <Ionicons name="people-outline" size={32} color={colors.sub} />
-              <Text style={{ color: colors.sub, marginTop: 8, fontSize: 13 }}>
-                Chưa có tài khoản nào trong danh sách.
-              </Text>
-            </View>
-          ) : (
-            usersList.map((u, idx) => (
-              <View
-                key={u.id || u.uid || idx}
-                style={[
-                  styles.userRow,
-                  {
-                    borderBottomWidth: idx < usersList.length - 1 ? 1 : 0,
-                    borderBottomColor: colors.border,
-                  },
-                ]}
-              >
-                <View style={styles.userAvatar}>
-                  <Ionicons name="person-circle" size={38} color={colors.sub} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={[styles.userName, { color: colors.text }]}>{u.name || 'Người dùng'}</Text>
-                  <Text style={[styles.userEmail, { color: colors.sub }]}>{u.email}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                  <RoleBadge role={u.role} />
-                  {u.role !== ROLES.ADMIN && (
-                    <Pressable
-                      onPress={() => toggleUserRole(u.id || u.uid)}
-                      style={styles.roleActionBtn}
-                      hitSlop={6}
-                    >
-                      <Text style={styles.roleActionBtnText}>
-                        {u.role === ROLES.FREE ? 'Cấp VIP' : 'Hạ Free'}
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
-              </View>
-            ))
-          )}
-        </View>
+            )}
+          </>
+        )}
 
         <View style={{ height: 60 }} />
-      </ScrollView>
+          </>
+        }
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }
@@ -672,6 +857,73 @@ const styles = StyleSheet.create({
     color: '#121214',
     fontSize: 14,
     fontWeight: '700',
+  },
+  tabSegmentContainer: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: 20,
+    gap: 4,
+  },
+  tabSegmentButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 8,
+  },
+  tabSegmentText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  searchUserBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    height: 44,
+    marginBottom: 14,
+    gap: 8,
+  },
+  searchUserInput: {
+    flex: 1,
+    fontSize: 13.5,
+    paddingVertical: 0,
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    paddingHorizontal: 2,
+  },
+  pageNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 4,
+  },
+  pageNavText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  pageInfoBox: {
+    alignItems: 'center',
+  },
+  pageInfoText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  pageSubText: {
+    fontSize: 11,
+    marginTop: 2,
   },
 });
 

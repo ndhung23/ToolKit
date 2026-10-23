@@ -86,7 +86,7 @@ export default function ToolsScreen({ navigation }) {
           onChangeText={setQ}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="Tìm trong 8 tiện ích..."
+          placeholder={`Tìm trong ${TOOLS.length} tiện ích...`}
           placeholderTextColor={colors.sub}
           style={[styles.searchInput, { color: colors.text }]}
         />

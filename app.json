@@ -9,14 +9,21 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ndhung23.toolkit"
+      "bundleIdentifier": "com.ndhung23.toolkit",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Cho phép ToolKit sử dụng máy ảnh để phục vụ các tiện ích trong ứng dụng.",
+        "NSMicrophoneUsageDescription": "Cho phép ToolKit sử dụng microphone khi mở camera."
+      }
     },
     "android": {
       "package": "com.ndhung23.toolkit",
       "adaptiveIcon": {
         "backgroundColor": "#141416",
         "foregroundImage": "./assets/favicon1.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon1.png"
@@ -25,7 +32,20 @@
       "expo-sharing",
       "expo-secure-store",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép ToolKit sử dụng máy ảnh để phục vụ các tiện ích trong ứng dụng."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/favicon1.png",
+          "color": "#FFD000"
+        }
+      ]
     ],
     "extra": {
       "eas": {

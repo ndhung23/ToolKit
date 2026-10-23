@@ -6,7 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
   KeyboardAvoidingView,
-  ScrollView,
+  FlatList,
   Platform,
   Image,
   StyleSheet,
@@ -139,12 +139,12 @@ export default function LoginScreen({ navigation }) {
       style={{ flex: 1, backgroundColor: colors.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.scrollContent, { paddingTop: safeTop + 16 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Nút quay lại nếu đến từ màn hình khác */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Nút quay lại nếu đến từ màn hình khác */}
         {navigation?.canGoBack() && (
           <View style={styles.topNavRow}>
             <Pressable
@@ -166,7 +166,7 @@ export default function LoginScreen({ navigation }) {
             ToolKit <Text style={{ fontSize: 24 }}>✨</Text>
           </Text>
           <Text style={[styles.appTagline, { color: colors.sub }]}>
-            Hệ thống 8 tiện ích thông minh cho thiết bị của bạn
+            Hệ thống tiện ích thông minh cho thiết bị của bạn
           </Text>
         </View>
 
@@ -271,7 +271,12 @@ export default function LoginScreen({ navigation }) {
             </Pressable>
           </View>
         </View>
-      </ScrollView>
+          </>
+        }
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.scrollContent, { paddingTop: safeTop + 16 }]}
+        showsVerticalScrollIndicator={false}
+      />
 
       {/* Modal Quên Mật Khẩu */}
       <Modal

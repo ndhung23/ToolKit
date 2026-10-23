@@ -6,7 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
   KeyboardAvoidingView,
-  ScrollView,
+  FlatList,
   Platform,
   Image,
   StyleSheet,
@@ -101,12 +101,12 @@ export default function RegisterScreen({ navigation }) {
       style={{ flex: 1, backgroundColor: colors.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.scrollContent, { paddingTop: safeTop + 16 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Thanh điều hướng quay lại */}
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {/* Thanh điều hướng quay lại */}
         {navigation?.canGoBack() && (
           <View style={styles.topNavRow}>
             <Pressable
@@ -129,7 +129,7 @@ export default function RegisterScreen({ navigation }) {
             Tạo tài khoản mới <Text style={{ fontSize: 24 }}>✨</Text>
           </Text>
           <Text style={[styles.appTagline, { color: colors.sub }]}>
-            Đăng ký để đồng bộ dữ liệu và trải nghiệm trọn bộ 8 tiện ích
+            Đăng ký để đồng bộ dữ liệu và trải nghiệm trọn bộ tiện ích
           </Text>
         </View>
 
@@ -251,7 +251,12 @@ export default function RegisterScreen({ navigation }) {
         </View>
 
         <View style={{ height: 40 }} />
-      </ScrollView>
+          </>
+        }
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.scrollContent, { paddingTop: safeTop + 16 }]}
+        showsVerticalScrollIndicator={false}
+      />
     </KeyboardAvoidingView>
   );
 }

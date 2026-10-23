@@ -1,3 +1,4 @@
+import React from 'react';
 import { View, Text, Pressable, Image, StyleSheet, Platform, StatusBar, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -99,6 +100,21 @@ export function ScreenHeader({ title, onBack, rightAction }) {
   const { colors } = useTheme();
   const safeTop = useSafeTop();
 
+  const renderRight = () => {
+    if (!rightAction) return null;
+    if (React.isValidElement(rightAction)) {
+      return rightAction;
+    }
+    if (typeof rightAction === 'object' && rightAction.icon && rightAction.onPress) {
+      return (
+        <Pressable onPress={rightAction.onPress} hitSlop={10} style={{ padding: 4 }}>
+          <Ionicons name={rightAction.icon} size={24} color={colors.primary} />
+        </Pressable>
+      );
+    }
+    return null;
+  };
+
   return (
     <View style={[styles.screenHeaderContainer, { paddingTop: safeTop + 8 }]}>
       <View style={styles.screenHeaderLeft}>
@@ -112,13 +128,15 @@ export function ScreenHeader({ title, onBack, rightAction }) {
         </Text>
       </View>
 
-      {rightAction && <View style={styles.screenHeaderRight}>{rightAction}</View>}
+      <View style={styles.screenHeaderRight}>
+        {renderRight()}
+      </View>
     </View>
   );
 }
 
-// 2. Vòng tròn chỉ số tiện ích sẵn sàng (8/8 tiện ích)
-export function FocusGauge({ score = '8/8', label = 'Tiện ích sẵn sàng', onPress }) {
+// 2. Vòng tròn chỉ số tiện ích sẵn sàng (5/5 tiện ích)
+export function FocusGauge({ score = '5/5', label = 'Tiện ích sẵn sàng', onPress }) {
   const { colors } = useTheme();
 
   return (
@@ -136,7 +154,7 @@ export function FocusGauge({ score = '8/8', label = 'Tiện ích sẵn sàng', o
 // 3. Card trợ lý ToolKit với Mascot favicon1.png bo tròn hoàn hảo
 export function MindInsightCard({
   title = 'ToolKit Assistant',
-  desc = '8 tiện ích thông minh đã sẵn sàng phục vụ bạn.',
+  desc = 'Các tiện ích thông minh đã sẵn sàng phục vụ bạn.',
   onPress,
 }) {
   const { colors } = useTheme();
