@@ -3,9 +3,9 @@ import { Platform, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider } from './src/features/auth';
+import { AuthProvider } from './src/features/auth/AuthContext';
 import { LanguageProvider } from './src/context/LanguageContext';
-import { ScreenTimeProvider } from './src/features/screentime';
+import { ScreenTimeProvider } from './src/features/screentime/ScreenTimeContext';
 import { ThemeProvider, useTheme } from './src/theme';
 import RootNavigator from './src/navigation';
 

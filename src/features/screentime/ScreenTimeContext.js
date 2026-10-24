@@ -12,13 +12,16 @@ const STORAGE_TODAY_MINUTES = 'toolkit_screentime_today_minutes';
 const STORAGE_DATE_KEY = 'toolkit_screentime_last_date';
 
 // Cấu hình hiển thị thông báo đẩy ngay cả khi app đang mở
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+}
 
 const ScreenTimeContext = createContext(null);
 

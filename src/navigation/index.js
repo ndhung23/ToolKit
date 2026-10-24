@@ -8,7 +8,9 @@ import {
   DrawerItemList,
 } from '@react-navigation/drawer';
 
-import { useAuth, LoginScreen, RegisterScreen } from '../features/auth';
+import { useAuth } from '../features/auth/AuthContext';
+import LoginScreen from '../features/auth/LoginScreen';
+import RegisterScreen from '../features/auth/RegisterScreen';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../theme';
 // Màn hình theo các features tính năng chuẩn (1 feature = 1 folder)

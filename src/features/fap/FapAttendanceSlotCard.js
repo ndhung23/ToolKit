@@ -4,9 +4,52 @@
 import React from 'react';
 import { View, Text, Pressable, Linking, StyleSheet } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ATTENDANCE_STATUS } from './fapAttendanceHelper';
+import { ATTENDANCE_STATUS, detectSlotFromTimeStr } from './fapAttendanceHelper';
 
 export default function FapAttendanceSlotCard({ item, colors }) {
+  // 1. Chuẩn hóa Slot học (FAP chỉ có slot 1..9, không có slot 101 hay 392)
+  const rawSlot = Number(item.slot);
+  const slotNum = rawSlot >= 1 && rawSlot <= 9 ? rawSlot : (detectSlotFromTimeStr(item.time) || 1);
+
+  // 2. Chuẩn hóa giảng viên & hình thức học (Offline vs Online)
+  const rawLecturer = (item.lecturer || '').trim();
+  const isOnline =
+    Boolean(item.meetLink) ||
+    String(item.time || '').toLowerCase().includes('online') ||
+    String(item.mode || '').toLowerCase() === 'online' ||
+    rawLecturer.toLowerCase() === 'online';
+
+  let classCode = item.classCode || '';
+  let cleanLecturer = rawLecturer;
+
+  if (!classCode && cleanLecturer) {
+    const cMatch = cleanLecturer.match(/\b([A-Z]{2,4}\d{4}[A-Z0-9-]*)\b/i);
+    if (cMatch) {
+      classCode = cMatch[1].toUpperCase();
+      cleanLecturer = cleanLecturer.replace(cMatch[0], '').replace(item.subjectCode || '', '').replace(/[-–\s]+/g, ' ').trim();
+    }
+  }
+
+  if (
+    cleanLecturer.toLowerCase() === 'offline' ||
+    cleanLecturer.toLowerCase() === 'online' ||
+    cleanLecturer === '-' ||
+    cleanLecturer.toLowerCase() === 'giảng viên' ||
+    cleanLecturer.length < 2 ||
+    cleanLecturer.toUpperCase() === item.subjectCode?.toUpperCase()
+  ) {
+    cleanLecturer = '';
+  }
+
+  // 3. Chuẩn hóa giờ học hiển thị (loại bỏ chữ '- Offline' hoặc '- Online' thừa trong time)
+  const cleanTime = String(item.time || '')
+    .replace(/\s*-\s*(Offline|Online).*/i, '')
+    .replace(/\[.*\]/g, '')
+    .trim() || '07h30 - 09h50';
+
+  const todayStr = `${String(new Date().getDate()).padStart(2, '0')}/${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const isTodaySlot = item.date && (item.date === todayStr || item.date.includes(todayStr));
+
   const isAbsent =
     item.status === ATTENDANCE_STATUS.ABSENT ||
     item.status?.toLowerCase() === 'absent' ||
@@ -52,11 +95,11 @@ export default function FapAttendanceSlotCard({ item, colors }) {
       <View style={styles.slotTopRow}>
         <View style={styles.slotBadgeWrap}>
           <View style={[styles.slotBadge, { backgroundColor: colors.primary }]}>
-            <Text style={styles.slotBadgeText}>SLOT {item.slot}</Text>
+            <Text style={styles.slotBadgeText}>SLOT {slotNum}</Text>
           </View>
           <Text style={[styles.slotTimeText, { color: colors.sub }]}>
             {item.dayName ? `${item.dayName} • ` : ''}
-            {item.time}
+            {cleanTime}
           </Text>
         </View>
 
@@ -66,9 +109,35 @@ export default function FapAttendanceSlotCard({ item, colors }) {
         </View>
       </View>
 
-      {/* Hàng 2: Tên môn & Mã môn */}
+      {/* Hàng 2: Tên môn & Mã môn + Badge Online/Offline */}
       <View style={styles.subjectRow}>
-        <Text style={[styles.subjectCode, { color: colors.text }]}>{item.subjectCode}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={[styles.subjectCode, { color: colors.text }]}>{item.subjectCode}</Text>
+          <View
+            style={[
+              styles.modeChip,
+              {
+                backgroundColor: isOnline ? 'rgba(59, 130, 246, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                borderColor: isOnline ? '#3B82F6' : '#10B981',
+              },
+            ]}
+          >
+            <Ionicons
+              name={isOnline ? 'videocam-outline' : 'business-outline'}
+              size={11}
+              color={isOnline ? '#3B82F6' : '#10B981'}
+            />
+            <Text
+              style={[
+                styles.modeChipText,
+                { color: isOnline ? '#3B82F6' : '#10B981' },
+              ]}
+            >
+              {isOnline ? 'Online' : 'Offline'}
+            </Text>
+          </View>
+        </View>
+
         {item.subjectName && item.subjectName !== item.subjectCode ? (
           <Text style={[styles.subjectName, { color: colors.sub }]} numberOfLines={1}>
             {item.subjectName}
@@ -81,16 +150,26 @@ export default function FapAttendanceSlotCard({ item, colors }) {
         <View style={styles.metaItem}>
           <Ionicons name="location-outline" size={13} color="#F59E0B" />
           <Text style={[styles.metaLabel, { color: colors.sub }]}>Phòng:</Text>
-          <Text style={[styles.metaValue, { color: '#F59E0B' }]}>{item.room || 'DE-422'}</Text>
-        </View>
-
-        <View style={styles.metaItem}>
-          <Ionicons name="person-outline" size={13} color="#3B82F6" />
-          <Text style={[styles.metaLabel, { color: colors.sub }]}>GV:</Text>
-          <Text style={[styles.metaValue, { color: colors.text }]}>
-            {item.lecturer && item.lecturer !== '-' ? item.lecturer : 'Giảng viên'}
+          <Text style={[styles.metaValue, { color: '#F59E0B' }]}>
+            {item.room && item.room !== '-' ? item.room : (isOnline ? 'Online' : 'Chưa xếp')}
           </Text>
         </View>
+
+        {classCode ? (
+          <View style={styles.metaItem}>
+            <Ionicons name="people-outline" size={13} color="#8B5CF6" />
+            <Text style={[styles.metaLabel, { color: colors.sub }]}>Lớp:</Text>
+            <Text style={[styles.metaValue, { color: '#8B5CF6' }]}>{classCode}</Text>
+          </View>
+        ) : (
+          <View style={styles.metaItem}>
+            <Ionicons name="person-outline" size={13} color="#3B82F6" />
+            <Text style={[styles.metaLabel, { color: colors.sub }]}>GV:</Text>
+            <Text style={[styles.metaValue, { color: colors.text }]}>
+              {cleanLecturer || 'Bộ môn'}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Nút vào Google Meet nếu là lớp Online có link Meet */}
@@ -113,9 +192,11 @@ export default function FapAttendanceSlotCard({ item, colors }) {
       {/* Cảnh báo vắng nếu bị Absent */}
       {isAbsent && (
         <View style={styles.absentAlertBanner}>
-          <Ionicons name="notifications" size={14} color="#EF4444" />
+          <Ionicons name="alert-circle" size={14} color="#EF4444" />
           <Text style={styles.absentAlertBannerText}>
-            Báo chuông máy lúc <Text style={{ fontWeight: '800' }}>{item.alertTime} (+10p)</Text> do bị đánh Vắng!
+            {isTodaySlot
+              ? `Báo chuông máy lúc ${item.alertTime || '10:00'} (+10p) do bị đánh Vắng!`
+              : 'Đã ghi nhận vắng mặt ca học này'}
           </Text>
         </View>
       )}
@@ -176,6 +257,19 @@ const styles = StyleSheet.create({
   },
   subjectName: {
     fontSize: 12,
+  },
+  modeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  modeChipText: {
+    fontSize: 10.5,
+    fontWeight: '800',
   },
   metaBar: {
     flexDirection: 'row',

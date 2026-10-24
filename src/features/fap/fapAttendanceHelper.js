@@ -1,9 +1,6 @@
 // src/utils/fapAttendanceHelper.js
 // Bộ công cụ quản lý điểm danh FAP & Cảnh báo vắng (Absent Alert) cuối ca học +10 phút
 
-import { Platform, Alert } from 'react-native';
-import * as Notifications from 'expo-notifications';
-
 // Định nghĩa 6 Slot học chuẩn cơ sở Hà Nội / Hòa Lạc kèm mốc giờ kết thúc & giờ cảnh báo vắng (+10p)
 export const FAP_TIMESLOTS = [
   {
@@ -120,22 +117,72 @@ export function getCurrentVietnamDayInfo(now = new Date()) {
 }
 
 /**
- * Tự động nhận diện Slot (1..6) từ chuỗi thời gian (ví dụ: '10:00 - 12:20' -> Slot 2)
+ * Tự động nhận diện Slot (1..6, 9) từ chuỗi thời gian (ví dụ: '10:00 - 12:20' -> Slot 2, '08h00 - 11h40' -> Slot 9)
  */
 export function detectSlotFromTimeStr(timeStr = '') {
   if (!timeStr) return 1;
-  const m = timeStr.match(/(\d{1,2})[h:](\d{2})/i);
+  const clean = String(timeStr).toLowerCase();
+  // Slot 9 cuối tuần: 08h00 - 11h40
+  if (clean.includes('11h40') || clean.includes('11:40') || (clean.includes('08h00') && clean.includes('11h'))) {
+    return 9;
+  }
+  const m = clean.match(/(\d{1,2})[h:](\d{2})/);
   if (!m) return 1;
   const hour = parseInt(m[1], 10);
   const min = parseInt(m[2], 10);
   const totalMin = hour * 60 + min;
 
-  if (totalMin <= 9 * 60 + 50) return 1; // Trước hoặc bằng 09:50 -> Slot 1
-  if (totalMin <= 12 * 60 + 30) return 2; // Trước hoặc bằng 12:30 -> Slot 2
-  if (totalMin <= 15 * 60 + 10) return 3; // Trước hoặc bằng 15:10 -> Slot 3
-  if (totalMin <= 17 * 60 + 40) return 4; // Trước hoặc bằng 17:40 -> Slot 4
-  if (totalMin <= 20 * 60 + 10) return 5; // Trước hoặc bằng 20:10 -> Slot 5
-  return 6; // Sau 20:10 -> Slot 6
+  if (totalMin < 9 * 60) return 1; // 07:30 - 09:50
+  if (totalMin < 12 * 60) return 2; // 10:00 - 12:20
+  if (totalMin < 14 * 60 + 30) return 3; // 12:50 - 15:10
+  if (totalMin < 17 * 60) return 4; // 15:20 - 17:40
+  if (totalMin < 19 * 60 + 30) return 5; // 17:50 - 20:10
+  return 6; // 20:00 - 22:20 hoặc 20:20 - 22:40
+}
+
+/**
+ * Chuẩn hóa và làm sạch danh sách ca học (loại bỏ slot ảo > 9 như 101, 392 và GV 'Offline'/'Online')
+ */
+export function sanitizeSlots(slotList = []) {
+  if (!Array.isArray(slotList)) return [];
+  return slotList.map((slot, idx) => {
+    let validSlot = Number(slot.slot);
+    if (!validSlot || validSlot < 1 || validSlot > 9) {
+      validSlot = detectSlotFromTimeStr(slot.time) || 1;
+    }
+
+    let cleanLecturer = (slot.lecturer || '').trim();
+    if (
+      cleanLecturer.toLowerCase() === 'offline' ||
+      cleanLecturer.toLowerCase() === 'online' ||
+      cleanLecturer === '-' ||
+      cleanLecturer.toLowerCase() === 'giảng viên'
+    ) {
+      cleanLecturer = '';
+    }
+
+    let cleanDate = (slot.date || '').trim();
+    if (cleanDate) {
+      const dm = cleanDate.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+      if (dm) {
+        const d = String(dm[1]).padStart(2, '0');
+        const m = String(dm[2]).padStart(2, '0');
+        cleanDate = `${d}/${m}${dm[3] ? `/${dm[3]}` : ''}`;
+      }
+    }
+
+    const cfg = FAP_TIMESLOTS.find((t) => t.slot === validSlot) || FAP_TIMESLOTS[0];
+
+    return {
+      ...slot,
+      id: slot.id || `slot_sanitized_${validSlot}_${idx}`,
+      slot: validSlot,
+      date: cleanDate || slot.date,
+      lecturer: cleanLecturer,
+      alertTime: slot.alertTime || cfg.alertTime,
+      time: slot.time || cfg.time,
+    };
+  });
 }
 
 /**
@@ -301,16 +348,30 @@ export function extractWeeklySlotsFromCourses(courses = [], dateOrOffset = 0) {
 export function filterSlotsForWeek(slots = [], weekOffset = 0) {
   if (!Array.isArray(slots) || slots.length === 0) return [];
   const weekInfo = getWeekDateRange(weekOffset);
+  const pad = (n) => String(n).padStart(2, '0');
   const weekShortDates = new Set(weekInfo.days.map((d) => d.shortDate));
   const weekFullDates = new Set(weekInfo.days.map((d) => d.dateStr));
+
+  // Chuẩn hóa ngày dạng d/m thành dd/mm để khớp chính xác 100%
+  const normalizeDateStr = (raw) => {
+    if (!raw) return '';
+    const m = String(raw).match(/(\d{1,2})\/(\d{1,2})/);
+    if (!m) return String(raw).trim();
+    return `${pad(m[1])}/${pad(m[2])}`;
+  };
+
+  const normalizedWeekShort = new Set(Array.from(weekShortDates).map(normalizeDateStr));
 
   // 1. Lọc các slot có date nằm trong dải ngày của tuần
   const matched = slots.filter((s) => {
     if (!s.date) return false;
+    const norm = normalizeDateStr(s.date);
     const cleanDate = String(s.date).trim();
-    if (weekShortDates.has(cleanDate) || weekFullDates.has(cleanDate)) return true;
-    for (const shortD of weekShortDates) {
-      if (cleanDate.includes(shortD)) return true;
+    if (normalizedWeekShort.has(norm) || weekShortDates.has(cleanDate) || weekFullDates.has(cleanDate)) {
+      return true;
+    }
+    for (const shortD of normalizedWeekShort) {
+      if (norm.includes(shortD)) return true;
     }
     return false;
   });
@@ -336,18 +397,116 @@ export function filterSlotsForWeek(slots = [], weekOffset = 0) {
 }
 
 /**
- * Tìm ca học tiếp theo sắp tới trong tuần
+ * Tìm ca học tiếp theo sắp tới thực tế (Loại bỏ triệt để các ca đã qua trong quá khứ):
+ * 1. Parse thời gian thực ngày + giờ của từng ca học.
+ * 2. Chỉ chọn các ca học có thời gian kết thúc > thời điểm hiện tại.
+ * 3. Sắp xếp theo thứ tự thời gian tăng dần, trả về ca học gần nhất trong tương lai.
  */
 export function getNextUpcomingSlot(weeklySlots = [], now = new Date()) {
   if (!Array.isArray(weeklySlots) || weeklySlots.length === 0) return null;
-  const { dayIndex } = getCurrentVietnamDayInfo(now);
+  const sanitized = sanitizeSlots(weeklySlots);
 
-  // Tìm các ca học trong tuần có dayIndex > hôm nay
-  const futureSlots = weeklySlots.filter((s) => (s.dayIndex || 2) > dayIndex);
-  if (futureSlots.length > 0) return futureSlots[0];
+  const getSlotEndTime = (slot) => {
+    if (!slot) return null;
+    let slotYear = now.getFullYear();
+    let slotMonth = now.getMonth();
+    let slotDay = now.getDate();
 
-  // Nếu đã qua cuối tuần, ca học tiếp theo là ca đầu tiên của tuần tới
-  return weeklySlots[0];
+    if (slot.date) {
+      const dm = String(slot.date).match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+      if (dm) {
+        slotDay = parseInt(dm[1], 10);
+        slotMonth = parseInt(dm[2], 10) - 1;
+        if (dm[3]) slotYear = parseInt(dm[3], 10);
+      }
+    } else if (slot.dayIndex) {
+      const { dayIndex: todayDayIndex } = getCurrentVietnamDayInfo(now);
+      const diff = slot.dayIndex - todayDayIndex;
+      const d = new Date(now);
+      d.setDate(now.getDate() + diff);
+      slotDay = d.getDate();
+      slotMonth = d.getMonth();
+      slotYear = d.getFullYear();
+    }
+
+    const cfg = FAP_TIMESLOTS.find((t) => t.slot === slot.slot);
+    const endH = cfg ? cfg.endHour : 12;
+    const endM = cfg ? cfg.endMinute : 20;
+
+    return new Date(slotYear, slotMonth, slotDay, endH, endM, 0);
+  };
+
+  const getSlotStartTime = (slot) => {
+    const end = getSlotEndTime(slot);
+    if (!end) return null;
+    const cfg = FAP_TIMESLOTS.find((t) => t.slot === slot.slot);
+    const startH = cfg && cfg.startTime ? parseInt(cfg.startTime.split(':')[0], 10) : end.getHours() - 2;
+    const startM = cfg && cfg.startTime ? parseInt(cfg.startTime.split(':')[1], 10) : 0;
+    const st = new Date(end);
+    st.setHours(startH, startM, 0, 0);
+    return st;
+  };
+
+  const nowMs = now.getTime();
+
+  // Chỉ lấy các ca học trong tương lai (chưa kết thúc)
+  const futureSlots = sanitized
+    .map((s) => ({
+      slot: s,
+      startTime: getSlotStartTime(s),
+      endTime: getSlotEndTime(s),
+    }))
+    .filter((item) => item.endTime && item.endTime.getTime() > nowMs)
+    .sort((a, b) => a.endTime.getTime() - b.endTime.getTime());
+
+  if (futureSlots.length === 0) {
+    return null; // Không có ca học nào trong tương lai -> Không hiển thị ca học quá khứ
+  }
+
+  const nextItem = futureSlots[0];
+  const s = nextItem.slot;
+  const isToday =
+    nextItem.endTime.getDate() === now.getDate() &&
+    nextItem.endTime.getMonth() === now.getMonth() &&
+    nextItem.endTime.getFullYear() === now.getFullYear();
+
+  const isHappening = nextItem.startTime && nowMs >= nextItem.startTime.getTime();
+
+  let statusLabel = '';
+  if (isHappening) {
+    statusLabel = 'Đang diễn ra';
+  } else if (isToday) {
+    statusLabel = 'Sắp diễn ra hôm nay';
+  } else {
+    const rawDay = (s.dayName || '').replace(/\s*\(\d{1,2}\/\d{1,2}\)/, '').trim();
+    const cleanDate = s.date ? ` (${s.date})` : '';
+    statusLabel = `Sắp tới: ${rawDay || 'Tuần tới'}${cleanDate}`;
+  }
+
+  return {
+    ...s,
+    isToday,
+    statusLabel,
+  };
+}
+
+/**
+ * Tạo danh sách referenceDate của toàn bộ các tuần trong học kỳ (17 tuần: từ 6 tuần trước đến 10 tuần sau)
+ * Dùng để cào Full thời khóa biểu cả kỳ trong 1 click mà không cần cào từng tuần
+ */
+export function getSemesterWeekReferenceDates(baseDate = new Date()) {
+  const dates = [];
+  for (let offset = -6; offset <= 10; offset++) {
+    const w = getWeekDateRange(offset, baseDate);
+    dates.push({
+      weekOffset: offset,
+      weekLabel: w.weekLabel,
+      startStr: w.startStr,
+      endStr: w.endStr,
+      refDate: w.refDate, // YYYY-MM-DD
+    });
+  }
+  return dates;
 }
 
 /**
@@ -357,13 +516,28 @@ export function filterSlotsForToday(weeklySlots = [], now = new Date()) {
   if (!Array.isArray(weeklySlots) || weeklySlots.length === 0) return [];
   const { dayIndex, dateStr } = getCurrentVietnamDayInfo(now);
 
+  const pad = (n) => String(n).padStart(2, '0');
+  const normalizeDateStr = (raw) => {
+    if (!raw) return '';
+    const m = String(raw).match(/(\d{1,2})\/(\d{1,2})/);
+    if (!m) return String(raw).trim();
+    return `${pad(m[1])}/${pad(m[2])}`;
+  };
+
+  // Kiểm tra xem trong danh sách có ca học nào được gắn ngày (DD/MM) không
+  const hasAnyDatedSlot = weeklySlots.some((s) => s.date && /\d{1,2}\/\d{1,2}/.test(s.date));
+
   return weeklySlots
     .filter((slot) => {
+      // 1. Khi danh sách có date (cào full cả kỳ), BẮT BUỘC phải khớp chính xác ngày hôm nay (dateStr)
+      if (hasAnyDatedSlot) {
+        if (!slot.date) return false;
+        const norm = normalizeDateStr(slot.date);
+        return norm === dateStr || norm.includes(dateStr);
+      }
+      // 2. Chỉ khi danh sách hoàn toàn không có ngày (chỉ có duy nhất 1 tuần không ngày):
       if (slot.dayIndex !== undefined && slot.dayIndex !== null) {
         return Number(slot.dayIndex) === Number(dayIndex);
-      }
-      if (slot.date) {
-        return slot.date === dateStr || slot.date.includes(dateStr);
       }
       return false;
     })
@@ -533,60 +707,3 @@ export function checkSlotAbsentAlert(slotItem, now = new Date()) {
   };
 }
 
-/**
- * Kích hoạt cảnh báo chuông và Push Notification khi sinh viên bị đánh Absent
- */
-export async function triggerAbsentNotification(slotItem) {
-  const cfg = FAP_TIMESLOTS.find((s) => s.slot === Number(slotItem.slot));
-  const timeDesc = cfg ? cfg.time : slotItem.time || 'Ca học';
-  const alertTimeStr = cfg ? cfg.alertTime : 'Cuối ca + 10 phút';
-
-  const title = `🚨 CẢNH BÁO ĐIỂM DANH: Bạn bị vắng mặt (Absent)!`;
-  const body = `Môn ${slotItem.subjectCode} (${timeDesc}) tại phòng ${slotItem.room || 'học'} bị đánh VẮNG MẶT lúc ${alertTimeStr}. Vui lòng liên hệ giảng viên nếu có nhầm lẫn!`;
-
-  Alert.alert(
-    title,
-    body,
-    [
-      { text: 'Kiểm tra FAP ngay', style: 'destructive' },
-      { text: 'Đã rõ', style: 'default' },
-    ]
-  );
-
-  if (Platform.OS === 'web') {
-    try {
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        if (window.Notification.permission === 'granted') {
-          new window.Notification(title, { body });
-        } else if (window.Notification.permission !== 'denied') {
-          const perm = await window.Notification.requestPermission();
-          if (perm === 'granted') new window.Notification(title, { body });
-        }
-      }
-    } catch {}
-    return;
-  }
-
-  try {
-    const { status } = await Notifications.getPermissionsAsync();
-    let finalStatus = status;
-    if (status !== 'granted') {
-      const req = await Notifications.requestPermissionsAsync();
-      finalStatus = req.status;
-    }
-    if (finalStatus === 'granted') {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          sound: true,
-          priority: Notifications.AndroidNotificationPriority.MAX,
-          vibrate: [0, 250, 250, 250],
-        },
-        trigger: null,
-      });
-    }
-  } catch (err) {
-    console.warn('[FAP Attendance] Không thể gửi Push Notification:', err?.message);
-  }
-}

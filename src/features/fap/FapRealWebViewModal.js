@@ -17,7 +17,7 @@ import {
   StyleSheet,
   Linking,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeTop } from '../../components/ui';
 import { FAP_SCRAPER_INJECTED_JS } from './fapScraperScript';
@@ -39,17 +39,19 @@ export default function FapRealWebViewModal({
   onSyncSuccess,
   onSyncTimetableSuccess,
   onSyncCourseAttendanceSuccess,
+  onSyncGradesSuccess,
   onOpenPasteModal,
-  initialTarget = 'exams', // 'exams' | 'timetable' | 'attendance'
+  initialTarget = 'exams', // 'exams' | 'timetable' | 'attendance' | 'grade'
   initialRefDate = null,
 }) {
   const safeTop = useSafeTop();
   const insets = useSafeAreaInsets();
 
   const getTargetUri = (target, refDate) => {
-    if (target === 'timetable') {
-      if (refDate) {
-        return `https://fap.fpt.edu.vn/WeeklyTimetable/WeekPartial?referenceDate=${refDate}`;
+    if (target === 'grade' || target === 'grades') return 'https://fap.fpt.edu.vn/Report/Grade';
+    if (target === 'timetable' || target === 'timetable_full') {
+      if (refDate && target !== 'timetable_full') {
+        return `https://fap.fpt.edu.vn/WeeklyTimetable?referenceDate=${refDate}`;
       }
       return 'https://fap.fpt.edu.vn/WeeklyTimetable';
     }
@@ -60,12 +62,14 @@ export default function FapRealWebViewModal({
   const initialUri = getTargetUri(initialTarget, initialRefDate);
   const [currentUrl, setCurrentUrl] = useState(initialUri);
   const [loading, setLoading] = useState(false);
+  const [scrapingProgress, setScrapingProgress] = useState(null);
   const webViewRef = useRef(null);
 
   useEffect(() => {
     if (visible) {
       const targetUri = getTargetUri(initialTarget, initialRefDate);
       setCurrentUrl(targetUri);
+      setScrapingProgress(null);
     }
   }, [visible, initialTarget, initialRefDate]);
 
@@ -84,16 +88,26 @@ export default function FapRealWebViewModal({
           );
           onClose();
         }
+      } else if (data.type === 'FAP_SCRAPING_PROGRESS') {
+        setScrapingProgress({
+          completed: data.completed,
+          total: data.total,
+          foundSlots: data.foundSlots,
+        });
       } else if (data.type === 'FAP_WEEKLY_TIMETABLE_SYNCED') {
         if (data.slots && data.slots.length > 0) {
           onSyncTimetableSuccess?.(data.user, data.slots);
-          const absentSlots = data.slots.filter((s) => s.status === 'Absent');
-          Alert.alert(
-            'Đồng bộ Thời khóa biểu FAP thành công! ⏰',
-            `Đã lấy được ${data.slots.length} ca học trong tuần từ fap.fpt.edu.vn/WeeklyTimetable.${absentSlots.length > 0 ? `\nPhát hiện ${absentSlots.length} ca bị vắng mặt (Absent) đã kích hoạt chuông cảnh báo!` : ''}`,
-            [{ text: 'Xem thời khóa biểu', style: 'default' }]
-          );
-          onClose();
+          if (data.isFullSemester) {
+            setScrapingProgress(null);
+            Alert.alert(
+              'Đồng bộ Full Cả Kỳ thành công! 🎉',
+              `Đã lấy trọn vẹn ${data.slots.length} ca học của tất cả ${data.totalWeeks || 17} tuần trong học kỳ từ fap.fpt.edu.vn!\nTừ bây giờ bạn có thể chuyển tuần thoải mái mà không cần tải lại mạng!`,
+              [{ text: 'Xem thời khóa biểu', style: 'default' }]
+            );
+            onClose();
+          } else {
+            console.log('[FapWebView] Đã bóc tách trước 1 tuần:', data.slots.length, 'ca học');
+          }
         }
       } else if (data.type === 'FAP_COURSE_ATTENDANCE_SYNCED') {
         if (data.course && data.course.sessions && data.course.sessions.length > 0) {
@@ -102,6 +116,16 @@ export default function FapRealWebViewModal({
             'Đồng bộ Môn học thành công! 📚',
             `Đã cào full môn ${data.course.courseCode} (${data.course.courseName || ''}) gồm ${data.course.sessions.length} buổi học cả kỳ!\n• Tỷ lệ vắng: ${data.course.absentPercent}\n• Đã vắng: ${data.course.absentSlots}/${data.course.totalSlots} buổi.\n\nTip: Bạn có thể chọn tiếp môn khác trong mục "Lớp học" trên FAP để cào thêm môn!`,
             [{ text: 'Xem danh sách môn', style: 'default' }]
+          );
+          onClose();
+        }
+      } else if (data.type === 'FAP_GRADE_REPORT_SYNCED') {
+        if (data.grades && data.grades.length > 0) {
+          onSyncGradesSuccess?.(data.user, data.grades);
+          Alert.alert(
+            'Đồng bộ Bảng điểm FAP thành công! 🎓',
+            `Đã lấy được bảng điểm của ${data.grades.length} môn học từ fap.fpt.edu.vn/Report/Grade!\nSinh viên: ${data.user?.name || ''} (${data.user?.studentId || ''})\n${data.grades.slice(0, 3).map((g) => `• ${g.subjectCode}: ${g.averageMark !== null ? `${g.averageMark} điểm` : 'Đang học'} (${g.status})`).join('\n')}${data.grades.length > 3 ? '\n...' : ''}`,
+            [{ text: 'Xem bảng điểm', style: 'default' }]
           );
           onClose();
         }
@@ -141,6 +165,18 @@ export default function FapRealWebViewModal({
       setLoading(true);
       webViewRef.current.injectJavaScript(`
         window.location.href = 'https://fap.fpt.edu.vn/Report/Attendance';
+        true;
+      `);
+      setTimeout(() => setLoading(false), 2000);
+    }
+  };
+
+  // Điều hướng WebView sang Bảng điểm sinh viên (/Report/Grade)
+  const handleNavGradeReport = () => {
+    if (webViewRef.current) {
+      setLoading(true);
+      webViewRef.current.injectJavaScript(`
+        window.location.href = 'https://fap.fpt.edu.vn/Report/Grade';
         true;
       `);
       setTimeout(() => setLoading(false), 2000);
@@ -197,9 +233,10 @@ export default function FapRealWebViewModal({
     }
   };
 
-  const isExamUrl = currentUrl.toLowerCase().includes('examschedule');
-  const isTimetableUrl = currentUrl.toLowerCase().includes('weeklytimetable');
-  const isAttendanceUrl = currentUrl.toLowerCase().includes('report/attendance');
+  const isExamUrl = currentUrl.toLowerCase().includes('examschedule') || currentUrl.toLowerCase().includes('scheduleexams');
+  const isTimetableUrl = currentUrl.toLowerCase().includes('weeklytimetable') || currentUrl.toLowerCase().includes('scheduleofweek');
+  const isAttendanceUrl = currentUrl.toLowerCase().includes('report/attendance') || currentUrl.toLowerCase().includes('viewattendance');
+  const isGradeUrl = currentUrl.toLowerCase().includes('report/grade') || currentUrl.toLowerCase().includes('studenttranscript') || currentUrl.toLowerCase().includes('/grade');
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
@@ -255,6 +292,31 @@ export default function FapRealWebViewModal({
           </View>
         )}
 
+        {/* Banner tiến trình khi đang cào toàn bộ 17 tuần */}
+        {scrapingProgress ? (
+          <View style={[styles.scrapingProgressBanner, { backgroundColor: '#064E3B', borderBottomColor: '#10B981' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                <ActivityIndicator size="small" color="#10B981" />
+                <Text style={styles.scrapingProgressTitle}>
+                  Đang cào trọn bộ 17 tuần cả kỳ...
+                </Text>
+              </View>
+              <Text style={styles.scrapingProgressCount}>
+                {scrapingProgress.completed}/{scrapingProgress.total} tuần ({scrapingProgress.foundSlots || 0} ca)
+              </Text>
+            </View>
+            <View style={styles.scrapingProgressBarBg}>
+              <View
+                style={[
+                  styles.scrapingProgressBarFill,
+                  { width: `${Math.min(100, Math.round(((scrapingProgress.completed || 0) / (scrapingProgress.total || 17)) * 100))}%` },
+                ]}
+              />
+            </View>
+          </View>
+        ) : null}
+
         {/* WebView Native trên iOS / Android */}
         {Platform.OS !== 'web' && NativeWebView ? (
           <View style={{ flex: 1 }}>
@@ -292,16 +354,21 @@ export default function FapRealWebViewModal({
 
                 // CHỈ TỰ ĐỘNG CÀO KHI ĐÃ ĐĂNG NHẬP THÀNH CÔNG VÀ ĐANG Ở ĐÚNG TRANG
                 if (url.includes('fpt.edu.vn') && !isAuthOrChallenge) {
-                  const isRealExamPage = url.includes('/examschedule');
-                  const isRealTimetablePage = url.includes('/weeklytimetable');
-                  const isRealAttendancePage = url.includes('/report/attendance');
+                  const isRealExamPage = url.includes('/examschedule') || url.includes('scheduleexams');
+                  const isRealTimetablePage = url.includes('/weeklytimetable') || url.includes('scheduleofweek');
+                  const isRealAttendancePage = url.includes('/report/attendance') || url.includes('viewattendance');
+                  const isRealGradePage = url.includes('/report/grade') || url.includes('studenttranscript') || url.includes('/grade');
 
-                  if (isRealExamPage || isRealTimetablePage || isRealAttendancePage) {
+                  if (isRealExamPage || isRealTimetablePage || isRealAttendancePage || isRealGradePage) {
                     setTimeout(() => {
                       webViewRef.current?.injectJavaScript(`
                         (function() {
                           ${FAP_SCRAPER_INJECTED_JS}
-                          doAutoOrManualScrape(false);
+                          if (typeof window.doScrape === 'function') {
+                            window.doScrape();
+                          } else if (typeof window.doAutoOrManualScrape === 'function') {
+                            window.doAutoOrManualScrape(false);
+                          }
                           true;
                         })();
                       `);
@@ -376,6 +443,32 @@ export default function FapRealWebViewModal({
                   </Pressable>
 
                   <Pressable
+                    onPress={() => {
+                      if (webViewRef.current) {
+                        setLoading(true);
+                        webViewRef.current.injectJavaScript(`
+                          if (typeof window.scrapeFullSemesterTimetable === 'function') {
+                            window.scrapeFullSemesterTimetable();
+                          } else {
+                            window.location.href = 'https://fap.fpt.edu.vn/WeeklyTimetable';
+                          }
+                          true;
+                        `);
+                        setTimeout(() => setLoading(false), 2000);
+                      }
+                    }}
+                    style={[
+                      styles.tabNavBtn,
+                      { backgroundColor: '#059669', borderColor: '#10B981', borderWidth: 1 },
+                    ]}
+                  >
+                    <Ionicons name="flash" size={13} color="#FFFFFF" />
+                    <Text style={[styles.tabNavBtnText, { color: '#FFFFFF', fontWeight: '900' }]}>
+                      🚀 Cào 17 Tuần
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
                     onPress={handleNavWeeklyTimetable}
                     style={[
                       styles.tabNavBtn,
@@ -395,7 +488,7 @@ export default function FapRealWebViewModal({
                         { color: isTimetableUrl ? '#FFFFFF' : '#10B981' },
                       ]}
                     >
-                      ⏰ TKB Tuần
+                      ⏰ Tuần Này
                     </Text>
                   </Pressable>
 
@@ -420,6 +513,30 @@ export default function FapRealWebViewModal({
                       ]}
                     >
                       📅 Lịch Thi
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={handleNavGradeReport}
+                    style={[
+                      styles.tabNavBtn,
+                      isGradeUrl
+                        ? { backgroundColor: '#8B5CF6' }
+                        : { borderColor: '#8B5CF6', borderWidth: 1 },
+                    ]}
+                  >
+                    <Ionicons
+                      name="ribbon"
+                      size={14}
+                      color={isGradeUrl ? '#FFFFFF' : '#8B5CF6'}
+                    />
+                    <Text
+                      style={[
+                        styles.tabNavBtnText,
+                        { color: isGradeUrl ? '#FFFFFF' : '#8B5CF6' },
+                      ]}
+                    >
+                      🎓 Điểm Số
                     </Text>
                   </Pressable>
                 </>
@@ -555,4 +672,31 @@ const styles = StyleSheet.create({
   },
   actionButtonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12.5 },
   infoBannerBox: { padding: 12, borderRadius: 12, borderWidth: 1 },
+  scrapingProgressBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    gap: 6,
+  },
+  scrapingProgressTitle: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  scrapingProgressCount: {
+    color: '#34D399',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  scrapingProgressBarBg: {
+    height: 5,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  scrapingProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#10B981',
+    borderRadius: 3,
+  },
 });

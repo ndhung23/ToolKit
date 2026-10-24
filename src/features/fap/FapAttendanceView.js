@@ -8,8 +8,8 @@ import {
   FlatList,
   Pressable,
   Switch,
+  ActivityIndicator,
   StyleSheet,
-  Linking,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
@@ -19,14 +19,15 @@ import {
   filterSlotsForWeek,
   filterSlotsForToday,
   getNextUpcomingSlot,
-  triggerAbsentNotification,
   SAMPLE_TODAY_SLOTS,
   extractTodaySlotsFromCourses,
   extractWeeklySlotsFromCourses,
 } from './fapAttendanceHelper';
+import { triggerAbsentNotification } from './fapNotificationHelper';
 import FapCourseAttendanceCard from './FapCourseAttendanceCard';
 import FapAttendanceSlotCard from './FapAttendanceSlotCard';
 import FapWeekNavigatorBar from './FapWeekNavigatorBar';
+import FapUpcomingClassCard from './FapUpcomingClassCard';
 
 export default function FapAttendanceView({
   colors,
@@ -39,6 +40,10 @@ export default function FapAttendanceView({
   onSyncCourseAttendance,
   onDeleteCourse,
   onSimulateAbsentAlert,
+  onTestSlotReminder,
+  onTriggerSilentCheck,
+  isSilentChecking = false,
+  silentCheckStatus = '',
   onOpenPasteModal,
   headerComponent = null,
 }) {
@@ -106,6 +111,11 @@ export default function FapAttendanceView({
   const ListHeader = () => (
     <View style={styles.headerWrap}>
       {headerComponent}
+
+      {/* CA HỌC TIẾP THEO: Chỉ hiện ở đầu nếu đang xem tuần HOẶC hôm nay có lịch học */}
+      {nextClass && (viewMode !== 'today' || todayClasses.length > 0) ? (
+        <FapUpcomingClassCard item={nextClass} colors={colors} />
+      ) : null}
 
       {/* 1. THANH CHUYỂN 3 CHẾ ĐỘ XEM: [Theo Môn (Full)] vs [Hôm nay] vs [Cả tuần] */}
       <View style={[styles.modeTabContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
@@ -200,29 +210,51 @@ export default function FapAttendanceView({
         />
       )}
 
-      {/* 2. THẺ CÀI ĐẶT CẢNH BÁO VẮNG (+10P SAU CA HỌC) */}
-      <View style={[styles.alertConfigCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <View style={styles.alertConfigTopRow}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="notifications-outline" size={17} color={colors.primary} />
-              <Text style={[styles.alertConfigTitle, { color: colors.text }]}>
-                Cảnh báo vắng (+10p sau ca học)
-              </Text>
-            </View>
+      {/* BANNER THÔNG BÁO SILENT AUTO-FETCH ĐANG CHẠY NGẦM */}
+      {isSilentChecking && (
+        <View style={[styles.silentStatusBar, { backgroundColor: '#1E3A8A', borderColor: '#3B82F6' }]}>
+          <ActivityIndicator size="small" color="#60A5FA" />
+          <Text style={styles.silentStatusText}>
+            {silentCheckStatus || 'Đang tự động kiểm tra điểm danh FAP ngầm...'}
+          </Text>
+        </View>
+      )}
+
+      {/* 2. CẤU HÌNH CẢNH BÁO VẮNG (+10P SAU CA HỌC) GỌN GÀNG */}
+      <View style={[styles.alertCompactBar, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View style={styles.alertLeftCol}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="notifications" size={15} color={absentAlertEnabled ? '#10B981' : colors.sub} />
+            <Text style={[styles.alertCompactTitle, { color: colors.text }]}>
+              Cảnh báo vắng (+10p sau ca)
+            </Text>
           </View>
-          <Switch
-            value={absentAlertEnabled}
-            onValueChange={onToggleAbsentAlert}
-            trackColor={{ false: '#3E3E42', true: colors.primary }}
-            thumbColor={absentAlertEnabled ? '#121214' : '#9E9EA7'}
-          />
+          <Text style={[styles.alertCompactSub, { color: colors.sub }]}>
+            {absentAlertEnabled ? 'Tự động báo chuông nếu vắng' : 'Đang tắt chuông'}
+          </Text>
         </View>
 
-        <View style={styles.configActionsRow}>
+        <View style={styles.alertRightCol}>
+          {onTriggerSilentCheck && (
+            <Pressable
+              onPress={onTriggerSilentCheck}
+              disabled={isSilentChecking}
+              style={[
+                styles.compactTestBtn,
+                { borderColor: '#3B82F6', backgroundColor: 'rgba(59, 130, 246, 0.08)' },
+              ]}
+              hitSlop={6}
+            >
+              <Ionicons name="sync-outline" size={13} color="#3B82F6" />
+              <Text style={[styles.compactTestBtnText, { color: '#3B82F6' }]}>Quét ngầm</Text>
+            </Pressable>
+          )}
+
           <Pressable
             onPress={() => {
-              if (onSimulateAbsentAlert) {
+              if (onTestSlotReminder) {
+                onTestSlotReminder();
+              } else if (onSimulateAbsentAlert) {
                 onSimulateAbsentAlert();
               } else if (todayClasses.length > 0) {
                 const target =
@@ -232,11 +264,20 @@ export default function FapAttendanceView({
                 triggerAbsentNotification(SAMPLE_TODAY_SLOTS[1]);
               }
             }}
-            style={[styles.testAlertBtn, { borderColor: '#EF4444', backgroundColor: 'rgba(239,68,68,0.1)' }]}
+            style={[styles.compactTestBtn, { borderColor: '#EF4444' }]}
+            hitSlop={6}
           >
-            <Ionicons name="volume-high-outline" size={14} color="#EF4444" />
-            <Text style={[styles.testAlertBtnText, { color: '#EF4444' }]}>Thử chuông cảnh báo</Text>
+            <Ionicons name="volume-high-outline" size={13} color="#EF4444" />
+            <Text style={[styles.compactTestBtnText, { color: '#EF4444' }]}>Thử chuông</Text>
           </Pressable>
+
+          <Switch
+            value={absentAlertEnabled}
+            onValueChange={onToggleAbsentAlert}
+            trackColor={{ false: '#3E3E42', true: '#10B981' }}
+            thumbColor={absentAlertEnabled ? '#FFFFFF' : '#9E9EA7'}
+            style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
+          />
         </View>
       </View>
 
@@ -319,28 +360,28 @@ export default function FapAttendanceView({
               <Text style={styles.syncTimetableBtnText}>Mở FAP cào Lịch Cả Môn</Text>
             </Pressable>
           </View>
-        ) : viewMode === 'today' && allWeeklySlots.length > 0 ? (
+        ) : viewMode === 'today' && (allWeeklySlots.length > 0 || fallbackWeeklySlots.length > 0) ? (
           /* TRƯỜNG HỢP: Hôm nay không có ca học nào */
           <View style={[styles.dayOffCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={styles.dayOffIconWrap}>
-              <Ionicons name="sunny-outline" size={32} color="#10B981" />
+              <Ionicons name="cafe-outline" size={34} color="#10B981" />
             </View>
             <Text style={[styles.dayOffTitle, { color: colors.text }]}>
-              Hôm nay bạn không có lịch học! 🎉
+              Hôm nay bạn không có ca học nào! 🎉
             </Text>
             <Text style={[styles.dayOffDesc, { color: colors.sub }]}>
-              Hôm nay ({dayInfo.fullDateStr}) không có ca học nào cần điểm danh. Hãy nghỉ ngơi hoặc tự học nhé!
+              {dayInfo.fullDateStr} • Tận hưởng ngày nghỉ hoặc tự ôn bài nhé!
             </Text>
 
             {nextClass ? (
               <View style={[styles.upcomingClassCard, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-                <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                <Ionicons name="calendar-outline" size={20} color={colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.upcomingClassTitle, { color: colors.text }]}>
                     Ca học tiếp theo: {nextClass.dayName}
                   </Text>
                   <Text style={[styles.upcomingClassDetails, { color: colors.sub }]}>
-                    Slot {nextClass.slot} ({nextClass.time}) • Môn {nextClass.subjectCode} tại phòng {nextClass.room}
+                    Slot {nextClass.slot} ({nextClass.time}) • Môn {nextClass.subjectCode} tại phòng {nextClass.room || 'AL-L302'}
                   </Text>
                 </View>
               </View>
@@ -348,9 +389,10 @@ export default function FapAttendanceView({
 
             <Pressable
               onPress={() => setViewMode('week')}
-              style={[styles.switchWeekBtn, { borderColor: colors.primary }]}
+              style={[styles.switchWeekBtn, { backgroundColor: '#10B981', borderColor: '#10B981' }]}
             >
-              <Text style={{ color: colors.primary, fontSize: 12.5, fontWeight: '800' }}>
+              <Ionicons name="calendar" size={15} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
                 Xem thời khóa biểu cả tuần ({allWeeklySlots.length} ca)
               </Text>
             </Pressable>
@@ -419,6 +461,7 @@ export default function FapAttendanceView({
 const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
+    paddingTop: 10,
     paddingBottom: 24,
   },
   headerWrap: {
@@ -445,42 +488,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  alertConfigCard: {
-    padding: 13,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 10,
-  },
-  alertConfigTopRow: {
+  alertCompactBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
   },
-  alertConfigTitle: {
-    fontSize: 13.5,
+  alertLeftCol: {
+    flex: 1,
+  },
+  alertCompactTitle: {
+    fontSize: 13,
     fontWeight: '800',
   },
-  alertConfigSub: {
-    fontSize: 11.5,
-    marginTop: 2,
-    lineHeight: 16,
+  alertCompactSub: {
+    fontSize: 11,
+    marginTop: 1,
   },
-  configActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  testAlertBtn: {
-    flex: 1,
+  alertRightCol: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 8,
+    gap: 8,
+  },
+  compactTestBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     borderRadius: 8,
     borderWidth: 1,
   },
-  testAlertBtnText: {
-    fontSize: 11.5,
+  compactTestBtnText: {
+    fontSize: 11,
     fontWeight: '800',
   },
   sectionTitleRow: {
@@ -552,5 +595,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 12.5,
+  },
+  silentStatusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  silentStatusText: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
   },
 });

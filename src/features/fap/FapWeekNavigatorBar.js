@@ -16,61 +16,66 @@ export default function FapWeekNavigatorBar({
   onCurrentWeek,
   onSelectDayFilter,
 }) {
+  const isCurrentWeek = weekOffset === 0;
+
   return (
     <View style={[styles.weekNavContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-      {/* Hàng 1: Nút Tuần trước, Badge Tuần hiện tại, Nút Tuần sau */}
+      {/* Hàng 1: Nút Tuần trước, Badge Tuần hiển thị, Nút Tuần sau (Không bao giờ bị tràn/đè chữ) */}
       <View style={styles.weekNavControlsRow}>
         <Pressable
           onPress={onPrevWeek}
           style={[styles.weekNavBtn, { borderColor: colors.border, backgroundColor: colors.bg }]}
           hitSlop={8}
         >
-          <Ionicons name="chevron-back" size={16} color={colors.text} />
-          <Text style={[styles.weekNavBtnText, { color: colors.text }]}>Tuần trước</Text>
+          <Ionicons name="chevron-back" size={15} color={colors.text} />
+          <Text style={[styles.weekNavBtnText, { color: colors.text }]}>Trước</Text>
         </Pressable>
 
-        <Pressable
-          onPress={onCurrentWeek}
+        <View
           style={[
             styles.weekLabelBadge,
             {
-              backgroundColor:
-                weekOffset === 0
-                  ? 'rgba(16, 185, 129, 0.12)'
-                  : 'rgba(59, 130, 246, 0.12)',
-              borderColor: weekOffset === 0 ? '#10B981' : '#3B82F6',
+              backgroundColor: isCurrentWeek ? 'rgba(16, 185, 129, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+              borderColor: isCurrentWeek ? '#10B981' : '#3B82F6',
             },
           ]}
         >
           <Ionicons
             name="calendar"
-            size={14}
-            color={weekOffset === 0 ? '#10B981' : '#3B82F6'}
+            size={13}
+            color={isCurrentWeek ? '#10B981' : '#3B82F6'}
           />
           <Text
             style={[
               styles.weekLabelText,
-              { color: weekOffset === 0 ? '#10B981' : '#3B82F6' },
+              { color: isCurrentWeek ? '#10B981' : '#3B82F6' },
             ]}
+            numberOfLines={1}
           >
-            {weekInfo.weekLabel}
+            {isCurrentWeek ? 'Tuần này' : 'Tuần'}: {weekInfo.startStr} - {weekInfo.endStr}
           </Text>
-          {weekOffset !== 0 ? (
-            <View style={styles.returnTodayDot}>
-              <Text style={styles.returnTodayText}>• Về tuần này</Text>
-            </View>
-          ) : null}
-        </Pressable>
+        </View>
 
         <Pressable
           onPress={onNextWeek}
           style={[styles.weekNavBtn, { borderColor: colors.border, backgroundColor: colors.bg }]}
           hitSlop={8}
         >
-          <Text style={[styles.weekNavBtnText, { color: colors.text }]}>Tuần sau</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.text} />
+          <Text style={[styles.weekNavBtnText, { color: colors.text }]}>Sau</Text>
+          <Ionicons name="chevron-forward" size={15} color={colors.text} />
         </Pressable>
       </View>
+
+      {/* Hàng phụ: Nút Quay về tuần này nếu đang xem tuần khác (Tách riêng hàng để chống đè chữ) */}
+      {!isCurrentWeek && (
+        <Pressable
+          onPress={onCurrentWeek}
+          style={[styles.returnTodayBtn, { backgroundColor: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.3)' }]}
+        >
+          <Ionicons name="refresh" size={12} color="#3B82F6" />
+          <Text style={styles.returnTodayText}>Trở về Tuần hiện tại</Text>
+        </Pressable>
+      )}
 
       {/* Hàng 2: Chip lọc Thứ trong tuần (Tất cả, T2, T3, T4, T5, T6, T7, CN) */}
       <View style={styles.dayFilterRow}>
@@ -118,7 +123,7 @@ export default function FapWeekNavigatorBar({
                       : day.isToday
                         ? '#3B82F6'
                         : colors.text,
-                    fontWeight: isSelected || day.isToday ? '800' : '500',
+                    fontWeight: isSelected || day.isToday ? '800' : '600',
                   },
                 ]}
               >
@@ -143,13 +148,12 @@ const styles = StyleSheet.create({
   weekNavControlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 6,
   },
   weekNavBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 2,
     paddingVertical: 7,
     paddingHorizontal: 9,
     borderRadius: 8,
@@ -174,12 +178,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  returnTodayDot: {
-    marginLeft: 2,
+  returnTodayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
   },
   returnTodayText: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '700',
     color: '#3B82F6',
   },
   dayFilterRow: {
