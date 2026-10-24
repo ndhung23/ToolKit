@@ -683,7 +683,7 @@ export default function FapExamScreen({ navigation }) {
         />
       )}
 
-      {/* Modal Thêm / Chỉnh sửa / Dán lịch thi FAP */}
+      {/* Modal Thêm / Chỉnh sửa / Dán lịch thi & TKB FAP */}
       <FapExamFormModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
@@ -691,6 +691,8 @@ export default function FapExamScreen({ navigation }) {
         editingExam={editingExam}
         onSaveExam={handleSaveExamItem}
         onImportExams={handleImportExams}
+        onImportTimetable={(slots) => handleTimetableSyncSuccess(null, slots)}
+        onImportCourse={(course) => handleCourseAttendanceSyncSuccess(null, course)}
       />
 
       {/* Modal WebView kết nối Cổng FAP thật 100% */}

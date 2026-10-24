@@ -200,35 +200,23 @@ export const FAP_SCRAPER_INJECTED_JS = `
     var table = document.querySelector('table');
     if (!table) return [];
 
-    var headers = [];
-    var headRow = table.querySelector('thead tr') || table.querySelector('tr');
-    if (headRow) {
-      var hCells = headRow.children;
-      for (var h = 0; h < hCells.length; h++) {
-        headers.push((hCells[h].innerText || hCells[h].textContent || '').trim());
+    var headCells = Array.from(table.querySelectorAll('thead th, thead td, tr:first-child th, tr:first-child td'));
+    var headers = headCells.map(function(h) { return (h.innerText || h.textContent || '').trim(); });
+
+    var allRows = Array.from(table.querySelectorAll('tbody tr')).filter(function(r) { return r.children.length >= 7; });
+    if (allRows.length === 0) {
+      allRows = Array.from(table.querySelectorAll('tr')).filter(function(r) { return r.children.length >= 7; });
+      if (allRows.length > 0 && allRows[0].querySelectorAll('th').length > 3) {
+        allRows.shift();
       }
     }
 
     var slots = [];
-    var allRows = table.querySelectorAll('tbody tr');
-    if (allRows.length === 0) allRows = table.querySelectorAll('tr');
-
-    var slotCounter = 0;
-    for (var r = 0; r < allRows.length; r++) {
-      var row = allRows[r];
-      // Bỏ qua hàng header
-      if (row.querySelectorAll('td').length === 0) continue;
-
-      var cells = row.children;
-      if (cells.length < 2) continue;
-
-      slotCounter++;
-      var firstCellText = (cells[0].innerText || cells[0].textContent || '').trim();
-      var slotNum = slotCounter;
-      var exactSlotMatch = firstCellText.match(/^(?:Slot\\s*)?([1-6])$/i);
-      if (exactSlotMatch) {
-        slotNum = parseInt(exactSlotMatch[1], 10);
-      }
+    allRows.forEach(function(row, rIdx) {
+      var cells = Array.from(row.children);
+      var slotText = (cells[0].innerText || cells[0].textContent || '').trim();
+      var slotMatch = slotText.match(/\\d+/);
+      var slotNum = slotMatch ? parseInt(slotMatch[0], 10) : (rIdx + 1);
 
       for (var c = 1; c < cells.length; c++) {
         var cell = cells[c];
@@ -248,28 +236,22 @@ export const FAP_SCRAPER_INJECTED_JS = `
         }
 
         var timeMatch = cellText.match(/(\\d{1,2}[h:]\\d{2}\\s*[-–]\\s*\\d{1,2}[h:]\\d{2})/i);
-        var timeStr = timeMatch ? timeMatch[1].replace(/\\s+/g, '') : '';
-        if (!timeStr) {
-          if (slotNum === 1) timeStr = '07h30-09h50';
-          else if (slotNum === 2) timeStr = '10h00-12h20';
-          else if (slotNum === 3) timeStr = '12h50-15h10';
-          else if (slotNum === 4) timeStr = '15h20-17h40';
-          else if (slotNum === 5) timeStr = '17h50-20h10';
-          else if (slotNum === 6) timeStr = '20h20-22h40';
-        }
+        var timeStr = timeMatch ? timeMatch[1].replace(/\\s+/g, '') : (slotNum === 1 ? '07h30-09h50' : '10h00-12h20');
 
-        var roomMatch = cellText.match(/\b([A-Z0-9]{2,4}[-_][A-Z0-9]+)\b/);
-        var room = roomMatch ? roomMatch[1] : 'DE-422';
+        var roomMatch = cellText.match(/\\b([A-Z0-9]{2,4}[-_][A-Z0-9]+)\\b/);
+        var room = roomMatch ? roomMatch[1] : '';
 
+        var cellLines = cellText.split(/\\r?\\n/).map(function(l) { return l.trim(); }).filter(Boolean);
         var lecturer = '';
-        var cellLines = cellText.split(/\r?\n/).map(function(l) { return l.trim(); }).filter(Boolean);
         for (var li = 0; li < cellLines.length; li++) {
           var lineStr = cellLines[li];
-          if (/^[a-zA-Z]{3,12}\d{0,4}$/i.test(lineStr) && 
+          if (/^[a-zA-Z]{3,12}\\d{0,4}$/i.test(lineStr) && 
               lineStr.toUpperCase() !== subjectCode && 
               lineStr.toLowerCase().indexOf('offline') === -1 && 
               lineStr.toLowerCase().indexOf('online') === -1 &&
+              lineStr.toLowerCase().indexOf('có mặt') === -1 &&
               lineStr.toLowerCase().indexOf('present') === -1 &&
+              lineStr.toLowerCase().indexOf('vắng') === -1 &&
               lineStr.toLowerCase().indexOf('absent') === -1) {
             lecturer = lineStr;
             break;
@@ -278,7 +260,7 @@ export const FAP_SCRAPER_INJECTED_JS = `
         if (!lecturer) lecturer = 'Giảng viên';
 
         var dayHeader = headers[c] || ('Thứ ' + (c + 1));
-        var dateMatch = dayHeader.match(/(\d{1,2}\/\d{1,2})/);
+        var dateMatch = dayHeader.match(/(\\d{1,2}\\/\\d{1,2})/);
         var dateStr = dateMatch ? dateMatch[1] : '';
 
         var alertTime = '10:00';
@@ -305,7 +287,7 @@ export const FAP_SCRAPER_INJECTED_JS = `
           notified: false
         });
       }
-    }
+    });
 
     return slots;
   }

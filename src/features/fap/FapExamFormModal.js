@@ -23,6 +23,8 @@ export function FapExamFormModal({
   editingExam,
   onSaveExam,
   onImportExams,
+  onImportTimetable,
+  onImportCourse,
 }) {
   const [mode, setMode] = useState('manual'); // 'manual' | 'import'
   const [subjectCode, setSubjectCode] = useState('');
@@ -106,13 +108,47 @@ export function FapExamFormModal({
   };
 
   const handleParseImport = (textToParse = rawPasteText) => {
-    const text = textToParse || rawPasteText;
+    const text = (textToParse || rawPasteText).trim();
+
+    // 1. Kiểm tra nếu là JSON xuất từ Console FAP
+    if (text.startsWith('[') || text.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(text);
+
+        // Trường hợp A: JSON Thời khóa biểu tuần [{ slot: 1, ... }]
+        if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].slot !== undefined || parsed[0].subjectCode)) {
+          if (onImportTimetable) {
+            onImportTimetable(parsed);
+            Alert.alert('Nhập TKB thành công! 🎉', `Đã nạp ${parsed.length} ca học trong tuần vào app!`);
+            setRawPasteText('');
+            onClose();
+            return;
+          }
+        }
+
+        // Trường hợp B: JSON Môn học { course: "...", sessions: [...] }
+        if (parsed.sessions && Array.isArray(parsed.sessions)) {
+          if (onImportCourse) {
+            onImportCourse(parsed);
+            Alert.alert(
+              'Nhập Môn học thành công! 📚',
+              `Đã nạp môn ${parsed.courseCode || parsed.course || ''} gồm ${parsed.sessions.length} buổi học cả kỳ!`
+            );
+            setRawPasteText('');
+            onClose();
+            return;
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Mặc định: Bóc tách Lịch thi từ bảng FAP copy
     const extracted = parseFapExamScheduleRaw(text);
     const extractedUser = parseFapStudentInfo(text);
     if (extracted.length === 0) {
       Alert.alert(
-        'Không tìm thấy lịch thi',
-        'Vui lòng copy các dòng trong bảng "Lịch thi của tôi" từ trang https://fap.fpt.edu.vn/ExamSchedule rồi dán vào ô bên dưới.'
+        'Không tìm thấy dữ liệu',
+        'Vui lòng copy bảng Lịch thi, TKB tuần hoặc dán mã JSON từ trang FAP.'
       );
       return;
     }
