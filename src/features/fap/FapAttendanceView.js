@@ -9,11 +9,14 @@ import {
   Pressable,
   Switch,
   StyleSheet,
+  Linking,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   ATTENDANCE_STATUS,
   getCurrentVietnamDayInfo,
+  getWeekDateRange,
+  filterSlotsForWeek,
   filterSlotsForToday,
   getNextUpcomingSlot,
   triggerAbsentNotification,
@@ -22,6 +25,8 @@ import {
   extractWeeklySlotsFromCourses,
 } from './fapAttendanceHelper';
 import FapCourseAttendanceCard from './FapCourseAttendanceCard';
+import FapAttendanceSlotCard from './FapAttendanceSlotCard';
+import FapWeekNavigatorBar from './FapWeekNavigatorBar';
 
 export default function FapAttendanceView({
   colors,
@@ -34,33 +39,47 @@ export default function FapAttendanceView({
   onSyncCourseAttendance,
   onDeleteCourse,
   onSimulateAbsentAlert,
+  onOpenPasteModal,
   headerComponent = null,
 }) {
-  const [viewMode, setViewMode] = useState(courses.length > 0 ? 'courses' : 'today'); // 'courses' | 'today' | 'week'
-  const dayInfo = getCurrentVietnamDayInfo();
+  const [viewMode, setViewMode] = useState('today'); // 'courses' | 'today' | 'week'
+  const [weekOffset, setWeekOffset] = useState(0); // 0 = tuần này, 1 = tuần sau, -1 = tuần trước...
+  const [selectedDayFilter, setSelectedDayFilter] = useState('all'); // 'all' | 2..8
 
-  // Tính toán ca học Hôm nay & Cả tuần từ Danh sách môn Full kỳ (ưu tiên chính xác 100%)
+  const dayInfo = getCurrentVietnamDayInfo();
+  const weekInfo = getWeekDateRange(weekOffset);
+
+  // Tính toán ca học Hôm nay & Tuần được chọn từ Full kỳ hoặc dữ liệu đã cào
   const coursesTodaySlots = extractTodaySlotsFromCourses(courses);
-  const coursesWeeklySlots = extractWeeklySlotsFromCourses(courses);
+  const coursesWeeklySlots = extractWeeklySlotsFromCourses(courses, weekOffset);
 
   const fallbackWeeklySlots =
     Array.isArray(weeklySlots) && weeklySlots.length > 0
       ? weeklySlots
       : Array.isArray(propTodaySlots)
-      ? propTodaySlots
-      : [];
+        ? propTodaySlots
+        : [];
+
+  // Lọc slots từ fallbackWeeklySlots cho tuần được chọn
+  const fallbackWeekFiltered = filterSlotsForWeek(fallbackWeeklySlots, weekOffset);
 
   const allWeeklySlots =
-    coursesWeeklySlots.length > 0 ? coursesWeeklySlots : fallbackWeeklySlots;
+    coursesWeeklySlots.length > 0 ? coursesWeeklySlots : fallbackWeekFiltered;
+
+  // Lọc theo thứ trong tuần nếu người dùng chọn chip thứ cụ thể
+  const displayWeeklySlots =
+    selectedDayFilter === 'all'
+      ? allWeeklySlots
+      : allWeeklySlots.filter((s) => s.dayIndex === selectedDayFilter);
 
   const todayClasses =
     coursesTodaySlots.length > 0
       ? coursesTodaySlots
       : typeof filterSlotsForToday === 'function'
-      ? filterSlotsForToday(allWeeklySlots)
-      : allWeeklySlots;
+        ? filterSlotsForToday(fallbackWeeklySlots)
+        : fallbackWeeklySlots;
 
-  const nextClass = getNextUpcomingSlot(allWeeklySlots);
+  const nextClass = getNextUpcomingSlot(fallbackWeeklySlots);
 
   // Thống kê nhanh điểm danh hôm nay
   const presentCount = todayClasses.filter(
@@ -71,104 +90,9 @@ export default function FapAttendanceView({
   ).length;
   const notYetCount = todayClasses.length - presentCount - absentCount;
 
-  const renderSlotCard = ({ item }) => {
-    const isAbsent =
-      item.status === ATTENDANCE_STATUS.ABSENT ||
-      item.status?.toLowerCase() === 'absent' ||
-      item.status?.toLowerCase() === 'vắng' ||
-      item.status?.toLowerCase() === 'vắng mặt';
-    const isPresent =
-      item.status === ATTENDANCE_STATUS.PRESENT ||
-      item.status?.toLowerCase() === 'present' ||
-      item.status?.toLowerCase() === 'có mặt';
-
-    let badgeBg = 'rgba(245, 158, 11, 0.12)';
-    let badgeBorder = 'rgba(245, 158, 11, 0.3)';
-    let badgeText = '#F59E0B';
-    let statusLabel = 'Chưa điểm danh';
-    let iconName = 'time-outline';
-
-    if (isAbsent) {
-      badgeBg = 'rgba(239, 68, 68, 0.15)';
-      badgeBorder = '#EF4444';
-      badgeText = '#EF4444';
-      statusLabel = 'VẮNG MẶT (ABSENT)';
-      iconName = 'alert-circle';
-    } else if (isPresent) {
-      badgeBg = 'rgba(16, 185, 129, 0.15)';
-      badgeBorder = '#10B981';
-      badgeText = '#10B981';
-      statusLabel = 'Có mặt (Present)';
-      iconName = 'checkmark-circle';
-    }
-
-    return (
-      <View
-        style={[
-          styles.slotCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: isAbsent ? '#EF4444' : colors.cardBorder,
-            borderWidth: isAbsent ? 1.5 : 1,
-          },
-        ]}
-      >
-        {/* Hàng 1: Slot + Thời gian + Badge trạng thái */}
-        <View style={styles.slotTopRow}>
-          <View style={styles.slotBadgeWrap}>
-            <View style={[styles.slotBadge, { backgroundColor: colors.primary }]}>
-              <Text style={styles.slotBadgeText}>SLOT {item.slot}</Text>
-            </View>
-            <Text style={[styles.slotTimeText, { color: colors.sub }]}>
-              {item.dayName ? `${item.dayName} • ` : ''}{item.time}
-            </Text>
-          </View>
-
-          <View style={[styles.statusBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
-            <Ionicons name={iconName} size={13} color={badgeText} />
-            <Text style={[styles.statusBadgeText, { color: badgeText }]}>{statusLabel}</Text>
-          </View>
-        </View>
-
-        {/* Hàng 2: Tên môn & Mã môn */}
-        <View style={styles.subjectRow}>
-          <Text style={[styles.subjectCode, { color: colors.text }]}>{item.subjectCode}</Text>
-          {item.subjectName && item.subjectName !== item.subjectCode ? (
-            <Text style={[styles.subjectName, { color: colors.sub }]} numberOfLines={1}>
-              {item.subjectName}
-            </Text>
-          ) : null}
-        </View>
-
-        {/* Hàng 3: Phòng học & Giảng viên */}
-        <View style={[styles.metaBar, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-          <View style={styles.metaItem}>
-            <Ionicons name="location-outline" size={13} color="#F59E0B" />
-            <Text style={[styles.metaLabel, { color: colors.sub }]}>Phòng:</Text>
-            <Text style={[styles.metaValue, { color: '#F59E0B' }]}>{item.room || 'DE-422'}</Text>
-          </View>
-
-          <View style={styles.metaItem}>
-            <Ionicons name="person-outline" size={13} color="#3B82F6" />
-            <Text style={[styles.metaLabel, { color: colors.sub }]}>GV:</Text>
-            <Text style={[styles.metaValue, { color: colors.text }]}>
-              {item.lecturer && item.lecturer !== '-' ? item.lecturer : 'Giảng viên'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Cảnh báo vắng nếu bị Absent */}
-        {isAbsent && (
-          <View style={styles.absentAlertBanner}>
-            <Ionicons name="notifications" size={14} color="#EF4444" />
-            <Text style={styles.absentAlertBannerText}>
-              Báo chuông máy lúc <Text style={{ fontWeight: '800' }}>{item.alertTime} (+10p)</Text> do bị đánh Vắng!
-            </Text>
-          </View>
-        )}
-      </View>
-    );
-  };
+  const renderSlotCard = ({ item }) => (
+    <FapAttendanceSlotCard item={item} colors={colors} />
+  );
 
   const renderCourseItem = ({ item }) => (
     <FapCourseAttendanceCard
@@ -185,7 +109,7 @@ export default function FapAttendanceView({
 
       {/* 1. THANH CHUYỂN 3 CHẾ ĐỘ XEM: [Theo Môn (Full)] vs [Hôm nay] vs [Cả tuần] */}
       <View style={[styles.modeTabContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <Pressable
+        {/* <Pressable
           onPress={() => setViewMode('courses')}
           style={[
             styles.modeTabBtn,
@@ -205,7 +129,7 @@ export default function FapAttendanceView({
           >
             Theo Môn ({courses.length})
           </Text>
-        </Pressable>
+        </Pressable> */}
 
         <Pressable
           onPress={() => setViewMode('today')}
@@ -252,6 +176,30 @@ export default function FapAttendanceView({
         </Pressable>
       </View>
 
+      {/* THANH ĐIỀU HƯỚNG TUẦN (TUẦN TRƯỚC / TUẦN NÀY / TUẦN SAU + CHIP LỌC THỨ) KHI XEM CẢ TUẦN */}
+      {viewMode === 'week' && (
+        <FapWeekNavigatorBar
+          colors={colors}
+          weekOffset={weekOffset}
+          weekInfo={weekInfo}
+          allWeeklySlots={allWeeklySlots}
+          selectedDayFilter={selectedDayFilter}
+          onPrevWeek={() => {
+            setWeekOffset((prev) => prev - 1);
+            setSelectedDayFilter('all');
+          }}
+          onNextWeek={() => {
+            setWeekOffset((prev) => prev + 1);
+            setSelectedDayFilter('all');
+          }}
+          onCurrentWeek={() => {
+            setWeekOffset(0);
+            setSelectedDayFilter('all');
+          }}
+          onSelectDayFilter={(filter) => setSelectedDayFilter(filter)}
+        />
+      )}
+
       {/* 2. THẺ CÀI ĐẶT CẢNH BÁO VẮNG (+10P SAU CA HỌC) */}
       <View style={[styles.alertConfigCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.alertConfigTopRow}>
@@ -262,9 +210,6 @@ export default function FapAttendanceView({
                 Cảnh báo vắng (+10p sau ca học)
               </Text>
             </View>
-            <Text style={[styles.alertConfigSub, { color: colors.sub }]}>
-              Rung chuông & gửi thông báo đúng 10 phút sau ca học nếu bị đánh Vắng (Absent)
-            </Text>
           </View>
           <Switch
             value={absentAlertEnabled}
@@ -292,14 +237,6 @@ export default function FapAttendanceView({
             <Ionicons name="volume-high-outline" size={14} color="#EF4444" />
             <Text style={[styles.testAlertBtnText, { color: '#EF4444' }]}>Thử chuông cảnh báo</Text>
           </Pressable>
-
-          <Pressable
-            onPress={onSyncCourseAttendance || onSyncAttendance}
-            style={[styles.testAlertBtn, { backgroundColor: '#3B82F6', borderColor: '#3B82F6', flex: 1.2 }]}
-          >
-            <Ionicons name="school-outline" size={14} color="#FFFFFF" />
-            <Text style={[styles.testAlertBtnText, { color: '#FFFFFF' }]}>Cào môn từ FAP</Text>
-          </Pressable>
         </View>
       </View>
 
@@ -315,8 +252,8 @@ export default function FapAttendanceView({
             {viewMode === 'courses'
               ? `Danh sách môn học cả kỳ (${courses.length} môn)`
               : viewMode === 'today'
-              ? `Điểm danh hôm nay (${dayInfo.fullDateStr})`
-              : `Thời khóa biểu cả tuần (${allWeeklySlots.length} ca)`}
+                ? `Điểm danh hôm nay (${dayInfo.fullDateStr})`
+                : `${weekInfo.weekLabel} • ${selectedDayFilter === 'all' ? `Cả tuần (${allWeeklySlots.length} ca)` : `Thứ ${selectedDayFilter} (${displayWeeklySlots.length} ca)`}`}
           </Text>
         </View>
 
@@ -354,7 +291,7 @@ export default function FapAttendanceView({
   const getActiveData = () => {
     if (viewMode === 'courses') return courses;
     if (viewMode === 'today') return todayClasses;
-    return allWeeklySlots;
+    return displayWeeklySlots;
   };
 
   return (
@@ -418,6 +355,39 @@ export default function FapAttendanceView({
               </Text>
             </Pressable>
           </View>
+        ) : viewMode === 'week' ? (
+          /* TRƯỜNG HỢP: Tuần được chọn chưa có ca học hoặc ngày đã chọn không có ca */
+          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <Ionicons name="calendar-clear-outline" size={40} color={colors.sub} />
+            <Text style={[styles.emptyCardTitle, { color: colors.text }]}>
+              {selectedDayFilter !== 'all'
+                ? `Không có ca học vào Thứ ${selectedDayFilter}`
+                : `Chưa có lịch học cho ${weekInfo.weekLabel}`}
+            </Text>
+            <Text style={[styles.emptyCardDesc, { color: colors.sub }]}>
+              {weekOffset === 0
+                ? 'Nhấn "Cập nhật Thời khóa biểu tuần" để tự động lấy danh sách ca học từ fap.fpt.edu.vn.'
+                : `Tuần từ ${weekInfo.startStr} đến ${weekInfo.endStr} chưa có dữ liệu. Bạn có thể mở FAP để tự động cào tuần này hoặc dán TKB.`}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, width: '100%' }}>
+              <Pressable
+                onPress={() => onSyncAttendance?.(weekInfo.refDate)}
+                style={[styles.syncTimetableBtn, { backgroundColor: '#10B981', flex: 1 }]}
+              >
+                <Ionicons name="globe-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.syncTimetableBtnText}>Lấy tuần này từ FAP</Text>
+              </Pressable>
+              {onOpenPasteModal ? (
+                <Pressable
+                  onPress={onOpenPasteModal}
+                  style={[styles.syncTimetableBtn, { backgroundColor: colors.primary, flex: 0.8 }]}
+                >
+                  <Ionicons name="clipboard-outline" size={15} color="#121214" />
+                  <Text style={[styles.syncTimetableBtnText, { color: '#121214' }]}>Dán TKB</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
         ) : (
           /* TRƯỜNG HỢP: Chưa có ca học tuần này */
           <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
@@ -429,7 +399,7 @@ export default function FapAttendanceView({
               Nhấn "Cào môn từ FAP" hoặc "Cập nhật TKB Tuần" để tự động lấy danh sách ca học từ fap.fpt.edu.vn.
             </Text>
             <Pressable
-              onPress={onSyncAttendance}
+              onPress={() => onSyncAttendance?.(weekInfo.refDate)}
               style={[styles.syncTimetableBtn, { backgroundColor: '#10B981' }]}
             >
               <Ionicons name="globe-outline" size={16} color="#FFFFFF" />
@@ -551,143 +521,6 @@ const styles = StyleSheet.create({
   statChipLabel: {
     fontSize: 11,
     fontWeight: '700',
-  },
-  slotCard: {
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    gap: 10,
-  },
-  slotTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  slotBadgeWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  slotBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  slotBadgeText: {
-    color: '#121214',
-    fontSize: 11.5,
-    fontWeight: '900',
-  },
-  slotTimeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-  },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  subjectRow: {
-    gap: 2,
-  },
-  subjectCode: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  subjectName: {
-    fontSize: 12,
-  },
-  metaBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaLabel: {
-    fontSize: 11,
-  },
-  metaValue: {
-    fontSize: 11.5,
-    fontWeight: '800',
-  },
-  absentAlertBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  absentAlertBannerText: {
-    color: '#EF4444',
-    fontSize: 11.5,
-    fontWeight: '700',
-    flex: 1,
-  },
-  dayOffCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 20,
-    alignItems: 'center',
-    gap: 12,
-  },
-  dayOffIconWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayOffTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  dayOffDesc: {
-    fontSize: 12.5,
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-  upcomingClassCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    width: '100%',
-  },
-  upcomingClassTitle: {
-    fontSize: 12.5,
-    fontWeight: '800',
-  },
-  upcomingClassDetails: {
-    fontSize: 11.5,
-    marginTop: 2,
-  },
-  switchWeekBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
   },
   emptyCard: {
     borderRadius: 16,

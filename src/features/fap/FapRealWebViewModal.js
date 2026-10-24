@@ -41,27 +41,33 @@ export default function FapRealWebViewModal({
   onSyncCourseAttendanceSuccess,
   onOpenPasteModal,
   initialTarget = 'exams', // 'exams' | 'timetable' | 'attendance'
+  initialRefDate = null,
 }) {
   const safeTop = useSafeTop();
   const insets = useSafeAreaInsets();
 
-  const getTargetUri = (target) => {
-    if (target === 'timetable') return 'https://fap.fpt.edu.vn/WeeklyTimetable';
+  const getTargetUri = (target, refDate) => {
+    if (target === 'timetable') {
+      if (refDate) {
+        return `https://fap.fpt.edu.vn/WeeklyTimetable/WeekPartial?referenceDate=${refDate}`;
+      }
+      return 'https://fap.fpt.edu.vn/WeeklyTimetable';
+    }
     if (target === 'attendance' || target === 'course') return 'https://fap.fpt.edu.vn/Report/Attendance';
     return 'https://fap.fpt.edu.vn/ExamSchedule';
   };
 
-  const initialUri = getTargetUri(initialTarget);
+  const initialUri = getTargetUri(initialTarget, initialRefDate);
   const [currentUrl, setCurrentUrl] = useState(initialUri);
   const [loading, setLoading] = useState(false);
   const webViewRef = useRef(null);
 
   useEffect(() => {
     if (visible) {
-      const targetUri = getTargetUri(initialTarget);
+      const targetUri = getTargetUri(initialTarget, initialRefDate);
       setCurrentUrl(targetUri);
     }
-  }, [visible, initialTarget]);
+  }, [visible, initialTarget, initialRefDate]);
 
   // Xử lý message nhận được từ WebView khi bóc tách xong
   const handleNativeMessage = (event) => {

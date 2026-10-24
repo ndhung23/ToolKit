@@ -181,43 +181,94 @@ export function extractTodaySlotsFromCourses(courses = [], now = new Date()) {
 }
 
 /**
- * Trích xuất danh sách ca học TUẦN NÀY từ tất cả các môn đã cào Full (Report/Attendance)
+ * Lấy dải ngày của một tuần (Thứ 2 đến Chủ nhật) dựa trên độ lệch tuần (weekOffset)
+ * @param {number} weekOffset - Độ lệch tuần: 0 là tuần này, 1 là tuần sau, -1 là tuần trước...
+ * @param {Date} baseDate - Mốc ngày cơ sở (mặc định là hôm nay)
  */
-export function extractWeeklySlotsFromCourses(courses = [], now = new Date()) {
-  if (!Array.isArray(courses) || courses.length === 0) return [];
-
-  // Tìm Thứ 2 của tuần hiện tại
+export function getWeekDateRange(weekOffset = 0, baseDate = new Date()) {
+  const now = new Date(baseDate);
   const jsDay = now.getDay();
   const diffToMonday = jsDay === 0 ? -6 : 1 - jsDay;
   const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMonday);
+  monday.setDate(now.getDate() + diffToMonday + weekOffset * 7);
   monday.setHours(0, 0, 0, 0);
 
-  // Tạo tập hợp các ngày trong tuần (Thứ 2 .. Chủ nhật)
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const saturday = new Date(monday);
+  saturday.setDate(monday.getDate() + 5);
+
   const pad = (n) => String(n).padStart(2, '0');
-  const weekDays = [];
+  const days = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    weekDays.push({
+    days.push({
+      dateObj: d,
       dateStr: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`,
       shortDate: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`,
-      dayIndex: i + 2, // 2..8
+      dayIndex: i + 2, // 2..8 (Thứ 2..Chủ nhật)
       dayName: i === 6 ? 'Chủ nhật' : `Thứ ${i + 2}`,
+      isToday:
+        d.getDate() === now.getDate() &&
+        d.getMonth() === now.getMonth() &&
+        d.getFullYear() === now.getFullYear(),
     });
   }
+
+  const startStr = `${pad(monday.getDate())}/${pad(monday.getMonth() + 1)}`;
+  const endStr = `${pad(sunday.getDate())}/${pad(sunday.getMonth() + 1)}`;
+  const weekLabel = `Tuần (${startStr} - ${endStr})`;
+
+  // referenceDate cho FAP WeekPartial (Thứ 7: YYYY-MM-DD theo chuẩn FAP)
+  const refDate = `${saturday.getFullYear()}-${pad(saturday.getMonth() + 1)}-${pad(saturday.getDate())}`;
+
+  return {
+    monday,
+    sunday,
+    saturday,
+    days,
+    startStr,
+    endStr,
+    weekLabel,
+    refDate,
+    weekOffset,
+  };
+}
+
+/**
+ * Trích xuất danh sách ca học một tuần từ tất cả các môn đã cào Full (Report/Attendance)
+ * Hỗ trợ chuyển tuần (weekOffset: 0 = tuần này, 1 = tuần sau, -1 = tuần trước...)
+ */
+export function extractWeeklySlotsFromCourses(courses = [], dateOrOffset = 0) {
+  if (!Array.isArray(courses) || courses.length === 0) return [];
+
+  let weekInfo;
+  if (typeof dateOrOffset === 'number') {
+    weekInfo = getWeekDateRange(dateOrOffset);
+  } else if (dateOrOffset instanceof Date) {
+    weekInfo = getWeekDateRange(0, dateOrOffset);
+  } else {
+    weekInfo = getWeekDateRange(0);
+  }
+
+  const weekDays = weekInfo.days;
 
   const result = [];
   courses.forEach((course) => {
     const sessions = Array.isArray(course.sessions) ? course.sessions : [];
     sessions.forEach((s) => {
       const sDate = s.date || '';
-      const matchedDay = weekDays.find((wd) => sDate === wd.dateStr || sDate.includes(wd.shortDate));
+      const matchedDay = weekDays.find(
+        (wd) => sDate === wd.dateStr || sDate.includes(wd.shortDate)
+      );
       if (matchedDay) {
         const slotNum = s.slot || detectSlotFromTimeStr(s.time);
         const cfg = FAP_TIMESLOTS.find((t) => t.slot === slotNum);
         result.push({
-          id: `week_course_${course.courseCode}_${s.sessionNumber || result.length}`,
+          id: `week_course_${course.courseCode}_${s.sessionNumber || result.length}_${matchedDay.shortDate.replace('/', '_')}`,
           slot: slotNum,
           dayIndex: matchedDay.dayIndex,
           dayName: matchedDay.dayName,
@@ -242,6 +293,46 @@ export function extractWeeklySlotsFromCourses(courses = [], now = new Date()) {
     if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
     return a.slot - b.slot;
   });
+}
+
+/**
+ * Lọc danh sách ca học theo tuần (weekOffset) cho các ca học lấy từ WeeklyTimetable
+ */
+export function filterSlotsForWeek(slots = [], weekOffset = 0) {
+  if (!Array.isArray(slots) || slots.length === 0) return [];
+  const weekInfo = getWeekDateRange(weekOffset);
+  const weekShortDates = new Set(weekInfo.days.map((d) => d.shortDate));
+  const weekFullDates = new Set(weekInfo.days.map((d) => d.dateStr));
+
+  // 1. Lọc các slot có date nằm trong dải ngày của tuần
+  const matched = slots.filter((s) => {
+    if (!s.date) return false;
+    const cleanDate = String(s.date).trim();
+    if (weekShortDates.has(cleanDate) || weekFullDates.has(cleanDate)) return true;
+    for (const shortD of weekShortDates) {
+      if (cleanDate.includes(shortD)) return true;
+    }
+    return false;
+  });
+
+  if (matched.length > 0) {
+    return matched.sort((a, b) => {
+      const dayA = a.dayIndex || 2;
+      const dayB = b.dayIndex || 2;
+      if (dayA !== dayB) return dayA - dayB;
+      return (a.slot || 1) - (b.slot || 1);
+    });
+  }
+
+  // 2. Nếu đang ở tuần hiện tại (weekOffset === 0) và không có slot nào gắn date cụ thể, nhưng có slot theo dayIndex
+  if (weekOffset === 0) {
+    const hasAnyDatedSlot = slots.some((s) => s.date && /\d{1,2}\/\d{1,2}/.test(s.date));
+    if (!hasAnyDatedSlot) {
+      return slots;
+    }
+  }
+
+  return [];
 }
 
 /**
