@@ -56,7 +56,9 @@ export default function FapAttendanceView({
   const todayClasses =
     coursesTodaySlots.length > 0
       ? coursesTodaySlots
-      : filterSlotsForToday(allWeeklySlots);
+      : typeof filterSlotsForToday === 'function'
+      ? filterSlotsForToday(allWeeklySlots)
+      : allWeeklySlots;
 
   const nextClass = getNextUpcomingSlot(allWeeklySlots);
 

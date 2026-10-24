@@ -249,6 +249,26 @@ export function getNextUpcomingSlot(weeklySlots = [], now = new Date()) {
 }
 
 /**
+ * Lọc danh sách ca học diễn ra trong ngày hôm nay từ danh sách ca học cả tuần
+ */
+export function filterSlotsForToday(weeklySlots = [], now = new Date()) {
+  if (!Array.isArray(weeklySlots) || weeklySlots.length === 0) return [];
+  const { dayIndex, dateStr } = getCurrentVietnamDayInfo(now);
+
+  return weeklySlots
+    .filter((slot) => {
+      if (slot.dayIndex !== undefined && slot.dayIndex !== null) {
+        return Number(slot.dayIndex) === Number(dayIndex);
+      }
+      if (slot.date) {
+        return slot.date === dateStr || slot.date.includes(dateStr);
+      }
+      return false;
+    })
+    .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1));
+}
+
+/**
  * Danh sách mẫu dự phòng khi người dùng muốn kiểm tra thử chuông báo
  */
 export const SAMPLE_TODAY_SLOTS = [
