@@ -72,6 +72,17 @@ export const FAP_TIMESLOTS = [
     alertHour: 22,
     alertMinute: 50,
   },
+  {
+    slot: 9,
+    time: '08h00 - 11h40',
+    startTime: '08:00',
+    endTime: '11:40',
+    alertTime: '11:50', // Cuối slot + 10 phút
+    endHour: 11,
+    endMinute: 40,
+    alertHour: 11,
+    alertMinute: 50,
+  },
 ];
 
 // Trạng thái điểm danh FAP
@@ -267,6 +278,101 @@ export function filterSlotsForToday(weeklySlots = [], now = new Date()) {
     })
     .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1));
 }
+
+/**
+ * Bóc tách Thời khóa biểu tuần từ văn bản thuần (hỗ trợ văn bản copy từ WeekPartial hoặc ma trận FAP)
+ */
+export function parseWeeklyTimetableRawText(text = '') {
+  if (!text || typeof text !== 'string') return [];
+  const trimmed = text.trim();
+
+  // 1. Nếu là chuỗi JSON
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed.slots && Array.isArray(parsed.slots)) return parsed.slots;
+    } catch {}
+  }
+
+  // 2. Bóc tách dạng danh sách Mobile WeekPartial (Thứ X (dd/MM) [count] \n slot \n môn \n giờ \n phòng \n GV)
+  const lines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const slots = [];
+  let currentDay = '';
+  let currentDate = '';
+  let currentDayIndex = 2;
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const dayMatch = line.match(/(Thứ\s*\d+|Chủ\s*nhật)\s*\(?(\d{1,2}\/\d{1,2})\)?/i);
+    if (dayMatch) {
+      currentDay = dayMatch[1];
+      currentDate = dayMatch[2];
+      if (/Thứ 2/i.test(currentDay)) currentDayIndex = 2;
+      else if (/Thứ 3/i.test(currentDay)) currentDayIndex = 3;
+      else if (/Thứ 4/i.test(currentDay)) currentDayIndex = 4;
+      else if (/Thứ 5/i.test(currentDay)) currentDayIndex = 5;
+      else if (/Thứ 6/i.test(currentDay)) currentDayIndex = 6;
+      else if (/Thứ 7/i.test(currentDay)) currentDayIndex = 7;
+      else if (/Chủ\s*nhật/i.test(currentDay)) currentDayIndex = 8;
+      i++;
+      continue;
+    }
+
+    if (/^\d+$/.test(line) && i + 3 < lines.length) {
+      const slotNum = parseInt(line, 10);
+      const subLine = lines[i + 1];
+      const timeLine = lines[i + 2];
+      const roomLine = lines[i + 3];
+      const lecLine =
+        i + 4 < lines.length &&
+        !/^\d+$/.test(lines[i + 4]) &&
+        !/(Thứ\s*\d+|Chủ\s*nhật)/i.test(lines[i + 4])
+          ? lines[i + 4]
+          : '-';
+
+      const subMatch = subLine.match(/\b([A-Z]{3}\d{3}[A-Z0-9]?)\b/i);
+      const subCode = subMatch ? subMatch[1].toUpperCase() : subLine;
+
+      const meetMatch = timeLine.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i);
+      const meetLink = meetMatch ? meetMatch[0] : '';
+
+      const isPresent = timeLine.toLowerCase().includes('có mặt') || subLine.toLowerCase().includes('có mặt');
+      const isAbsent = timeLine.toLowerCase().includes('vắng') || subLine.toLowerCase().includes('vắng');
+
+      const cfg = FAP_TIMESLOTS.find((t) => t.slot === slotNum);
+      const cleanTime = timeLine.replace(/\s*-\s*(Offline|Online).*/i, '').replace(/\[.*\]/g, '').trim();
+
+      slots.push({
+        id: `slot_parsed_${slotNum}_${currentDayIndex}_${subCode}_${slots.length}`,
+        slot: slotNum,
+        dayIndex: currentDayIndex,
+        dayName: currentDay,
+        date: currentDate,
+        subjectCode: subCode,
+        subjectName: subLine,
+        time: cleanTime || (cfg ? cfg.time : '07h30 - 09h50'),
+        room: roomLine || 'DE-422',
+        lecturer: lecLine === '-' ? '' : lecLine,
+        meetLink,
+        status: isPresent ? 'Present' : isAbsent ? 'Absent' : 'Not yet',
+        alertTime: cfg ? cfg.alertTime : '10:00',
+        notified: false,
+      });
+
+      i += lecLine !== '-' ? 5 : 4;
+      continue;
+    }
+
+    i++;
+  }
+
+  if (slots.length > 0) return slots;
+
+  return [];
+}
+
 
 /**
  * Danh sách mẫu dự phòng khi người dùng muốn kiểm tra thử chuông báo

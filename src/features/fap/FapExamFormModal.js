@@ -15,6 +15,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { parseFapExamScheduleRaw, parseFapStudentInfo } from './fapExamHelper';
+import { parseWeeklyTimetableRawText } from './fapAttendanceHelper';
 
 export function FapExamFormModal({
   visible,
@@ -142,7 +143,22 @@ export function FapExamFormModal({
       } catch {}
     }
 
-    // 2. Mặc định: Bóc tách Lịch thi từ bảng FAP copy
+    // 2. Kiểm tra nếu là văn bản Thời khóa biểu tuần (copy từ WeekPartial hoặc bảng FAP)
+    const timetableSlots = parseWeeklyTimetableRawText(text);
+    if (timetableSlots.length > 0) {
+      if (onImportTimetable) {
+        onImportTimetable(timetableSlots);
+        Alert.alert(
+          'Nhập TKB thành công! 🎉',
+          `Đã bóc tách thành công ${timetableSlots.length} ca học trong tuần từ văn bản FAP!`
+        );
+        setRawPasteText('');
+        onClose();
+        return;
+      }
+    }
+
+    // 3. Mặc định: Bóc tách Lịch thi từ bảng FAP copy
     const extracted = parseFapExamScheduleRaw(text);
     const extractedUser = parseFapStudentInfo(text);
     if (extracted.length === 0) {

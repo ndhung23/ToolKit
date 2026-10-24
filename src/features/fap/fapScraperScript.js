@@ -538,5 +538,28 @@ export const FAP_SCRAPER_INJECTED_JS = `
 
   try {
     doAutoOrManualScrape(false);
+
+    // Tự động lắng nghe thay đổi khi sinh viên bấm Tuần sau / Tuần trước hoặc đổi môn học
+    var lastScrapedUrl = window.location.href;
+    setInterval(function() {
+      if (window.location.href !== lastScrapedUrl) {
+        lastScrapedUrl = window.location.href;
+        doAutoOrManualScrape(false);
+      }
+    }, 1500);
+
+    // Lắng nghe sự kiện click nút Tuần sau / Tuần trước / Chọn tuần
+    document.addEventListener('click', function() {
+      setTimeout(function() {
+        doAutoOrManualScrape(false);
+      }, 1000);
+    });
+
+    // Lắng nghe sự kiện thay đổi dropdown chọn môn học
+    document.addEventListener('change', function() {
+      setTimeout(function() {
+        doAutoOrManualScrape(false);
+      }, 1000);
+    });
   } catch(e) {}
 `;
