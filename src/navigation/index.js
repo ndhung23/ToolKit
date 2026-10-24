@@ -8,21 +8,19 @@ import {
   DrawerItemList,
 } from '@react-navigation/drawer';
 
-import { useAuth } from '../context/AuthContext';
+import { useAuth, LoginScreen, RegisterScreen } from '../features/auth';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../theme';
-// Màn hình theo các packages chức năng
-import { LoginScreen, RegisterScreen } from '../screens/auth';
-import { HomeScreen, ScreenTimeScreen, ToolsScreen, StatsScreen } from '../screens/main';
-import {
-  ImageToPdfScreen,
-  FapExamScreen,
-  CleanPhotosScreen,
-  FbMultiScreen,
-  AiReplyScreen,
-} from '../screens/tools';
-import { SettingsScreen } from '../screens/settings';
-import { AdminScreen } from '../screens/admin';
+// Màn hình theo các features tính năng chuẩn (1 feature = 1 folder)
+import { HomeScreen, ToolsScreen } from '../features/home';
+import { ScreenTimeScreen, StatsScreen } from '../features/screentime';
+import { FapExamScreen } from '../features/fap';
+import { ImageToPdfScreen } from '../features/image-to-pdf';
+import { CleanPhotosScreen } from '../features/clean-photos';
+import { FbMultiScreen } from '../features/fb-multi';
+import { AiReplyScreen } from '../features/ai-reply';
+import { SettingsScreen } from '../features/settings';
+import { AdminScreen } from '../features/admin';
 import FloatingTabBar from '../components/FloatingTabBar';
 import { RoleBadge } from '../components/ui';
 import { ROLES } from '../constants/roles';

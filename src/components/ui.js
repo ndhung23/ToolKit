@@ -6,7 +6,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { radius, useTheme } from '../theme';
 import { ROLE_CONFIG } from '../constants/roles';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../features/auth';
 
 const FAVICON_ICON = require('../../assets/favicon1.png');
 
