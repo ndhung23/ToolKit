@@ -7,38 +7,48 @@ import {
   Text,
   FlatList,
   Pressable,
-  Switch,
   TextInput,
   StyleSheet,
   Alert,
-  ActivityIndicator,
+  Platform,
+  Image,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as WebBrowser from 'expo-web-browser';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 import * as SecureStore from '../../utils/storage';
 import {
-  INITIAL_FAP_EXAMS,
   REMINDER_PRESETS,
   getExamTimeStatus,
   triggerExamNotification,
 } from '../../utils/fapExamHelper';
+import {
+  ATTENDANCE_STATUS,
+  checkSlotAbsentAlert,
+  triggerAbsentNotification,
+} from '../../utils/fapAttendanceHelper';
 import { FapAuthFlowCard, FapExamFormModal, FapRealWebViewModal } from './fap/FapLoginModals';
+import FapAttendanceView from './fap/FapAttendanceView';
+import FapExamCard from './fap/FapExamCard';
 
 const STORAGE_FAP_SESSION = 'toolkit_fap_student_session_v1';
 const STORAGE_FAP_EXAMS = 'toolkit_fap_exam_list_v1';
 const STORAGE_FAP_REMINDER_MINS = 'toolkit_fap_reminder_mins_v1';
+const STORAGE_FAP_ATTENDANCE_SLOTS = 'toolkit_fap_attendance_slots_v1';
+const STORAGE_FAP_ABSENT_ALERT_ENABLED = 'toolkit_fap_absent_alert_v1';
 
 export default function FapExamScreen({ navigation }) {
   const { colors } = useTheme();
 
   const [fapUser, setFapUser] = useState(null);
   const [exams, setExams] = useState([]);
+  const [activeTab, setActiveTab] = useState('exam'); // 'exam' | 'attendance'
+  const [todaySlots, setTodaySlots] = useState([]); // Không mock data - cào thật từ FAP!
+  const [absentAlertEnabled, setAbsentAlertEnabled] = useState(true);
   const [realWebViewVisible, setRealWebViewVisible] = useState(false);
+  const [webViewTarget, setWebViewTarget] = useState('exam'); // 'exam' | 'timetable'
   const [defaultReminderMins, setDefaultReminderMins] = useState(30);
   const [customMinsInput, setCustomMinsInput] = useState('30');
-  const [syncingSchedule, setSyncingSchedule] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingExam, setEditingExam] = useState(null);
   const [now, setNow] = useState(() => new Date());
@@ -47,15 +57,21 @@ export default function FapExamScreen({ navigation }) {
   examsRef.current = exams;
   const defaultMinsRef = useRef(defaultReminderMins);
   defaultMinsRef.current = defaultReminderMins;
+  const todaySlotsRef = useRef(todaySlots);
+  todaySlotsRef.current = todaySlots;
+  const absentAlertRef = useRef(absentAlertEnabled);
+  absentAlertRef.current = absentAlertEnabled;
 
-  // 1. Khôi phục phiên đăng nhập FAP, lịch thi & cấu hình thời gian nhắc từ bộ nhớ
+  // 1. Khôi phục phiên đăng nhập FAP, lịch thi, điểm danh & cấu hình thời gian nhắc từ bộ nhớ
   useEffect(() => {
     (async () => {
       try {
-        const [savedSession, savedExams, savedMins] = await Promise.all([
+        const [savedSession, savedExams, savedMins, savedSlots, savedAlertToggle] = await Promise.all([
           SecureStore.getItemAsync(STORAGE_FAP_SESSION),
           SecureStore.getItemAsync(STORAGE_FAP_EXAMS),
           SecureStore.getItemAsync(STORAGE_FAP_REMINDER_MINS),
+          SecureStore.getItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS),
+          SecureStore.getItemAsync(STORAGE_FAP_ABSENT_ALERT_ENABLED),
         ]);
 
         if (savedSession) {
@@ -73,6 +89,15 @@ export default function FapExamScreen({ navigation }) {
             setDefaultReminderMins(minsNum);
             setCustomMinsInput(String(minsNum));
           }
+        }
+        if (savedSlots) {
+          const parsedSlots = JSON.parse(savedSlots);
+          if (Array.isArray(parsedSlots) && parsedSlots.length > 0) {
+            setTodaySlots(parsedSlots);
+          }
+        }
+        if (savedAlertToggle !== null && savedAlertToggle !== undefined) {
+          setAbsentAlertEnabled(savedAlertToggle === 'true');
         }
       } catch (e) {
         console.warn('[FAP Exam] Lỗi đọc dữ liệu lưu trữ:', e);
@@ -106,6 +131,26 @@ export default function FapExamScreen({ navigation }) {
         setExams(updatedList);
         SecureStore.setItemAsync(STORAGE_FAP_EXAMS, JSON.stringify(updatedList));
       }
+
+      // Kiểm tra Cảnh báo Vắng (Absent Alert): Cuối ca học + 10 phút
+      if (absentAlertRef.current) {
+        let hasSlotTriggered = false;
+        const updatedSlots = todaySlotsRef.current.map((slot) => {
+          if (slot.notified) return slot;
+          const check = checkSlotAbsentAlert(slot, currentTick);
+          if (check.shouldAlert) {
+            hasSlotTriggered = true;
+            triggerAbsentNotification(slot);
+            return { ...slot, notified: true };
+          }
+          return slot;
+        });
+
+        if (hasSlotTriggered) {
+          setTodaySlots(updatedSlots);
+          SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(updatedSlots));
+        }
+      }
     }, 1000);
 
     return () => clearInterval(timer);
@@ -116,32 +161,24 @@ export default function FapExamScreen({ navigation }) {
     await SecureStore.setItemAsync(STORAGE_FAP_EXAMS, JSON.stringify(nextList));
   };
 
-  // Xử lý khi đăng nhập FAP thành công -> tự động lấy lịch thi
-  const handleLoginSuccess = async (accountData) => {
-    setFapUser(accountData);
-    await SecureStore.setItemAsync(STORAGE_FAP_SESSION, JSON.stringify(accountData));
-
-    // Tự động nạp lịch thi FAP nếu danh sách đang trống
-    if (!exams || exams.length === 0) {
-      await persistExams(INITIAL_FAP_EXAMS);
+  // Đồng bộ thành công Lịch thi thực tế từ WebView (fap.fpt.edu.vn/ExamSchedule)
+  const handleRealSyncSuccess = async (userData, examList) => {
+    if (userData) {
+      setFapUser((prev) => ({ ...(prev || {}), ...userData }));
+      await SecureStore.setItemAsync(STORAGE_FAP_SESSION, JSON.stringify(userData));
     }
-
-    Alert.alert(
-      'Đăng nhập FAP thành công! 🎉',
-      `Xin chào ${accountData.name} (${accountData.studentId}).\nHệ thống đã tự động tải ${
-        exams.length || INITIAL_FAP_EXAMS.length
-      } lịch thi từ cổng fap.fpt.edu.vn/ExamSchedule và kích hoạt chế độ nhắc nhở.`
-    );
+    setExams(examList);
+    await SecureStore.setItemAsync(STORAGE_FAP_EXAMS, JSON.stringify(examList));
   };
 
-  // Đồng bộ thành công dữ liệu THẬT 100% từ WebView / Cổng Bridge
-  const handleRealSyncSuccess = async (userData, examList) => {
-    setFapUser(userData);
-    setExams(examList);
-    await Promise.all([
-      SecureStore.setItemAsync(STORAGE_FAP_SESSION, JSON.stringify(userData)),
-      SecureStore.setItemAsync(STORAGE_FAP_EXAMS, JSON.stringify(examList)),
-    ]);
+  // Đồng bộ thành công Thời khóa biểu & Điểm danh thực tế từ WebView (fap.fpt.edu.vn/WeeklyTimetable)
+  const handleTimetableSyncSuccess = async (userData, slotList) => {
+    if (userData) {
+      setFapUser((prev) => ({ ...(prev || {}), ...userData }));
+      await SecureStore.setItemAsync(STORAGE_FAP_SESSION, JSON.stringify(userData));
+    }
+    setTodaySlots(slotList);
+    await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(slotList));
   };
 
   // Đăng xuất tài khoản FAP
@@ -149,9 +186,11 @@ export default function FapExamScreen({ navigation }) {
     const doLogout = async () => {
       setFapUser(null);
       setExams([]);
+      setTodaySlots([]);
       await Promise.all([
         SecureStore.deleteItemAsync(STORAGE_FAP_SESSION),
         SecureStore.deleteItemAsync(STORAGE_FAP_EXAMS),
+        SecureStore.deleteItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS),
       ]);
     };
 
@@ -171,15 +210,6 @@ export default function FapExamScreen({ navigation }) {
         { text: 'Đăng xuất', style: 'destructive', onPress: doLogout },
       ]
     );
-  };
-
-  // Đồng bộ lại lịch thi từ FAP
-  const handleResyncFapSchedule = () => {
-    if (Platform.OS !== 'web') {
-      setRealWebViewVisible(true);
-    } else {
-      setModalVisible(true);
-    }
   };
 
   // Chọn mốc thời gian nhắc nhở mặc định
@@ -205,6 +235,18 @@ export default function FapExamScreen({ navigation }) {
       'Đã lưu thời gian nhắc',
       `Hệ thống sẽ tự động nhắc nhở trước giờ thi ${parsed} phút cho các môn thi.`
     );
+  };
+
+  // Bật / tắt chế độ cảnh báo vắng (+10p sau slot)
+  const handleToggleAbsentAlert = async (val) => {
+    setAbsentAlertEnabled(val);
+    await SecureStore.setItemAsync(STORAGE_FAP_ABSENT_ALERT_ENABLED, String(val));
+  };
+
+  // Thử chuông cảnh báo vắng ngay lập tức
+  const handleSimulateAbsentAlert = () => {
+    const target = todaySlots.find((s) => s.status === ATTENDANCE_STATUS.ABSENT) || todaySlots[0];
+    triggerAbsentNotification(target);
   };
 
   // Bật / tắt nhắc nhở cho từng môn thi
@@ -255,208 +297,158 @@ export default function FapExamScreen({ navigation }) {
     ]);
   };
 
-  const openFapExamWebPage = async () => {
-    try {
-      await WebBrowser.openBrowserAsync('https://fap.fpt.edu.vn/ExamSchedule');
-    } catch {}
-  };
+  const renderExamItem = ({ item }) => (
+    <FapExamCard
+      item={item}
+      colors={colors}
+      defaultReminderMins={defaultReminderMins}
+      now={now}
+      onToggleReminder={toggleExamReminder}
+      onEditExam={(ex) => {
+        setEditingExam(ex);
+        setModalVisible(true);
+      }}
+      onDeleteExam={handleDeleteExam}
+    />
+  );
 
-  const renderExamItem = ({ item }) => {
-    const status = getExamTimeStatus(item, defaultReminderMins, now);
-    const isPE = item.examType?.toUpperCase() === 'PE';
-
-    return (
-      <View
-        style={[
-          styles.examCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: status.isReminderReached ? colors.primary : colors.cardBorder,
-          },
-        ]}
-      >
-        {/* Hàng trên: Mã môn + Loại thi (PE/FE) + Switch bật/tắt nhắc nhở */}
-        <View style={styles.examTopRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-            <View
-              style={[
-                styles.examTypeBadge,
-                {
-                  backgroundColor: isPE ? 'rgba(245, 158, 11, 0.16)' : 'rgba(59, 130, 246, 0.16)',
-                  borderColor: isPE ? '#F59E0B' : '#3B82F6',
-                },
-              ]}
-            >
-              <Text
-                style={{
-                  color: isPE ? '#F59E0B' : '#3B82F6',
-                  fontWeight: '900',
-                  fontSize: 11.5,
-                }}
-              >
-                {item.examType || 'PE'}
-              </Text>
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.subjectCodeText, { color: colors.text }]}>
-                {item.subjectCode}
-              </Text>
-              <Text style={[styles.subjectNameText, { color: colors.sub }]} numberOfLines={2}>
-                {item.subjectName}
-              </Text>
-            </View>
+  const renderStudentHeaderAndTabs = () => (
+    <>
+      {/* 1. THẺ THÔNG TIN SINH VIÊN FAP */}
+      <View style={styles.studentBanner}>
+        <View style={styles.studentTopRow}>
+          <View style={styles.studentAvatarContainer}>
+            <Image
+              source={require('../../../assets/iconfap.png')}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
           </View>
-
-          <Switch
-            value={Boolean(item.reminderEnabled)}
-            onValueChange={() => toggleExamReminder(item.id)}
-            trackColor={{ false: '#3E3E42', true: colors.primary }}
-            thumbColor={item.reminderEnabled ? '#121214' : '#9E9EA7'}
-          />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.studentLabelSmall}>THÔNG TIN SINH VIÊN • {fapUser.campus || 'Cơ sở Hà Nội (HN)'}</Text>
+            <Text style={styles.studentFullName}>{fapUser.name || 'Nguyễn Duy Hưng'}</Text>
+            <Text style={styles.studentCodeSub}>{fapUser.studentId || 'HE190591'}</Text>
+          </View>
+          <Pressable onPress={handleLogoutFap} style={styles.logoutFapBtn} hitSlop={8}>
+            <Ionicons name="log-out-outline" size={15} color="#FFFFFF" />
+            <Text style={styles.logoutFapText}>Đổi TK</Text>
+          </Pressable>
         </View>
 
-        {/* Bảng chi tiết Ngày - Giờ - Phòng - Hình thức thi chuẩn FAP */}
-        <View style={[styles.examMetaGrid, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-          <View style={styles.metaCell}>
-            <Ionicons name="calendar-outline" size={14} color={colors.primary} />
-            <Text style={[styles.metaLabel, { color: colors.sub }]}>Ngày thi:</Text>
-            <Text style={[styles.metaValue, { color: colors.text }]}>{item.date}</Text>
+        <View style={styles.studentMetaBadgesRow}>
+          <View style={styles.studentMetaChip}>
+            <Text style={styles.studentMetaChipLabel}>Trạng thái</Text>
+            <Text style={styles.studentMetaChipVal}>{fapUser.status || 'HD'}</Text>
           </View>
-
-          <View style={styles.metaCell}>
-            <Ionicons name="time-outline" size={14} color="#10B981" />
-            <Text style={[styles.metaLabel, { color: colors.sub }]}>Thời gian:</Text>
-            <Text style={[styles.metaValue, { color: '#10B981' }]}>{item.time}</Text>
+          <View style={styles.studentMetaChip}>
+            <Text style={styles.studentMetaChipLabel}>Mã chương trình</Text>
+            <Text style={styles.studentMetaChipVal} numberOfLines={1}>{fapUser.program || 'BIT_SE_19C_NJ'}</Text>
           </View>
-
-          <View style={styles.metaCell}>
-            <Ionicons name="location-outline" size={14} color="#F59E0B" />
-            <Text style={[styles.metaLabel, { color: colors.sub }]}>Phòng thi:</Text>
-            <Text style={[styles.metaValue, { color: '#F59E0B' }]}>{item.room}</Text>
-          </View>
-
-          <View style={styles.metaCell}>
-            <Ionicons name="desktop-outline" size={14} color="#3B82F6" />
-            <Text style={[styles.metaLabel, { color: colors.sub }]}>Hình thức:</Text>
-            <Text style={[styles.metaValue, { color: colors.text }]} numberOfLines={1}>
-              {item.examForm}
-            </Text>
+          <View style={styles.studentMetaChip}>
+            <Text style={styles.studentMetaChipLabel}>Khóa</Text>
+            <Text style={styles.studentMetaChipVal}>{fapUser.cohort || '19'}</Text>
           </View>
         </View>
 
-        {/* Khung trạng thái Đếm ngược & Mốc giờ báo nhắc nhở */}
-        <View
-          style={[
-            styles.countdownBanner,
-            {
-              backgroundColor: status.isReminderReached
-                ? 'rgba(255, 208, 0, 0.16)'
-                : item.reminderEnabled
-                ? 'rgba(16, 185, 129, 0.1)'
-                : 'rgba(158, 158, 167, 0.08)',
-              borderColor: status.isReminderReached
-                ? colors.primary
-                : item.reminderEnabled
-                ? 'rgba(16, 185, 129, 0.3)'
-                : colors.border,
-            },
-          ]}
-        >
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons
-                name={item.reminderEnabled ? 'notifications' : 'notifications-off-outline'}
-                size={15}
-                color={
-                  status.isReminderReached
-                    ? colors.primary
-                    : item.reminderEnabled
-                    ? '#10B981'
-                    : colors.sub
-                }
-              />
-              <Text
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: '800',
-                  color: status.isReminderReached
-                    ? colors.primary
-                    : item.reminderEnabled
-                    ? '#10B981'
-                    : colors.sub,
-                }}
-              >
-                {status.countdownText}
-              </Text>
-            </View>
-            <Text style={{ fontSize: 11.5, color: colors.sub, marginTop: 3 }}>
-              {item.reminderEnabled
-                ? `Hẹn nhắc trước ${status.reminderMins} phút (${status.reminderTimeText})`
-                : 'Đã tắt nhắc nhở cho môn thi này'}
-            </Text>
-          </View>
-
-          {item.customReminderMinutes !== null && item.customReminderMinutes !== undefined && (
-            <View style={[styles.customPill, { backgroundColor: 'rgba(255, 208, 0, 0.18)' }]}>
-              <Text style={{ color: colors.primary, fontSize: 10.5, fontWeight: '800' }}>
-                Riêng: {item.customReminderMinutes}p
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Hàng nút hành động: Test thông báo / Chỉnh sửa / Xóa */}
-        <View style={styles.examActionsRow}>
+        <View style={styles.studentSyncActions}>
           <Pressable
-            onPress={() => triggerExamNotification(item, status.reminderMins)}
-            style={[styles.actionBtn, { backgroundColor: 'rgba(255, 208, 0, 0.14)', borderColor: colors.primary }]}
+            onPress={() => {
+              setWebViewTarget('exam');
+              setRealWebViewVisible(true);
+            }}
+            style={[styles.syncFapBtn, { backgroundColor: '#2563EB', flex: 1 }]}
           >
-            <Ionicons name="volume-high-outline" size={14} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
-              Test nhắc ngay
-            </Text>
+            <Ionicons name="calendar-outline" size={15} color="#FFFFFF" />
+            <Text style={[styles.syncFapBtnText, { color: '#FFFFFF' }]}>Lấy Lịch thi</Text>
           </Pressable>
 
           <Pressable
             onPress={() => {
-              setEditingExam(item);
-              setModalVisible(true);
+              setWebViewTarget('timetable');
+              setRealWebViewVisible(true);
             }}
-            style={[styles.actionBtn, { backgroundColor: colors.bg, borderColor: colors.border }]}
+            style={[styles.syncFapBtn, { backgroundColor: '#10B981', flex: 1.2 }]}
           >
-            <Ionicons name="options-outline" size={14} color={colors.text} />
-            <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>
-              Chỉnh giờ / Nhắc
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleDeleteExam(item)}
-            style={[styles.iconOnlyBtn, { backgroundColor: colors.bg, borderColor: colors.border }]}
-          >
-            <Ionicons name="trash-outline" size={14} color={colors.danger} />
+            <Ionicons name="time-outline" size={15} color="#FFFFFF" />
+            <Text style={[styles.syncFapBtnText, { color: '#FFFFFF' }]}>Lấy TKB & Điểm danh</Text>
           </Pressable>
         </View>
       </View>
-    );
-  };
+
+      {/* 2. TAB ĐIỀU HƯỚNG: Lịch thi vs Điểm danh */}
+      <View style={[styles.tabBarWrap, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <Pressable
+          onPress={() => setActiveTab('exam')}
+          style={[
+            styles.tabItem,
+            activeTab === 'exam' && { backgroundColor: colors.primary },
+          ]}
+        >
+          <Ionicons
+            name="calendar-outline"
+            size={15}
+            color={activeTab === 'exam' ? '#121214' : colors.sub}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              { color: activeTab === 'exam' ? '#121214' : colors.sub },
+            ]}
+          >
+            Lịch thi ({exams.length})
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => setActiveTab('attendance')}
+          style={[
+            styles.tabItem,
+            activeTab === 'attendance' && { backgroundColor: colors.primary },
+          ]}
+        >
+          <Ionicons
+            name="checkbox-outline"
+            size={15}
+            color={activeTab === 'attendance' ? '#121214' : colors.sub}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              { color: activeTab === 'attendance' ? '#121214' : colors.sub },
+            ]}
+          >
+            Điểm danh
+          </Text>
+        </Pressable>
+      </View>
+    </>
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScreenHeader
-        title="Nhắc nhở lịch thi FAP"
+        title="FPT FAP"
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
         rightAction={
           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+            <View style={{ width: 28, height: 28, borderRadius: 8, overflow: 'hidden' }}>
+              <Image
+                source={require('../../../assets/iconfap.png')}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
+              />
+            </View>
             <Pressable
-              onPress={() => setRealWebViewVisible(true)}
+              onPress={() => {
+                setWebViewTarget(activeTab === 'attendance' ? 'timetable' : 'exam');
+                setRealWebViewVisible(true);
+              }}
               style={[styles.headerAddBtn, { backgroundColor: '#2563EB' }]}
               hitSlop={8}
             >
               <Ionicons name="globe-outline" size={17} color="#FFFFFF" />
             </Pressable>
-            {fapUser ? (
+            {fapUser && activeTab === 'exam' ? (
               <Pressable
                 onPress={() => {
                   setEditingExam(null);
@@ -472,237 +464,154 @@ export default function FapExamScreen({ navigation }) {
         }
       />
 
-      <FlatList
-        data={fapUser ? exams : []}
-        keyExtractor={(item) => item.id}
-        renderItem={renderExamItem}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        ListHeaderComponent={
-          !fapUser ? (
-            <>
-              {/* Banner Mở WebView FAP thật */}
-              <Pressable
-                onPress={() => setRealWebViewVisible(true)}
-                style={styles.realFapBanner}
-              >
-                <View style={styles.realFapIconCircle}>
-                  <Ionicons name="globe" size={24} color="#FFFFFF" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ color: '#FFFFFF', fontWeight: '900', fontSize: 14.5 }}>
-                      Đăng nhập Cổng FAP Thật (WebView)
-                    </Text>
-                    <View style={styles.realBadge}>
-                      <Text style={styles.realBadgeText}>REAL LIVE</Text>
+      {fapUser && activeTab === 'attendance' ? (
+        <FapAttendanceView
+          colors={colors}
+          weeklySlots={todaySlots}
+          todaySlots={todaySlots}
+          absentAlertEnabled={absentAlertEnabled}
+          onToggleAbsentAlert={handleToggleAbsentAlert}
+          onSyncAttendance={() => {
+            setWebViewTarget('timetable');
+            setRealWebViewVisible(true);
+          }}
+          onSimulateAbsentAlert={handleSimulateAbsentAlert}
+          headerComponent={renderStudentHeaderAndTabs()}
+        />
+      ) : (
+        <FlatList
+          data={fapUser ? exams : []}
+          keyExtractor={(item) => item.id}
+          renderItem={renderExamItem}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            !fapUser ? (
+              <FapAuthFlowCard
+                colors={colors}
+                onOpenWebView={() => setRealWebViewVisible(true)}
+                onOpenPasteModal={() => setModalVisible(true)}
+              />
+            ) : (
+              <>
+                {renderStudentHeaderAndTabs()}
+
+                {/* 2. CẤU HÌNH THỜI GIAN NHẮC NHỞ TRƯỚC GIỜ THI (Người dùng tự chỉnh) */}
+                <View style={[styles.reminderConfigCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                  <View style={styles.configHeaderRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="alarm-outline" size={20} color={colors.primary} />
+                      <Text style={[styles.configTitle, { color: colors.text }]}>
+                        Thời gian nhắc nhở trước giờ thi
+                      </Text>
+                    </View>
+                    <View style={[styles.activeMinsPill, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
+                      <Text style={{ color: colors.primary, fontSize: 11.5, fontWeight: '800' }}>
+                        Trước {defaultReminderMins} phút
+                      </Text>
                     </View>
                   </View>
-                  <Text style={{ color: '#BFDBFE', fontSize: 12, marginTop: 3 }}>
-                    Mở trực tiếp fap.fpt.edu.vn, đăng nhập Google trường & cào tự động 100% lịch thi của bạn.
+
+                  <Text style={[styles.configSub, { color: colors.sub }]}>
+                    Chọn nhanh mốc thời gian hoặc tự nhập số phút bạn muốn hệ thống báo chuông trước khi vào phòng thi:
                   </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
-              </Pressable>
 
-              {/* Hướng dẫn quy trình 4 bước */}
-              <View style={[styles.introBanner, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-                <View style={styles.introIconWrap}>
-                  <Ionicons name="school" size={24} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.introTitle, { color: colors.text }]}>
-                    Đồng bộ Lịch thi Đại học FPT (FAP)
-                  </Text>
-                  <Text style={[styles.introDesc, { color: colors.sub }]}>
-                    Đăng nhập bằng tài khoản FeID hoặc Email trường (@fpt.edu.vn / Gmail) để tự động lấy lịch thi và hẹn giờ nhắc nhở.
-                  </Text>
-                </View>
-              </View>
-
-              {/* Giao diện Cổng đăng nhập FAP 3 bước chuẩn theo ảnh */}
-              <FapAuthFlowCard colors={colors} onLoginSuccess={handleLoginSuccess} />
-            </>
-          ) : (
-            <>
-              {/* 1. THẺ THÔNG TIN SINH VIÊN FAP (Giống ảnh 4 trên fap.fpt.edu.vn) */}
-              <View style={styles.studentBanner}>
-                <View style={styles.studentTopRow}>
-                  <View style={styles.studentCapCircle}>
-                    <Ionicons name="school-outline" size={26} color="#FFFFFF" />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.studentLabelSmall}>THÔNG TIN SINH VIÊN • {fapUser.campus}</Text>
-                    <Text style={styles.studentFullName}>{fapUser.name}</Text>
-                    <Text style={styles.studentCodeSub}>{fapUser.studentId}</Text>
-                  </View>
-                  <Pressable onPress={handleLogoutFap} style={styles.logoutFapBtn} hitSlop={8}>
-                    <Ionicons name="log-out-outline" size={16} color="#FFFFFF" />
-                    <Text style={styles.logoutFapText}>Đổi TK</Text>
-                  </Pressable>
-                </View>
-
-                <View style={styles.studentMetaBadgesRow}>
-                  <View style={styles.studentMetaChip}>
-                    <Text style={styles.studentMetaChipLabel}>Trạng thái</Text>
-                    <Text style={styles.studentMetaChipVal}>{fapUser.status || 'HD'}</Text>
-                  </View>
-                  <View style={styles.studentMetaChip}>
-                    <Text style={styles.studentMetaChipLabel}>Mã chương trình</Text>
-                    <Text style={styles.studentMetaChipVal}>{fapUser.program || 'BIT_SE_19C_NJ'}</Text>
-                  </View>
-                  <View style={styles.studentMetaChip}>
-                    <Text style={styles.studentMetaChipLabel}>Khóa</Text>
-                    <Text style={styles.studentMetaChipVal}>{fapUser.cohort || '19'}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.studentSyncActions}>
-                  <Pressable
-                    onPress={() => setRealWebViewVisible(true)}
-                    style={[styles.syncFapBtn, { backgroundColor: '#2563EB', flex: 1.1 }]}
-                  >
-                    <Ionicons name="globe-outline" size={15} color="#FFFFFF" />
-                    <Text style={[styles.syncFapBtnText, { color: '#FFFFFF' }]}>Cào lại WebView</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={handleResyncFapSchedule}
-                    disabled={syncingSchedule}
-                    style={styles.syncFapBtn}
-                  >
-                    {syncingSchedule ? (
-                      <ActivityIndicator size="small" color="#1E3A8A" />
-                    ) : (
-                      <>
-                        <Ionicons name="sync" size={15} color="#1E3A8A" />
-                        <Text style={styles.syncFapBtnText}>Làm mới</Text>
-                      </>
-                    )}
-                  </Pressable>
-
-                  <Pressable onPress={openFapExamWebPage} style={styles.openWebFapBtn}>
-                    <Ionicons name="open-outline" size={15} color="#FFFFFF" />
-                    <Text style={styles.openWebFapText}>Web FAP</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              {/* 2. CẤU HÌNH THỜI GIAN NHẮC NHỞ TRƯỚC GIỜ THI (Người dùng tự chỉnh) */}
-              <View style={[styles.reminderConfigCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-                <View style={styles.configHeaderRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name="alarm-outline" size={20} color={colors.primary} />
-                    <Text style={[styles.configTitle, { color: colors.text }]}>
-                      Thời gian nhắc nhở trước giờ thi
-                    </Text>
-                  </View>
-                  <View style={[styles.activeMinsPill, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
-                    <Text style={{ color: colors.primary, fontSize: 11.5, fontWeight: '800' }}>
-                      Trước {defaultReminderMins} phút
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={[styles.configSub, { color: colors.sub }]}>
-                  Chọn nhanh mốc thời gian hoặc tự nhập số phút bạn muốn hệ thống báo chuông trước khi vào phòng thi:
-                </Text>
-
-                {/* Hàng nút chọn nhanh (Presets) */}
-                <View style={styles.presetRow}>
-                  {REMINDER_PRESETS.map((p) => {
-                    const selected = defaultReminderMins === p.minutes;
-                    return (
-                      <Pressable
-                        key={p.minutes}
-                        onPress={() => handleSelectPresetMins(p.minutes)}
-                        style={[
-                          styles.presetChip,
-                          {
-                            backgroundColor: selected ? colors.primary : colors.bg,
-                            borderColor: selected ? colors.primary : colors.border,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: '700',
-                            color: selected ? '#121214' : colors.text,
-                          }}
+                  {/* Hàng nút chọn nhanh (Presets) */}
+                  <View style={styles.presetRow}>
+                    {REMINDER_PRESETS.map((p) => {
+                      const selected = defaultReminderMins === p.minutes;
+                      return (
+                        <Pressable
+                          key={p.minutes}
+                          onPress={() => handleSelectPresetMins(p.minutes)}
+                          style={[
+                            styles.presetChip,
+                            {
+                              backgroundColor: selected ? colors.primary : colors.bg,
+                              borderColor: selected ? colors.primary : colors.border,
+                            },
+                          ]}
                         >
-                          {p.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontWeight: '700',
+                              color: selected ? '#121214' : colors.text,
+                            }}
+                          >
+                            {p.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {/* Ô tự nhập số phút tùy chỉnh */}
+                  <View style={styles.customInputRow}>
+                    <TextInput
+                      value={customMinsInput}
+                      onChangeText={setCustomMinsInput}
+                      keyboardType="numeric"
+                      placeholder="Nhập số phút (VD: 45)"
+                      placeholderTextColor={colors.sub}
+                      style={[
+                        styles.customMinsInput,
+                        { color: colors.text, backgroundColor: colors.bg, borderColor: colors.border },
+                      ]}
+                    />
+                    <Pressable
+                      onPress={handleApplyCustomMins}
+                      style={[styles.applyMinsBtn, { backgroundColor: colors.primary }]}
+                    >
+                      <Text style={styles.applyMinsBtnText}>Lưu mốc nhắc</Text>
+                    </Pressable>
+                  </View>
                 </View>
 
-                {/* Ô tự nhập số phút tùy chỉnh */}
-                <View style={styles.customInputRow}>
-                  <TextInput
-                    value={customMinsInput}
-                    onChangeText={setCustomMinsInput}
-                    keyboardType="numeric"
-                    placeholder="Nhập số phút (VD: 45)"
-                    placeholderTextColor={colors.sub}
-                    style={[
-                      styles.customMinsInput,
-                      { color: colors.text, backgroundColor: colors.bg, borderColor: colors.border },
-                    ]}
-                  />
+                {/* 3. TIÊU ĐỀ BẢNG LỊCH THI CỦA TÔI */}
+                <View style={styles.scheduleHeaderRow}>
+                  <View>
+                    <Text style={[styles.scheduleTitle, { color: colors.text }]}>
+                      Lịch thi của tôi ({exams.length})
+                    </Text>
+                    <Text style={{ color: colors.sub, fontSize: 12 }}>
+                      Tự động đồng bộ từ cổng đào tạo FAP
+                    </Text>
+                  </View>
+
                   <Pressable
-                    onPress={handleApplyCustomMins}
-                    style={[styles.applyMinsBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => {
+                      setEditingExam(null);
+                      setModalVisible(true);
+                    }}
+                    style={[styles.addScheduleBtn, { backgroundColor: colors.card, borderColor: colors.primary }]}
                   >
-                    <Text style={styles.applyMinsBtnText}>Lưu mốc nhắc</Text>
+                    <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontSize: 12.5, fontWeight: '800' }}>
+                      Thêm / Dán lịch FAP
+                    </Text>
                   </Pressable>
                 </View>
+              </>
+            )
+          }
+          ListEmptyComponent={
+            fapUser ? (
+              <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <Ionicons name="calendar-clear-outline" size={36} color={colors.sub} />
+                <Text style={{ color: colors.text, fontWeight: '700', marginTop: 10 }}>
+                  Chưa có lịch thi nào
+                </Text>
+                <Text style={{ color: colors.sub, fontSize: 12.5, marginTop: 4, textAlign: 'center' }}>
+                  Nhấn "Tự động lấy lại lịch thi" hoặc "Thêm / Dán lịch FAP" để cập nhật.
+                </Text>
               </View>
-
-              {/* 3. TIÊU ĐỀ BẢNG LỊCH THI CỦA TÔI */}
-              <View style={styles.scheduleHeaderRow}>
-                <View>
-                  <Text style={[styles.scheduleTitle, { color: colors.text }]}>
-                    Lịch thi của tôi ({exams.length})
-                  </Text>
-                  <Text style={{ color: colors.sub, fontSize: 12 }}>
-                    Tự động đồng bộ từ cổng đào tạo FAP
-                  </Text>
-                </View>
-
-                <Pressable
-                  onPress={() => {
-                    setEditingExam(null);
-                    setModalVisible(true);
-                  }}
-                  style={[styles.addScheduleBtn, { backgroundColor: colors.card, borderColor: colors.primary }]}
-                >
-                  <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
-                  <Text style={{ color: colors.primary, fontSize: 12.5, fontWeight: '800' }}>
-                    Thêm / Dán lịch FAP
-                  </Text>
-                </Pressable>
-              </View>
-            </>
-          )
-        }
-        ListEmptyComponent={
-          fapUser ? (
-            <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-              <Ionicons name="calendar-clear-outline" size={36} color={colors.sub} />
-              <Text style={{ color: colors.text, fontWeight: '700', marginTop: 10 }}>
-                Chưa có lịch thi nào
-              </Text>
-              <Text style={{ color: colors.sub, fontSize: 12.5, marginTop: 4, textAlign: 'center' }}>
-                Nhấn "Tự động lấy lại lịch thi" hoặc "Thêm / Dán lịch FAP" để cập nhật.
-              </Text>
-            </View>
-          ) : null
-        }
-        ListFooterComponent={<View style={{ height: 60 }} />}
-      />
+            ) : null
+          }
+          ListFooterComponent={<View style={{ height: 60 }} />}
+        />
+      )}
 
       {/* Modal Thêm / Chỉnh sửa / Dán lịch thi FAP */}
       <FapExamFormModal
@@ -718,8 +627,10 @@ export default function FapExamScreen({ navigation }) {
       <FapRealWebViewModal
         visible={realWebViewVisible}
         onClose={() => setRealWebViewVisible(false)}
+        initialTarget={webViewTarget}
         colors={colors}
         onSyncSuccess={handleRealSyncSuccess}
+        onSyncTimetableSuccess={handleTimetableSyncSuccess}
         onOpenPasteModal={() => setModalVisible(true)}
       />
     </View>
@@ -740,6 +651,13 @@ const styles = StyleSheet.create({
   introDesc: { fontSize: 12, lineHeight: 17 },
   studentBanner: { backgroundColor: '#1E40AF', borderRadius: 20, padding: 16, marginBottom: 16 },
   studentTopRow: { flexDirection: 'row', alignItems: 'center' },
+  studentAvatarContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
   studentCapCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
   studentLabelSmall: { color: 'rgba(255,255,255,0.75)', fontSize: 10.5, fontWeight: '700' },
   studentFullName: { color: '#FFFFFF', fontSize: 17, fontWeight: '900', marginTop: 2 },
@@ -769,19 +687,26 @@ const styles = StyleSheet.create({
   scheduleHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   scheduleTitle: { fontSize: 16.5, fontWeight: '800' },
   addScheduleBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
-  examCard: { borderRadius: 18, borderWidth: 1, padding: 14, marginBottom: 12 },
-  examTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  examTypeBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  subjectCodeText: { fontSize: 15, fontWeight: '900' },
-  subjectNameText: { fontSize: 12, marginTop: 1 },
-  examMetaGrid: { borderRadius: 12, borderWidth: 1, padding: 10, gap: 6, marginBottom: 10 },
-  metaCell: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  metaLabel: { fontSize: 12, width: 72 },
-  metaValue: { fontSize: 12.5, fontWeight: '700', flex: 1 },
-  countdownBanner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 9, borderRadius: 11, borderWidth: 1, marginBottom: 10 },
-  customPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  examActionsRow: { flexDirection: 'row', gap: 8 },
-  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
-  iconOnlyBtn: { width: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1 },
   emptyBox: { padding: 28, borderRadius: 16, borderWidth: 1, alignItems: 'center' },
+  tabBarWrap: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: 14,
+    gap: 6,
+  },
+  tabItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 9,
+  },
+  tabText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
 });

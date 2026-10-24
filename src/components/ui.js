@@ -242,7 +242,13 @@ export function ToolCard({ tool, onPress }) {
       ]}
     >
       <View style={[styles.iconBoxGrid, { backgroundColor: tool.color + '22' }]}>
-        <Ionicons name={tool.icon} size={24} color={tool.color} />
+        {tool.imageIcon ? (
+          <View style={{ width: 28, height: 28, borderRadius: 8, overflow: 'hidden' }}>
+            <Image source={tool.imageIcon} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          </View>
+        ) : (
+          <Ionicons name={tool.icon} size={24} color={tool.color} />
+        )}
       </View>
       <Text style={[styles.toolCardTitle, { color: colors.text }]} numberOfLines={2}>
         {tool.title}
@@ -277,7 +283,13 @@ export function ToolRow({ tool, locked = false, onPress }) {
           { backgroundColor: locked ? 'rgba(255, 208, 0, 0.12)' : tool.color + '22' },
         ]}
       >
-        <Ionicons name={tool.icon} size={22} color={locked ? '#FFD000' : tool.color} />
+        {tool.imageIcon ? (
+          <View style={{ width: 26, height: 26, borderRadius: 7, overflow: 'hidden' }}>
+            <Image source={tool.imageIcon} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          </View>
+        ) : (
+          <Ionicons name={tool.icon} size={22} color={locked ? '#FFD000' : tool.color} />
+        )}
       </View>
       <View style={{ flex: 1, marginLeft: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -302,8 +314,7 @@ export function ToolRow({ tool, locked = false, onPress }) {
 // Modal Mời Nâng cấp VIP chuyên nghiệp dùng chung (Hỗ trợ Khách & Thành viên)
 export function VipUpgradeModal({ visible, tool, onClose, onLoginPress }) {
   const { colors } = useTheme();
-  const auth = useAuth ? useAuth() : null;
-  const user = auth?.user;
+  const { user } = useAuth();
   if (!visible) return null;
 
   const isGuest = !user;

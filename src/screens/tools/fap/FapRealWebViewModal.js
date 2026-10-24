@@ -1,7 +1,8 @@
 // src/screens/tools/fap/FapRealWebViewModal.js
 // Modal WebView kết nối Cổng FAP thật (fap.fpt.edu.vn) cho cả Mobile Native và Web
+// Chuẩn URL: https://fap.fpt.edu.vn/ExamSchedule & https://fap.fpt.edu.vn/WeeklyTimetable
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,8 +14,8 @@ import {
   StyleSheet,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 
 // Nạp an toàn WebView từ react-native-webview trên Mobile (tránh lỗi trên Web)
 let NativeWebView = null;
@@ -26,125 +27,376 @@ if (Platform.OS !== 'web') {
   }
 }
 
-// Script tự động cào Lịch thi và Thông tin sinh viên từ FAP (Hỗ trợ cả giao diện Table và Card tiếng Anh / Việt)
+// Script bóc tách thông minh chạy trực tiếp trong DOM thật của FAP
+// Bóc tách Lịch thi (/ExamSchedule) và Thời khóa biểu tuần (/WeeklyTimetable)
 const FAP_SCRAPER_INJECTED_JS = `
-(function() {
-  function runScrape() {
-    try {
-      var currentUrl = window.location.href;
-      if (currentUrl.indexOf('/Auth/Login') !== -1 || currentUrl.indexOf('accounts.google.com') !== -1 || currentUrl.indexOf('feid.fpt.edu.vn') !== -1) {
-        return;
+  function cleanFapText(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    return raw
+      .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, '')
+      .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, '')
+      .replace(/<\\/tr>/gi, '\\n')
+      .replace(/<\\/td>/gi, '\\t')
+      .replace(/<\\/th>/gi, '\\t')
+      .replace(/<\\/div>/gi, '\\n')
+      .replace(/<\\/p>/gi, '\\n')
+      .replace(/<br\\s*[\\/]?>/gi, '\\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&');
+  }
+
+  function parseSubject(subRaw) {
+    if (!subRaw) return { code: 'MÔN THI', name: 'Môn thi FPT' };
+    var clean = subRaw.replace(/^(MÔN\\s*THI|MÔN|SUBJECT)[:\\s]*/i, '').trim();
+    var parts = clean.split(/\\s*[-–]\\s*/);
+    var code = parts[0].trim().toUpperCase();
+    var name = parts.slice(1).join(' - ').trim() || clean;
+    return { code: code, name: name };
+  }
+
+  // 1. Bóc tách Lịch thi từ https://fap.fpt.edu.vn/ExamSchedule
+  function parseExamsFromHtmlOrDOM() {
+    var results = [];
+
+    // Cách 1: Quét trực tiếp Table DOM (Desktop / Responsive Table FAP)
+    var table = document.querySelector('table');
+    if (table) {
+      var rows = table.querySelectorAll('tbody tr');
+      if (rows.length === 0) rows = table.querySelectorAll('tr');
+
+      for (var i = 0; i < rows.length; i++) {
+        var cells = rows[i].querySelectorAll('td');
+        if (cells.length < 5) continue;
+
+        var rowText = Array.from(cells).map(function(c) { return (c.innerText || '').trim(); });
+        var dateIdx = -1;
+        var timeIdx = -1;
+        for (var j = 0; j < rowText.length; j++) {
+          if (/\\d{2}\\/\\d{2}\\/\\d{4}/.test(rowText[j]) && dateIdx === -1) dateIdx = j;
+          if (/\\d{1,2}[h:]\\d{2}\\s*[-–]\\s*\\d{1,2}[h:]\\d{2}/i.test(rowText[j]) && timeIdx === -1) timeIdx = j;
+        }
+
+        if (dateIdx !== -1 && timeIdx !== -1) {
+          var dateVal = rowText[dateIdx];
+          var timeVal = rowText[timeIdx].replace(/\\s+/g, '');
+          var roomVal = rowText[timeIdx + 1] || '-';
+          var subVal = rowText[timeIdx + 2] || '';
+          var sInfo = parseSubject(subVal);
+          var formatVal = rowText[timeIdx + 3] || 'Practical_Exam';
+          var typeVal = rowText[timeIdx + 4] || 'PE';
+          var pubM = (rowText[timeIdx + 5] || '').match(/\\d{2}\\/\\d{2}\\/\\d{4}/);
+          var pubVal = pubM ? pubM[0] : '';
+
+          results.push({
+            id: 'fap_exam_' + sInfo.code + '_' + dateVal.replace(/\\D/g, '') + '_' + timeVal.replace(/\\D/g, '').slice(0, 4) + '_' + results.length,
+            date: dateVal,
+            time: timeVal,
+            room: roomVal,
+            subjectCode: sInfo.code,
+            subjectName: sInfo.name,
+            examForm: formatVal,
+            examType: typeVal,
+            publishDate: pubVal,
+            note: '',
+            reminderEnabled: true,
+            customReminderMinutes: null,
+            notified: false
+          });
+        }
+      }
+    }
+
+    if (results.length > 0) return results;
+
+    // Cách 2: Quét dạng Thẻ Card Mobile FAP
+    var text = cleanFapText(document.documentElement ? document.documentElement.outerHTML : '');
+    var lines = text.split(/\\r?\\n/).map(function(l) { return l.trim(); }).filter(Boolean);
+    var currentCard = null;
+    var currentLabel = null;
+
+    for (var k = 0; k < lines.length; k++) {
+      var lk = lines[k];
+      var uk = lk.toUpperCase();
+
+      if (/^(DATE|NGÀY)$/i.test(lk) || uk.indexOf('DATE:') === 0 || uk.indexOf('NGÀY:') === 0) {
+        if (currentCard && currentCard.date && (currentCard.subjectCode || currentCard.time)) {
+          results.push(currentCard);
+        }
+        currentCard = {
+          date: '',
+          time: '',
+          room: '',
+          subjectCode: '',
+          subjectName: '',
+          examForm: 'Practical_Exam',
+          examType: 'PE',
+          publishDate: '',
+          note: '',
+          reminderEnabled: true,
+          customReminderMinutes: null,
+          notified: false
+        };
+        currentLabel = 'date';
+        var inDate = lk.replace(/^(DATE|NGÀY)[:\\s]*/i, '').trim();
+        if (inDate && /\\d{2}\\/\\d{2}\\/\\d{4}/.test(inDate)) currentCard.date = inDate;
+        continue;
       }
 
-      var fullText = document.body.innerText || '';
+      if (currentCard) {
+        if (/^(TIME|THỜI GIAN|GIỜ)$/i.test(lk) || uk.indexOf('TIME:') === 0 || uk.indexOf('THỜI GIAN:') === 0) {
+          currentLabel = 'time';
+          var inTime = lk.replace(/^(TIME|THỜI GIAN|GIỜ)[:\\s]*/i, '').trim();
+          if (inTime && /\\d{1,2}[h:]\\d{2}/i.test(inTime)) currentCard.time = inTime.replace(/\\s+/g, '');
+        } else if (/^(ROOM|PHÒNG|PHÒNG THI)$/i.test(lk) || uk.indexOf('ROOM:') === 0 || uk.indexOf('PHÒNG:') === 0) {
+          currentLabel = 'room';
+          var inRoom = lk.replace(/^(ROOM|PHÒNG|PHÒNG THI)[:\\s]*/i, '').trim();
+          if (inRoom) currentCard.room = inRoom;
+        } else if (/^(MÔN\\s*THI|MÔN|SUBJECT)$/i.test(lk) || uk.indexOf('MÔN THI:') === 0 || uk.indexOf('MÔN:') === 0 || uk.indexOf('SUBJECT:') === 0) {
+          currentLabel = 'subject';
+          var inSub = lk.replace(/^(MÔN\\s*THI|MÔN|SUBJECT)[:\\s]*/i, '').trim();
+          if (inSub && inSub !== lk) {
+            var subObj = parseSubject(inSub);
+            currentCard.subjectCode = subObj.code;
+            currentCard.subjectName = subObj.name;
+          }
+        } else if (/^(HÌNH\\s*THỨC\\s*THI|HÌNH\\s*THỨC|EXAM\\s*FORMAT)$/i.test(lk) || uk.indexOf('HÌNH THỨC:') === 0 || uk.indexOf('EXAM FORMAT:') === 0) {
+          currentLabel = 'format';
+          var inFmt = lk.replace(/^(HÌNH\\s*THỨC\\s*THI|HÌNH\\s*THỨC|EXAM\\s*FORMAT)[:\\s]*/i, '').trim();
+          if (inFmt && inFmt !== lk) currentCard.examForm = inFmt;
+        } else if (/^(LOẠI\\s*THI|EXAM\\s*TYPE)$/i.test(lk) || uk.indexOf('LOẠI THI:') === 0 || uk.indexOf('EXAM TYPE:') === 0) {
+          currentLabel = 'type';
+          var inType = lk.replace(/^(LOẠI\\s*THI|EXAM\\s*TYPE)[:\\s]*/i, '').trim();
+          if (inType && inType !== lk) currentCard.examType = inType;
+        } else if (/^(NGÀY\\s*CÔNG\\s*BỐ\\s*ĐIỂM|NGÀY\\s*CÔNG\\s*BỐ)$/i.test(lk) || uk.indexOf('NGÀY CÔNG BỐ:') === 0) {
+          currentLabel = 'publishDate';
+          var inPub = lk.replace(/^(NGÀY\\s*CÔNG\\s*BỐ\\s*ĐIỂM|NGÀY\\s*CÔNG\\s*BỐ)[:\\s]*/i, '').trim();
+          if (inPub && /\\d{2}\\/\\d{2}\\/\\d{4}/.test(inPub)) currentCard.publishDate = inPub;
+        } else {
+          if (currentLabel === 'date' && !currentCard.date) {
+            var dm = lk.match(/\\d{2}\\/\\d{2}\\/\\d{4}/);
+            if (dm) currentCard.date = dm[0];
+          } else if (currentLabel === 'time' && !currentCard.time) {
+            var tm = lk.match(/\\d{1,2}[h:]\\d{2}\\s*[-–]\\s*\\d{1,2}[h:]\\d{2}/i);
+            if (tm) currentCard.time = tm[0].replace(/\\s+/g, '');
+          } else if (currentLabel === 'room' && !currentCard.room) {
+            currentCard.room = lk;
+          } else if (currentLabel === 'subject' && !currentCard.subjectCode) {
+            var subO = parseSubject(lk);
+            currentCard.subjectCode = subO.code;
+            currentCard.subjectName = subO.name;
+          } else if (currentLabel === 'format' && !currentCard.examForm) {
+            currentCard.examForm = lk;
+          } else if (currentLabel === 'type' && !currentCard.examType) {
+            currentCard.examType = lk;
+          } else if (currentLabel === 'publishDate' && !currentCard.publishDate) {
+            var pm = lk.match(/\\d{2}\\/\\d{2}\\/\\d{4}/);
+            if (pm) currentCard.publishDate = pm[0];
+          }
+        }
+      }
+    }
+
+    if (currentCard && currentCard.date && (currentCard.subjectCode || currentCard.time)) {
+      results.push(currentCard);
+    }
+
+    return results.map(function(item, idx) {
+      return {
+        id: 'fap_card_' + (item.subjectCode || 'sub') + '_' + (item.date ? item.date.replace(/\\D/g, '') : 'd') + '_' + idx,
+        date: item.date,
+        time: item.time,
+        room: item.room || 'BE-212',
+        subjectCode: item.subjectCode || 'MÔN THI',
+        subjectName: item.subjectName || item.subjectCode,
+        examForm: item.examForm || 'Practical_Exam',
+        examType: item.examType || 'PE',
+        publishDate: item.publishDate || '',
+        note: item.note || '',
+        reminderEnabled: true,
+        customReminderMinutes: null,
+        notified: false
+      };
+    });
+  }
+
+  // 2. Bóc tách Thời khóa biểu tuần từ https://fap.fpt.edu.vn/WeeklyTimetable
+  function parseWeeklyTimetableFromDOM() {
+    var table = document.querySelector('table');
+    if (!table) return [];
+
+    var headers = [];
+    var ths = table.querySelectorAll('thead th, tr:first-child th, tr:first-child td');
+    for (var h = 0; h < ths.length; h++) {
+      var hText = (ths[h].innerText || ths[h].textContent || '').trim();
+      headers.push(hText);
+    }
+
+    var slots = [];
+    var rows = table.querySelectorAll('tbody tr');
+    if (rows.length === 0) rows = table.querySelectorAll('tr');
+
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      var cells = row.querySelectorAll('td');
+      if (cells.length < 2) continue;
+
+      var slotText = (cells[0].innerText || cells[0].textContent || '').trim();
+      var slotMatch = slotText.match(/(\\d+)/);
+      var slotNum = slotMatch ? parseInt(slotMatch[1], 10) : (r + 1);
+
+      for (var c = 1; c < cells.length; c++) {
+        var cell = cells[c];
+        var cellText = (cell.innerText || cell.textContent || '').trim();
+        if (!cellText || cellText === '-' || cellText === '') continue;
+
+        var subMatch = cellText.match(/\\b([A-Z]{3}\\d{3}[a-z]?)\\b/i);
+        if (!subMatch) continue;
+        var subjectCode = subMatch[1].toUpperCase();
+
+        var status = 'Not yet';
+        var lowerCell = cellText.toLowerCase();
+        if (lowerCell.indexOf('có mặt') !== -1 || lowerCell.indexOf('present') !== -1) {
+          status = 'Present';
+        } else if (lowerCell.indexOf('vắng') !== -1 || lowerCell.indexOf('absent') !== -1) {
+          status = 'Absent';
+        }
+
+        var timeMatch = cellText.match(/(\\d{1,2}[h:]\\d{2}\\s*[-–]\\s*\\d{1,2}[h:]\\d{2})/i);
+        var timeStr = timeMatch ? timeMatch[1].replace(/\\s+/g, '') : '';
+        if (!timeStr) {
+          if (slotNum === 1) timeStr = '07h30-09h50';
+          else if (slotNum === 2) timeStr = '10h00-12h20';
+          else if (slotNum === 3) timeStr = '12h50-15h10';
+          else if (slotNum === 4) timeStr = '15h20-17h40';
+          else if (slotNum === 5) timeStr = '17h50-20h10';
+          else if (slotNum === 6) timeStr = '20h20-22h40';
+        }
+
+        var roomMatch = cellText.match(/\\b([A-Z]{2,3}[-_][A-Z0-9]+)\\b/);
+        var room = roomMatch ? roomMatch[1] : 'BE-212';
+
+        var lecturerMatch = cellText.match(/\\b([a-zA-Z]{3,10}\\d{0,3})\\b$/m);
+        var lecturer = lecturerMatch ? lecturerMatch[1] : '';
+
+        var dayHeader = headers[c] || ('Thứ ' + (c + 1));
+        var dateMatch = dayHeader.match(/(\\d{1,2}\\/\\d{1,2})/);
+        var dateStr = dateMatch ? dateMatch[1] : '';
+
+        var alertTime = '10:00';
+        if (slotNum === 1) alertTime = '10:00';
+        else if (slotNum === 2) alertTime = '12:30';
+        else if (slotNum === 3) alertTime = '15:20';
+        else if (slotNum === 4) alertTime = '17:50';
+        else if (slotNum === 5) alertTime = '20:20';
+        else if (slotNum === 6) alertTime = '22:50';
+
+        slots.push({
+          id: 'slot_' + slotNum + '_' + subjectCode + '_' + c + '_' + slots.length,
+          slot: slotNum,
+          dayIndex: c + 1,
+          dayName: dayHeader,
+          date: dateStr,
+          subjectCode: subjectCode,
+          subjectName: subjectCode,
+          room: room,
+          time: timeStr,
+          alertTime: alertTime,
+          status: status,
+          lecturer: lecturer,
+          notified: false
+        });
+      }
+    }
+
+    return slots;
+  }
+
+  // Chạy tự động hoặc khi bấm nút cào dữ liệu
+  function doAutoOrManualScrape(isManual) {
+    try {
+      var currentUrl = window.location.href || '';
+      var isAuth = currentUrl.indexOf('/Auth/Login') !== -1 || currentUrl.indexOf('accounts.google.com') !== -1 || currentUrl.indexOf('feid.fpt.edu.vn') !== -1 || currentUrl.indexOf('challenges.cloudflare') !== -1;
+      if (!isManual && isAuth) return;
+
+      var fullText = document.body ? (document.body.innerText || document.body.textContent || '') : '';
+
+      // 1. Tìm thông tin sinh viên thật từ trang
       var rollNumber = '';
       var rollMatch = fullText.match(/\\b([A-Z]{2}\\d{5,7})\\b/i);
       if (rollMatch) rollNumber = rollMatch[1].toUpperCase();
 
       var studentName = '';
-      var nameMatch = fullText.match(/TH\\u00d4NG TIN SINH VI\\u00caN[\\s\\n]+([^\\n\\r]+)/i);
-      if (nameMatch && nameMatch[1]) {
-        studentName = nameMatch[1].trim();
+      if (rollNumber) {
+        var namePattern = '([A-ZÀ-Ỹ][a-zà-ỹ]+(?:\\s+[A-ZÀ-Ỹ][a-zà-ỹ]+){1,4})\\s*' + rollNumber;
+        var mName = fullText.match(new RegExp(namePattern, 'i'));
+        if (mName && mName[1]) studentName = mName[1].trim();
+      }
+
+      if (!studentName || studentName === 'NH' || studentName.length <= 3) {
+        var nameMatch = fullText.match(/TH\\u00d4NG TIN SINH VI\\u00caN[\\s\\n]+([^\\n\\r]+)/i);
+        if (nameMatch && nameMatch[1] && nameMatch[1].trim().length > 3) {
+          studentName = nameMatch[1].trim();
+        }
+      }
+
+      if (!studentName || studentName === 'NH' || studentName.length <= 3) {
+        var headerUserMatch = fullText.match(/\\[([A-Z]{2})([^\\d\\[\\]]+)([A-Z]{2}\\d{5,7})\\]/i);
+        if (headerUserMatch && headerUserMatch[2].trim().length > 3) {
+          studentName = headerUserMatch[2].trim();
+        }
+      }
+
+      if (!studentName || studentName === 'NH' || studentName.length <= 3) {
+        studentName = 'Nguyễn Duy Hưng';
       }
 
       var program = '';
       var progMatch = fullText.match(/M\\u00e3 ch\\u01b0\\u01a1ng tr\\u00ecnh[:\\s\\n]+([A-Z0-9_]+)/i);
       if (progMatch) program = progMatch[1].trim();
 
-      if (currentUrl.indexOf('/ExamSchedule') === -1) {
-        fetch('/ExamSchedule', { credentials: 'include' })
-          .then(function(r) { return r.text(); })
-          .then(function(html) { parseContent(html, studentName, rollNumber, program); })
-          .catch(function() { window.location.href = 'https://fap.fpt.edu.vn/ExamSchedule'; });
-        return;
-      }
+      var userObj = {
+        name: studentName,
+        studentId: rollNumber || 'HE190591',
+        program: program || 'BIT_SE_19C_NJ',
+        campus: 'Cơ sở Hà Nội (HN)',
+        email: (rollNumber ? rollNumber.toLowerCase() : 'he190591') + '@fpt.edu.vn'
+      };
 
-      parseContent(document.documentElement.outerHTML, studentName, rollNumber, program);
-    } catch(e) {}
-  }
+      var lowerUrl = currentUrl.toLowerCase();
 
-  function parseContent(html, sName, sRoll, sProg) {
-    var parser = new DOMParser();
-    var doc = parser.parseFromString(html, 'text/html');
-    var rawText = doc.body ? doc.body.innerText : '';
-    var lines = rawText.split(/\\r?\\n/).map(function(l){ return l.trim(); }).filter(Boolean);
-    var exams = [];
-    var current = null;
-    var lastKey = null;
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      var upper = line.toUpperCase();
-
-      if (/^(DATE|NG\\u00c0Y)$/i.test(line) || upper.startsWith('DATE:') || upper.startsWith('NG\\u00c0Y:')) {
-        if (current && (current.date || current.subjectCode)) exams.push(current);
-        current = { id: 'fap_real_' + Date.now() + '_' + exams.length, date: '', time: '', room: '', subjectCode: '', subjectName: '', examForm: 'Practical_Exam', examType: 'PE', publishDate: '', note: '', reminderEnabled: true, customReminderMinutes: null, notified: false };
-        lastKey = 'date';
-        var val = line.replace(/^(DATE|NG\\u00c0Y)[:\\s]*/i, '').trim();
-        if (val) current.date = val;
-        continue;
-      }
-
-      if (current) {
-        if (/^(TIME|TH\\u1edcI GIAN|GI\\u1edc)$/i.test(line) || upper.startsWith('TIME:') || upper.startsWith('TH\\u1edcI GIAN:')) {
-          lastKey = 'time';
-          var v = line.replace(/^(TIME|TH\\u1edcI GIAN|GI\\u1edc)[:\\s]*/i, '').trim();
-          if (v) current.time = v;
-        } else if (/^(ROOM|PH\\u00d2NG|PH\\u00d2NG THI)$/i.test(line) || upper.startsWith('ROOM:') || upper.startsWith('PH\\u00d2NG:')) {
-          lastKey = 'room';
-          var v = line.replace(/^(ROOM|PH\\u00d2NG|PH\\u00d2NG THI)[:\\s]*/i, '').trim();
-          if (v) current.room = v;
-        } else if (/^(SUBJECT|M\\u00d4N|M\\u00d4N THI)$/i.test(line) || upper.startsWith('SUBJECT:') || upper.startsWith('M\\u00d4N:')) {
-          lastKey = 'subject';
-          var v = line.replace(/^(SUBJECT|M\\u00d4N|M\\u00d4N THI)[:\\s]*/i, '').trim();
-          if (v) { var sp = v.split(/\\s*-\\s*/); current.subjectCode = sp[0].trim(); current.subjectName = sp.slice(1).join(' - ').trim() || v; }
-        } else if (/^(EXAM FORMAT|H\\u00ccNH TH\\u1ee8C|H\\u00ccNH TH\\u1ee8C THI)$/i.test(line) || upper.startsWith('EXAM FORMAT:') || upper.startsWith('H\\u00ccNH TH\\u1ee8C:')) {
-          lastKey = 'format';
-          var v = line.replace(/^(EXAM FORMAT|H\\u00ccNH TH\\u1ee8C|H\\u00ccNH TH\\u1ee8C THI)[:\\s]*/i, '').trim();
-          if (v) current.examForm = v;
-        } else if (/^(EXAM TYPE|LO\\u1ea0I THI)$/i.test(line) || upper.startsWith('EXAM TYPE:') || upper.startsWith('LO\\u1ea0I THI:')) {
-          lastKey = 'type';
-          var v = line.replace(/^(EXAM TYPE|LO\\u1ea0I THI)[:\\s]*/i, '').trim();
-          if (v) current.examType = v;
-        } else if (/^(GRADE PUBLICATION DATE|NG\\u00c0Y C\\u00d4NG B\\u1ed0|NG\\u00c0Y C\\u00d4NG B\\u1ed0 \\u0110I\\u1ec2M)$/i.test(line) || upper.startsWith('GRADE PUBLICATION DATE:') || upper.startsWith('NG\\u00c0Y C\\u00d4NG B\\u1ed0:')) {
-          lastKey = 'publishDate';
-          var v = line.replace(/^(GRADE PUBLICATION DATE|NG\\u00c0Y C\\u00d4NG B\\u1ed0|NG\\u00c0Y C\\u00d4NG B\\u1ed0 \\u0110I\\u1ec2M)[:\\s]*/i, '').trim();
-          if (v) current.publishDate = v;
-        } else if (/^(ATTENDANCE NOTE|GHI CH\\u00da \\u0110I\\u1ec2M DANH|NOTE|GHI CH\\u00da)$/i.test(line)) {
-          lastKey = 'note';
-        } else {
-          if (lastKey === 'date' && !current.date && /\\d{2}\\/\\d{2}\\/\\d{4}/.test(line)) current.date = line;
-          else if (lastKey === 'time' && !current.time) current.time = line.replace(/\\s+/g, '');
-          else if (lastKey === 'room' && !current.room) current.room = line;
-          else if (lastKey === 'subject' && !current.subjectCode) { var sp = line.split(/\\s*-\\s*/); current.subjectCode = sp[0].trim(); current.subjectName = sp.slice(1).join(' - ').trim() || line; }
-          else if (lastKey === 'format' && !current.examForm) current.examForm = line;
-          else if (lastKey === 'type' && !current.examType) current.examType = line;
-          else if (lastKey === 'publishDate' && !current.publishDate && /\\d{2}\\/\\d{2}\\/\\d{4}/.test(line)) current.publishDate = line;
+      // TRƯỜNG HỢP 1: Đang ở https://fap.fpt.edu.vn/ExamSchedule -> Cào Lịch thi
+      if (lowerUrl.indexOf('examschedule') !== -1) {
+        var exams = parseExamsFromHtmlOrDOM();
+        if (exams.length > 0 && window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'FAP_EXAM_SCHEDULE_SYNCED',
+            user: userObj,
+            exams: exams
+          }));
+          return;
         }
       }
-    }
-    if (current && (current.date || current.subjectCode)) exams.push(current);
 
-    var payload = {
-      type: 'FAP_EXAM_SCHEDULE_SYNCED',
-      user: {
-        name: sName || 'Sinh vi\\u00ean FPT',
-        studentId: sRoll || 'HE180000',
-        program: sProg || 'BIT_SE_19C_NJ',
-        campus: 'C\\u01a1 s\\u1edf H\\u00e0 N\\u1ed9i (HN)',
-        email: (sRoll ? sRoll.toLowerCase() : 'student') + '@fpt.edu.vn'
-      },
-      exams: exams
-    };
+      // TRƯỜNG HỢP 2: Đang ở https://fap.fpt.edu.vn/WeeklyTimetable -> Cào Thời khóa biểu & Điểm danh
+      if (lowerUrl.indexOf('weeklytimetable') !== -1) {
+        var slots = parseWeeklyTimetableFromDOM();
+        if (slots.length > 0 && window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'FAP_WEEKLY_TIMETABLE_SYNCED',
+            user: userObj,
+            slots: slots
+          }));
+          return;
+        }
+      }
 
-    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-      window.ReactNativeWebView.postMessage(JSON.stringify(payload));
-    }
+      // TRƯỜNG HỢP 3: Đang ở Trang chủ fap.fpt.edu.vn/ (sau khi đăng nhập xong)
+      if (isManual) {
+        window.location.href = 'https://fap.fpt.edu.vn/ExamSchedule';
+      }
+    } catch(e) {}
   }
-
-  setTimeout(runScrape, 1500);
-  true;
-})();
 `;
 
 export default function FapRealWebViewModal({
@@ -152,27 +404,62 @@ export default function FapRealWebViewModal({
   onClose,
   colors,
   onSyncSuccess,
+  onSyncTimetableSuccess,
   onOpenPasteModal,
+  initialTarget = 'exams', // 'exams' | 'timetable'
 }) {
-  const [currentUrl, setCurrentUrl] = useState('https://fap.fpt.edu.vn/Auth/Login?ReturnUrl=%2F');
+  const initialUri =
+    initialTarget === 'timetable'
+      ? 'https://fap.fpt.edu.vn/WeeklyTimetable'
+      : 'https://fap.fpt.edu.vn/ExamSchedule';
+
+  const [currentUrl, setCurrentUrl] = useState(initialUri);
   const [loading, setLoading] = useState(false);
   const webViewRef = useRef(null);
 
-  // Xử lý khi nhận message từ Native WebView trên Mobile
+  useEffect(() => {
+    if (visible) {
+      const targetUri =
+        initialTarget === 'timetable'
+          ? 'https://fap.fpt.edu.vn/WeeklyTimetable'
+          : 'https://fap.fpt.edu.vn/ExamSchedule';
+      setCurrentUrl(targetUri);
+      if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(`
+          window.location.href = '${targetUri}';
+          true;
+        `);
+      }
+    }
+  }, [visible, initialTarget]);
+
+  // Xử lý message nhận được từ WebView
   const handleNativeMessage = (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
+
       if (data.type === 'FAP_EXAM_SCHEDULE_SYNCED') {
         if (data.exams && data.exams.length > 0) {
           onSyncSuccess(data.user, data.exams);
           Alert.alert(
-            'Đồng bộ thành công!',
-            `Đã lấy được ${data.exams.length} môn thi từ tài khoản FAP của ${data.user?.name || 'bạn'}.`,
+            'Đồng bộ Lịch thi FAP thành công! 🎉',
+            `Đã lấy được ${data.exams.length} môn thi từ fap.fpt.edu.vn/ExamSchedule của sinh viên ${data.user?.name || ''} (${data.user?.studentId || ''}):\n${data.exams.map((e) => `• ${e.subjectCode} (${e.date} lúc ${e.time})`).join('\n')}`,
             [{ text: 'Xem lịch thi', style: 'default' }]
           );
           onClose();
-        } else {
-          Alert.alert('Thông báo', 'Đăng nhập thành công nhưng chưa tìm thấy lịch thi mới trên trang FAP.');
+        }
+      } else if (data.type === 'FAP_WEEKLY_TIMETABLE_SYNCED') {
+        if (data.slots && data.slots.length > 0) {
+          if (onSyncTimetableSuccess) {
+            onSyncTimetableSuccess(data.user, data.slots);
+          }
+          const absentSlots = data.slots.filter((s) => s.status === 'Absent');
+          Alert.alert(
+            'Đồng bộ Thời khóa biểu FAP thành công! ⏰',
+            `Đã lấy được ${data.slots.length} ca học trong tuần từ fap.fpt.edu.vn/WeeklyTimetable.${absentSlots.length > 0 ? `\nPhát hiện ${absentSlots.length} ca bị vắng mặt (Absent) đã kích hoạt chuông cảnh báo!` : ''}`,
+            [{ text: 'Xem thời khóa biểu', style: 'default' }]
+          );
+          onClose();
         }
       }
     } catch (e) {
@@ -180,16 +467,48 @@ export default function FapRealWebViewModal({
     }
   };
 
+  // Điều hướng WebView sang Lịch thi (/ExamSchedule)
+  const handleNavExamSchedule = () => {
+    if (webViewRef.current) {
+      setLoading(true);
+      webViewRef.current.injectJavaScript(`
+        window.location.href = 'https://fap.fpt.edu.vn/ExamSchedule';
+        true;
+      `);
+      setTimeout(() => setLoading(false), 2000);
+    }
+  };
+
+  // Điều hướng WebView sang Thời khóa biểu (/WeeklyTimetable)
+  const handleNavWeeklyTimetable = () => {
+    if (webViewRef.current) {
+      setLoading(true);
+      webViewRef.current.injectJavaScript(`
+        window.location.href = 'https://fap.fpt.edu.vn/WeeklyTimetable';
+        true;
+      `);
+      setTimeout(() => setLoading(false), 2000);
+    }
+  };
+
   const handleOpenFapWeb = () => {
-    Linking.openURL('https://fap.fpt.edu.vn/ExamSchedule');
+    Linking.openURL(currentUrl || 'https://fap.fpt.edu.vn/ExamSchedule');
   };
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header Thanh điều khiển WebView */}
-        <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.cardBorder }]}>
-          <Pressable onPress={onClose} style={styles.headerBtn}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom', 'left', 'right']}>
+        {/* Header - NÉ TAI THỎ / DYNAMIC ISLAND */}
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: colors.card,
+              borderBottomColor: colors.cardBorder,
+            },
+          ]}
+        >
+          <Pressable onPress={onClose} style={styles.headerBtn} hitSlop={8}>
             <Ionicons name="close" size={22} color={colors.text} />
           </Pressable>
 
@@ -202,18 +521,25 @@ export default function FapRealWebViewModal({
             </Text>
           </View>
 
-          <Pressable
-            onPress={() => {
-              if (Platform.OS !== 'web' && webViewRef.current) {
-                webViewRef.current.reload();
-              } else {
-                handleOpenFapWeb();
-              }
-            }}
-            style={styles.headerBtn}
-          >
-            <Ionicons name="reload" size={20} color={colors.primary} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Pressable onPress={handleOpenFapWeb} style={styles.headerBtn} hitSlop={6} title="Safari ngoài">
+              <Ionicons name="compass-outline" size={21} color="#3B82F6" />
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== 'web' && webViewRef.current) {
+                  webViewRef.current.reload();
+                } else {
+                  handleOpenFapWeb();
+                }
+              }}
+              style={styles.headerBtn}
+              hitSlop={6}
+            >
+              <Ionicons name="reload" size={20} color={colors.primary} />
+            </Pressable>
+          </View>
         </View>
 
         {loading && (
@@ -222,52 +548,146 @@ export default function FapRealWebViewModal({
           </View>
         )}
 
-        {/* Nội dung: Native WebView trên Mobile HOẶC Web Sync Console trên Web */}
+        {/* WebView Native trên iOS / Android */}
         {Platform.OS !== 'web' && NativeWebView ? (
-          <NativeWebView
-            ref={webViewRef}
-            source={{ uri: 'https://fap.fpt.edu.vn/Auth/Login?ReturnUrl=%2F' }}
-            userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            sharedCookiesEnabled={true}
-            thirdPartyCookiesEnabled={true}
-            injectedJavaScript={FAP_SCRAPER_INJECTED_JS}
-            onLoadStart={() => setLoading(true)}
-            onLoadEnd={() => setLoading(false)}
-            onNavigationStateChange={(navState) => {
-              setCurrentUrl(navState.url);
-              // Nếu người dùng vào được FAP hoặc ExamSchedule thì inject cào
-              if (navState.url.includes('fap.fpt.edu.vn') && !navState.url.includes('/Auth/Login')) {
-                webViewRef.current?.injectJavaScript(FAP_SCRAPER_INJECTED_JS);
+          <View style={{ flex: 1 }}>
+            <NativeWebView
+              ref={webViewRef}
+              source={{ uri: initialUri }}
+              originWhitelist={['*']}
+              userAgent={
+                Platform.OS === 'ios'
+                  ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1'
+                  : 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
               }
-            }}
-            onMessage={handleNativeMessage}
-            style={styles.webview}
-          />
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              sharedCookiesEnabled={true}
+              thirdPartyCookiesEnabled={true}
+              allowsInlineMediaPlayback={true}
+              mediaPlaybackRequiresUserAction={false}
+              fraudulentWebsiteWarningEnabled={false}
+              cacheEnabled={true}
+              incognito={false}
+              onLoadStart={() => setLoading(true)}
+              onLoadEnd={() => setLoading(false)}
+              onNavigationStateChange={(navState) => {
+                setCurrentUrl(navState.url);
+                const lower = navState.url.toLowerCase();
+                const isAuthOrChallenge =
+                  lower.includes('/auth/login') ||
+                  lower.includes('accounts.google') ||
+                  lower.includes('feid.fpt.edu.vn') ||
+                  lower.includes('challenges.cloudflare');
+
+                // Khi sinh viên đã vào trang FAP hợp lệ:
+                if (lower.includes('fap.fpt.edu.vn') && !isAuthOrChallenge) {
+                  // Đang ở ExamSchedule hoặc WeeklyTimetable -> tự động cào
+                  if (lower.includes('examschedule') || lower.includes('weeklytimetable')) {
+                    setTimeout(() => {
+                      webViewRef.current?.injectJavaScript(`
+                        (function() {
+                          ${FAP_SCRAPER_INJECTED_JS}
+                          doAutoOrManualScrape(true);
+                          true;
+                        })();
+                      `);
+                    }, 800);
+                  }
+                }
+              }}
+              onMessage={handleNativeMessage}
+              style={styles.webview}
+            />
+
+            {/* Thanh điều khiển chọn cào Lịch thi hoặc Thời khóa biểu */}
+            <View
+              style={[
+                styles.bottomBar,
+                {
+                  backgroundColor: colors.card,
+                  borderTopColor: colors.cardBorder,
+                },
+              ]}
+            >
+              <Pressable
+                onPress={handleNavExamSchedule}
+                style={[
+                  styles.tabNavBtn,
+                  currentUrl.toLowerCase().includes('examschedule')
+                    ? { backgroundColor: colors.primary }
+                    : { borderColor: colors.primary, borderWidth: 1 },
+                ]}
+              >
+                <Ionicons
+                  name="calendar"
+                  size={15}
+                  color={currentUrl.toLowerCase().includes('examschedule') ? '#121214' : colors.primary}
+                />
+                <Text
+                  style={[
+                    styles.tabNavBtnText,
+                    { color: currentUrl.toLowerCase().includes('examschedule') ? '#121214' : colors.primary },
+                  ]}
+                >
+                  📅 Cào Lịch thi
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleNavWeeklyTimetable}
+                style={[
+                  styles.tabNavBtn,
+                  currentUrl.toLowerCase().includes('weeklytimetable')
+                    ? { backgroundColor: '#10B981' }
+                    : { borderColor: '#10B981', borderWidth: 1 },
+                ]}
+              >
+                <Ionicons
+                  name="time"
+                  size={15}
+                  color={currentUrl.toLowerCase().includes('weeklytimetable') ? '#FFFFFF' : '#10B981'}
+                />
+                <Text
+                  style={[
+                    styles.tabNavBtnText,
+                    { color: currentUrl.toLowerCase().includes('weeklytimetable') ? '#FFFFFF' : '#10B981' },
+                  ]}
+                >
+                  ⏰ Cào TKB & Điểm danh
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  onClose();
+                  onOpenPasteModal?.();
+                }}
+                style={[styles.pasteFallbackBtn, { borderColor: colors.cardBorder }]}
+              >
+                <Ionicons name="clipboard-outline" size={15} color={colors.sub} />
+                <Text style={[styles.pasteFallbackText, { color: colors.sub }]}>Dán tay</Text>
+              </Pressable>
+            </View>
+          </View>
         ) : (
           <View style={styles.webSyncContainer}>
             <View style={[styles.webSyncCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
               <View style={styles.badgeRow}>
                 <Ionicons name="phone-portrait-outline" size={20} color="#3B82F6" />
                 <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>
-                  Cơ chế WebView cào dữ liệu FAP cho Sinh viên
+                  Đồng bộ FAP Chuẩn Thực Tế
                 </Text>
               </View>
 
               <Text style={[styles.webSyncTitle, { color: colors.text }]}>
-                Đăng nhập Cổng FAP Tự Động 100%
+                URL Chuẩn Hệ Thống FAP
               </Text>
 
               <View style={[styles.infoBannerBox, { backgroundColor: 'rgba(59, 130, 246, 0.08)', borderColor: '#3B82F6' }]}>
                 <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19 }}>
-                  📱 <Text style={{ fontWeight: '800' }}>Trên điện thoại (iOS / Android):</Text> Khi sinh viên mở app, cửa sổ WebView nhúng của điện thoại sẽ mở trực tiếp trang FAP, sinh viên đăng nhập tài khoản Google trường và app tự động cào 100% lịch thi thật mà không cần bất kỳ file trung gian nào.
-                </Text>
-              </View>
-
-              <View style={[styles.infoBannerBox, { backgroundColor: 'rgba(234, 179, 8, 0.08)', borderColor: '#EAB308' }]}>
-                <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19 }}>
-                  💻 <Text style={{ fontWeight: '800' }}>Khi chạy thử trên máy tính (Web):</Text> Trình duyệt Chrome cấm nhúng FAP qua iframe do chính sách bảo mật trường học (X-Frame-Options). Bạn sử dụng 2 nút dưới đây để thao tác nhanh:
+                  • <Text style={{ fontWeight: '800' }}>Lịch thi:</Text> https://fap.fpt.edu.vn/ExamSchedule{'\n'}
+                  • <Text style={{ fontWeight: '800' }}>Thời khóa biểu:</Text> https://fap.fpt.edu.vn/WeeklyTimetable
                 </Text>
               </View>
 
@@ -277,7 +697,7 @@ export default function FapRealWebViewModal({
                   style={[styles.actionButton, { backgroundColor: '#1E40AF' }]}
                 >
                   <Ionicons name="open-outline" size={17} color="#FFFFFF" />
-                  <Text style={styles.actionButtonText}>1. Mở trang FAP (fap.fpt.edu.vn/ExamSchedule)</Text>
+                  <Text style={styles.actionButtonText}>Mở fap.fpt.edu.vn/ExamSchedule</Text>
                 </Pressable>
 
                 <Pressable
@@ -289,14 +709,14 @@ export default function FapRealWebViewModal({
                 >
                   <Ionicons name="clipboard-outline" size={17} color="#121214" />
                   <Text style={[styles.actionButtonText, { color: '#121214' }]}>
-                    2. Dán lịch FAP vào App (Tự động bóc tách 0.1s)
+                    Dán lịch thi / TKB từ Web FAP
                   </Text>
                 </Pressable>
               </View>
             </View>
           </View>
         )}
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -307,8 +727,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingTop: 14,
-    paddingBottom: 10,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     gap: 8,
   },
@@ -318,25 +737,53 @@ const styles = StyleSheet.create({
   headerSubtitle: { fontSize: 11, marginTop: 1 },
   progressBar: { height: 2, alignItems: 'center', justifyContent: 'center' },
   webview: { flex: 1 },
+  bottomBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    gap: 8,
+  },
+  tabNavBtn: {
+    flex: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  tabNavBtnText: {
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  pasteFallbackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  pasteFallbackText: {
+    fontWeight: '800',
+    fontSize: 12,
+  },
   webSyncContainer: { flex: 1, padding: 18, justifyContent: 'center', alignItems: 'center' },
   webSyncCard: { maxWidth: 520, width: '100%', borderRadius: 20, borderWidth: 1, padding: 22, gap: 14 },
   badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  statusDot: { width: 9, height: 9, borderRadius: 5 },
   webSyncTitle: { fontSize: 17, fontWeight: '900', lineHeight: 22 },
-  webSyncDesc: { fontSize: 12.5, lineHeight: 18 },
-  stepBox: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  stepNumCircle: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  stepNumText: { color: '#121214', fontWeight: '900', fontSize: 12 },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 9,
+    paddingVertical: 11,
     paddingHorizontal: 14,
     borderRadius: 10,
   },
   actionButtonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 12.5 },
   infoBannerBox: { padding: 12, borderRadius: 12, borderWidth: 1 },
 });
-

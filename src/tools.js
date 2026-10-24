@@ -5,10 +5,11 @@ import { canAccessTool } from './constants/roles';
 export const TOOLS = [
   {
     id: 'fap_exam',
-    title: 'Nhắc nhở lịch thi FAP',
-    shortTitle: 'Nhắc nhở',
-    desc: 'Đăng nhập tài khoản FAP (FeID/Email trường), tự động lấy lịch thi & hẹn giờ nhắc trước',
+    title: 'FPT FAP',
+    shortTitle: 'FPT FAP',
+    desc: 'Lịch thi, thời khóa biểu & kiểm tra điểm danh sinh viên FPT',
     icon: 'notifications',
+    imageIcon: require('../assets/iconfap.png'),
     color: '#F37021',
     route: 'FapExam',
     badge: 'FPT Edu',

@@ -5,6 +5,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   Animated,
   PanResponder,
   StyleSheet,
@@ -281,11 +282,21 @@ export default function DraggableGrid({
                     },
                   ]}
                 >
-                  <Ionicons
-                    name={toolItem.icon}
-                    size={22}
-                    color={isLocked ? '#FFD000' : toolItem.color}
-                  />
+                  {toolItem.imageIcon ? (
+                    <View style={{ width: 28, height: 28, borderRadius: 8, overflow: 'hidden' }}>
+                      <Image
+                        source={toolItem.imageIcon}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                    </View>
+                  ) : (
+                    <Ionicons
+                      name={toolItem.icon}
+                      size={22}
+                      color={isLocked ? '#FFD000' : toolItem.color}
+                    />
+                  )}
                 </View>
 
                 {/* Tên công cụ (đa ngôn ngữ) */}

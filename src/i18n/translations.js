@@ -102,9 +102,9 @@ export const translations = {
     // Công cụ hệ thống
     tools: {
       fap_exam: {
-        title: 'Nhắc nhở lịch thi FAP',
-        shortTitle: 'Nhắc nhở',
-        desc: 'Đăng nhập tài khoản FAP (FeID/Email trường), tự động lấy lịch thi & hẹn giờ nhắc trước',
+        title: 'FPT FAP',
+        shortTitle: 'FPT FAP',
+        desc: 'Lịch thi, thời khóa biểu & kiểm tra điểm danh sinh viên FPT',
         badge: 'FPT Edu',
       },
       pdf: {
@@ -252,9 +252,9 @@ export const translations = {
     // Tools
     tools: {
       fap_exam: {
-        title: 'FAP Exam Schedule Reminder',
-        shortTitle: 'FAP Reminder',
-        desc: 'Sign in with FAP (FeID/FPT Email), auto-sync exam schedule & set custom alerts',
+        title: 'FPT FAP',
+        shortTitle: 'FPT FAP',
+        desc: 'Exam schedule, timetable & attendance alerts for FPT students',
         badge: 'FPT Edu',
       },
       pdf: {

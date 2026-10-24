@@ -13,6 +13,7 @@ import {
   FlatList,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Clipboard from 'expo-clipboard';
 import { parseFapExamScheduleRaw, parseFapStudentInfo } from '../../../utils/fapExamHelper';
 
 export function FapExamFormModal({
@@ -104,9 +105,10 @@ export function FapExamFormModal({
     onClose();
   };
 
-  const handleParseImport = () => {
-    const extracted = parseFapExamScheduleRaw(rawPasteText);
-    const extractedUser = parseFapStudentInfo(rawPasteText);
+  const handleParseImport = (textToParse = rawPasteText) => {
+    const text = textToParse || rawPasteText;
+    const extracted = parseFapExamScheduleRaw(text);
+    const extractedUser = parseFapStudentInfo(text);
     if (extracted.length === 0) {
       Alert.alert(
         'Không tìm thấy lịch thi',
@@ -117,6 +119,44 @@ export function FapExamFormModal({
     onImportExams(extracted, extractedUser);
     setRawPasteText('');
     onClose();
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (!text || !text.trim()) {
+        Alert.alert('Bộ nhớ tạm trống', 'Hãy copy lịch thi trên trang web FAP trước khi bấm nút này.');
+        return;
+      }
+      setRawPasteText(text);
+      const extracted = parseFapExamScheduleRaw(text);
+      const extractedUser = parseFapStudentInfo(text);
+      if (extracted.length > 0) {
+        Alert.alert(
+          'Đã tìm thấy lịch thi! 🎉',
+          `Phát hiện ${extracted.length} ca thi trong bộ nhớ tạm:\n${extracted.map((e) => `• ${e.subjectCode} (${e.date} lúc ${e.time})`).join('\n')}`,
+          [
+            { text: 'Kiểm tra lại', style: 'cancel' },
+            {
+              text: 'Nạp ngay',
+              style: 'default',
+              onPress: () => {
+                onImportExams(extracted, extractedUser);
+                setRawPasteText('');
+                onClose();
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Đã dán nội dung',
+          'Đã dán văn bản từ bộ nhớ tạm vào ô bên dưới. Vui lòng bấm "Bóc tách & Nạp lịch thi" để thử lại.'
+        );
+      }
+    } catch {
+      Alert.alert('Thông báo', 'Không thể đọc nội dung bộ nhớ tạm.');
+    }
   };
 
   return (
@@ -264,8 +304,18 @@ export function FapExamFormModal({
                 </View>
               ) : (
                 <View style={{ paddingBottom: 12 }}>
+                  <Pressable
+                    onPress={handlePasteFromClipboard}
+                    style={[styles.quickDemoBanner, { backgroundColor: 'rgba(59, 130, 246, 0.15)', borderColor: '#3B82F6', marginBottom: 12 }]}
+                  >
+                    <Ionicons name="clipboard-outline" size={17} color="#3B82F6" />
+                    <Text style={{ color: '#3B82F6', fontSize: 13, fontWeight: '800' }}>
+                      📋 Tự động Dán từ bộ nhớ tạm (Clipboard)
+                    </Text>
+                  </Pressable>
+
                   <Text style={{ color: colors.sub, fontSize: 12.5, lineHeight: 18, marginBottom: 10 }}>
-                    Mở trang <Text style={{ color: colors.primary, fontWeight: '700' }}>fap.fpt.edu.vn/ExamSchedule</Text>, bôi đen và copy các dòng trong bảng lịch thi rồi dán vào bên dưới:
+                    Hoặc copy các dòng từ trang <Text style={{ color: colors.primary, fontWeight: '700' }}>fap.fpt.edu.vn/ExamSchedule</Text> rồi dán vào ô bên dưới:
                   </Text>
 
                   <TextInput

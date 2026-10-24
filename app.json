@@ -45,7 +45,8 @@
           "icon": "./assets/favicon1.png",
           "color": "#FFD000"
         }
-      ]
+      ],
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
