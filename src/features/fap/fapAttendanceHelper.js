@@ -109,17 +109,127 @@ export function getCurrentVietnamDayInfo(now = new Date()) {
 }
 
 /**
- * Lọc danh sách ca học chỉ cho ngày HÔM NAY (Today)
+ * Tự động nhận diện Slot (1..6) từ chuỗi thời gian (ví dụ: '10:00 - 12:20' -> Slot 2)
  */
-export function filterSlotsForToday(weeklySlots = [], now = new Date()) {
-  if (!Array.isArray(weeklySlots) || weeklySlots.length === 0) return [];
-  const { dayIndex, dayName, dateStr } = getCurrentVietnamDayInfo(now);
+export function detectSlotFromTimeStr(timeStr = '') {
+  if (!timeStr) return 1;
+  const m = timeStr.match(/(\d{1,2})[h:](\d{2})/i);
+  if (!m) return 1;
+  const hour = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const totalMin = hour * 60 + min;
 
-  return weeklySlots.filter((slot) => {
-    if (slot.dayIndex && slot.dayIndex === dayIndex) return true;
-    if (slot.dayName && slot.dayName.toLowerCase().includes(dayName.toLowerCase())) return true;
-    if (slot.date && dateStr && slot.date.includes(dateStr)) return true;
-    return false;
+  if (totalMin <= 9 * 60 + 50) return 1; // Trước hoặc bằng 09:50 -> Slot 1
+  if (totalMin <= 12 * 60 + 30) return 2; // Trước hoặc bằng 12:30 -> Slot 2
+  if (totalMin <= 15 * 60 + 10) return 3; // Trước hoặc bằng 15:10 -> Slot 3
+  if (totalMin <= 17 * 60 + 40) return 4; // Trước hoặc bằng 17:40 -> Slot 4
+  if (totalMin <= 20 * 60 + 10) return 5; // Trước hoặc bằng 20:10 -> Slot 5
+  return 6; // Sau 20:10 -> Slot 6
+}
+
+/**
+ * Trích xuất danh sách ca học HÔM NAY từ tất cả các môn đã cào Full (Report/Attendance)
+ */
+export function extractTodaySlotsFromCourses(courses = [], now = new Date()) {
+  if (!Array.isArray(courses) || courses.length === 0) return [];
+  const pad = (n) => String(n).padStart(2, '0');
+  const todayDateStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+  const shortToday = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}`;
+  const { dayName } = getCurrentVietnamDayInfo(now);
+
+  const matched = [];
+  courses.forEach((course) => {
+    const sessions = Array.isArray(course.sessions) ? course.sessions : [];
+    sessions.forEach((s) => {
+      const sDate = s.date || '';
+      if (sDate === todayDateStr || sDate.includes(shortToday)) {
+        const slotNum = s.slot || detectSlotFromTimeStr(s.time);
+        const cfg = FAP_TIMESLOTS.find((t) => t.slot === slotNum);
+        matched.push({
+          id: `today_course_${course.courseCode}_${s.sessionNumber || matched.length}`,
+          slot: slotNum,
+          dayName,
+          date: s.date,
+          time: s.time || (cfg ? cfg.time : '07h30 - 09h50'),
+          alertTime: cfg ? cfg.alertTime : '10:00',
+          subjectCode: course.courseCode,
+          subjectName: course.courseName || course.courseCode,
+          room: s.room || 'DE-422',
+          lecturer: s.lecturer || 'Giảng viên',
+          status: s.status || ATTENDANCE_STATUS.NOT_YET,
+          notified: false,
+          sessionNumber: s.sessionNumber,
+          totalSlots: course.totalSlots,
+        });
+      }
+    });
+  });
+
+  // Sắp xếp ca học theo thứ tự Slot từ 1 đến 6
+  return matched.sort((a, b) => a.slot - b.slot);
+}
+
+/**
+ * Trích xuất danh sách ca học TUẦN NÀY từ tất cả các môn đã cào Full (Report/Attendance)
+ */
+export function extractWeeklySlotsFromCourses(courses = [], now = new Date()) {
+  if (!Array.isArray(courses) || courses.length === 0) return [];
+
+  // Tìm Thứ 2 của tuần hiện tại
+  const jsDay = now.getDay();
+  const diffToMonday = jsDay === 0 ? -6 : 1 - jsDay;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+
+  // Tạo tập hợp các ngày trong tuần (Thứ 2 .. Chủ nhật)
+  const pad = (n) => String(n).padStart(2, '0');
+  const weekDays = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    weekDays.push({
+      dateStr: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`,
+      shortDate: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`,
+      dayIndex: i + 2, // 2..8
+      dayName: i === 6 ? 'Chủ nhật' : `Thứ ${i + 2}`,
+    });
+  }
+
+  const result = [];
+  courses.forEach((course) => {
+    const sessions = Array.isArray(course.sessions) ? course.sessions : [];
+    sessions.forEach((s) => {
+      const sDate = s.date || '';
+      const matchedDay = weekDays.find((wd) => sDate === wd.dateStr || sDate.includes(wd.shortDate));
+      if (matchedDay) {
+        const slotNum = s.slot || detectSlotFromTimeStr(s.time);
+        const cfg = FAP_TIMESLOTS.find((t) => t.slot === slotNum);
+        result.push({
+          id: `week_course_${course.courseCode}_${s.sessionNumber || result.length}`,
+          slot: slotNum,
+          dayIndex: matchedDay.dayIndex,
+          dayName: matchedDay.dayName,
+          date: matchedDay.shortDate,
+          fullDate: s.date,
+          time: s.time || (cfg ? cfg.time : '07h30 - 09h50'),
+          alertTime: cfg ? cfg.alertTime : '10:00',
+          subjectCode: course.courseCode,
+          subjectName: course.courseName || course.courseCode,
+          room: s.room || 'DE-422',
+          lecturer: s.lecturer || 'Giảng viên',
+          status: s.status || ATTENDANCE_STATUS.NOT_YET,
+          notified: false,
+          sessionNumber: s.sessionNumber,
+          totalSlots: course.totalSlots,
+        });
+      }
+    });
+  });
+
+  return result.sort((a, b) => {
+    if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
+    return a.slot - b.slot;
   });
 }
 
