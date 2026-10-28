@@ -137,6 +137,12 @@ export const translations = {
         desc: 'Phân tích ngữ cảnh tin nhắn đến và gợi ý câu trả lời thông minh',
         badge: 'VIP AI',
       },
+      snap_video: {
+        title: 'Tải video từ mạng xã hội không logo',
+        shortTitle: 'Snap Video',
+        desc: 'Tải video TikTok, YouTube, Facebook, Instagram không dính watermark',
+        badge: 'Mới',
+      },
     },
 
     // Chung (Common)
@@ -286,6 +292,12 @@ export const translations = {
         shortTitle: 'AI Reply',
         desc: 'Analyze conversation context and suggest smart quick replies',
         badge: 'VIP AI',
+      },
+      snap_video: {
+        title: 'Download social media videos without watermark',
+        shortTitle: 'Snap Video',
+        desc: 'Download TikTok, YouTube, Facebook, Instagram videos without watermark',
+        badge: 'New',
       },
     },
 

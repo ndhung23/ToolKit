@@ -70,6 +70,17 @@ export const TOOLS = [
     badge: 'VIP AI',
     tier: 'vip',
   },
+  {
+    id: 'snap_video',
+    title: 'Tải video từ mạng xã hội không logo',
+    shortTitle: 'Snap Video',
+    desc: 'Tải video TikTok, YouTube, Facebook, Instagram không dính watermark',
+    icon: 'download',
+    color: '#FF2D55',
+    route: 'SnapVideo',
+    badge: 'Mới',
+    tier: 'free',
+  },
 ];
 
 export function openTool(navigation, tool, user, onUpgradeRequired, customTiers = null) {
