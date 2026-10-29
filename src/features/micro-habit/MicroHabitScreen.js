@@ -15,10 +15,12 @@ import {
   Switch,
   Platform,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { generateHabitsWithAi } from '../../services/geminiService';
 import {
   HABIT_TYPES,
   calculateHabitStatus,
@@ -49,6 +51,12 @@ export default function MicroHabitScreen({ navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [selectedHabitForHistory, setSelectedHabitForHistory] = useState(null);
+
+  // Gemini AI Gợi ý việc vặt
+  const [aiModalVisible, setAiModalVisible] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
   // Form State thêm / chỉnh sửa việc
   const [editingId, setEditingId] = useState(null);
@@ -102,7 +110,70 @@ export default function MicroHabitScreen({ navigation }) {
     }
   }, [formTitle]);
 
-  // Tải danh sách thói quen khi mount
+  const handleOpenAiModal = useCallback(() => {
+    setAiSuggestions([]);
+    setAiPrompt('');
+    setAiModalVisible(true);
+  }, []);
+
+  const handleGenerateAiHabits = useCallback(async (customPrompt) => {
+    const text = (customPrompt || aiPrompt || '').trim() || 'Sinh hoạt cá nhân';
+    setIsGeneratingAi(true);
+    try {
+      const results = await generateHabitsWithAi(text);
+      setAiSuggestions(results);
+    } catch (err) {
+      Alert.alert('Lỗi', err.message || 'Không thể tạo gợi ý việc vặt bằng AI.');
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  }, [aiPrompt]);
+
+  const handleApplyAiHabits = useCallback(async () => {
+    if (!aiSuggestions || aiSuggestions.length === 0) return;
+    const today = getTodayDateString();
+
+    const newHabits = [...habits];
+    for (const item of aiSuggestions) {
+      const id = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+      const newHabit = {
+        id,
+        title: item.title,
+        type: item.type,
+        intervalDays: item.intervalDays || 30,
+        dayOfMonth: item.dayOfMonth || 5,
+        targetCount: item.targetCount || 1,
+        unit: item.unit || 'lần',
+        category: 'AI Gợi ý',
+        note: 'Được tạo bởi Gemini AI',
+        icon: 'sparkles',
+        color: item.color || '#3B82F6',
+        lastCompletedDate: today,
+        dailyCurrentCount: 0,
+        dailyLastUpdatedDate: today,
+        completionHistory: [
+          {
+            timestamp: Date.now(),
+            date: today,
+            note: 'Tạo mới từ gợi ý Gemini AI',
+          },
+        ],
+        reminderEnabled: Boolean(item.reminderTime),
+        reminderTime: item.reminderTime || '08:00',
+        reminderId: null,
+      };
+
+      if (newHabit.reminderEnabled) {
+        newHabit.reminderId = await scheduleHabitReminder(newHabit);
+      }
+      newHabits.unshift(newHabit);
+    }
+
+    setHabits(newHabits);
+    await saveHabits(newHabits);
+    setAiModalVisible(false);
+    Alert.alert('Thành công! 🎉', `Đã thêm ${aiSuggestions.length} việc vặt & chu kỳ sinh hoạt vào danh sách.`);
+  }, [aiSuggestions, habits]);
   useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -570,13 +641,22 @@ export default function MicroHabitScreen({ navigation }) {
                   <Ionicons name="repeat" size={20} color="#10B981" />
                   <Text style={[styles.statsTitle, { color: colors.text }]}>Theo dõi chu kỳ tự động</Text>
                 </View>
-                <Pressable
-                  onPress={handleOpenAddModal}
-                  style={[styles.addTopBtn, { backgroundColor: '#10B981' }]}
-                >
-                  <Ionicons name="add" size={18} color="#FFFFFF" />
-                  <Text style={styles.addTopBtnText}>Thêm việc</Text>
-                </Pressable>
+                <View style={styles.statsActionsRow}>
+                  <Pressable
+                    onPress={handleOpenAiModal}
+                    style={[styles.aiSuggestTopBtn, { backgroundColor: '#7C3AED' }]}
+                  >
+                    <Ionicons name="sparkles" size={15} color="#FFFFFF" />
+                    <Text style={styles.aiSuggestTopBtnText}>AI Gợi ý</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleOpenAddModal}
+                    style={[styles.addTopBtn, { backgroundColor: '#10B981' }]}
+                  >
+                    <Ionicons name="add" size={18} color="#FFFFFF" />
+                    <Text style={styles.addTopBtnText}>Thêm việc</Text>
+                  </Pressable>
+                </View>
               </View>
 
               <View style={styles.statsGrid}>
@@ -989,6 +1069,131 @@ export default function MicroHabitScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Modal Gợi ý chu kỳ việc vặt bằng Gemini AI */}
+      <Modal
+        visible={aiModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAiModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.aiModalCard, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="sparkles" size={22} color="#7C3AED" />
+                <Text style={[styles.modalTitle, { color: colors.text }]}>
+                  Gemini AI Gợi ý việc vặt
+                </Text>
+              </View>
+              <Pressable onPress={() => setAiModalVisible(false)} hitSlop={8}>
+                <Ionicons name="close" size={24} color={colors.sub} />
+              </Pressable>
+            </View>
+
+            <FlatList
+              data={[1]}
+              keyExtractor={() => 'ai-content'}
+              showsVerticalScrollIndicator={false}
+              renderItem={() => (
+                <View style={{ paddingBottom: 16 }}>
+                  <Text style={[styles.aiIntroText, { color: colors.sub }]}>
+                    Chọn chủ đề nhanh hoặc nhập nhu cầu sinh hoạt thực tế của bạn để Gemini AI tự động lên lịch chu kỳ tối ưu (100% miễn phí).
+                  </Text>
+
+                  {/* Nhóm chủ đề nhanh */}
+                  <View style={styles.aiTopicChipsRow}>
+                    {[
+                      { label: '🎓 Sinh viên ở trọ', prompt: 'Sinh viên ở trọ phòng riêng' },
+                      { label: '🛵 Bảo dưỡng xe máy', prompt: 'Bảo dưỡng xe máy tay ga định kỳ' },
+                      { label: '🩺 Sức khỏe sinh hoạt', prompt: 'Sức khỏe, uống nước, tập thể dục' },
+                      { label: '🐾 Nuôi thú cưng', prompt: 'Nuôi mèo và chó trong nhà' },
+                      { label: '🏠 Nhà cửa & Gas', prompt: 'Gia đình, nhà cửa, đổi gas, lọc nước' },
+                    ].map((topic) => (
+                      <Pressable
+                        key={topic.label}
+                        onPress={() => {
+                          setAiPrompt(topic.prompt);
+                          handleGenerateAiHabits(topic.prompt);
+                        }}
+                        style={[styles.aiTopicChip, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}
+                      >
+                        <Text style={[styles.aiTopicChipText, { color: colors.text }]}>{topic.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  {/* Ô nhập tùy biến */}
+                  <View style={styles.aiInputRow}>
+                    <TextInput
+                      style={[styles.aiCustomInput, { color: colors.text, borderColor: colors.cardBorder }]}
+                      value={aiPrompt}
+                      onChangeText={setAiPrompt}
+                      placeholder="VD: Người mới mua xe tay ga, sống 1 mình..."
+                      placeholderTextColor={colors.sub}
+                    />
+                    <Pressable
+                      onPress={() => handleGenerateAiHabits()}
+                      disabled={isGeneratingAi}
+                      style={[styles.aiGenerateBtn, { backgroundColor: '#7C3AED', opacity: isGeneratingAi ? 0.6 : 1 }]}
+                    >
+                      {isGeneratingAi ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+                      )}
+                    </Pressable>
+                  </View>
+
+                  {/* Danh sách gợi ý từ Gemini AI */}
+                  {aiSuggestions.length > 0 && (
+                    <View style={styles.aiResultsContainer}>
+                      <Text style={[styles.aiResultsTitle, { color: colors.text }]}>
+                        Đã tạo {aiSuggestions.length} việc vặt thông minh:
+                      </Text>
+
+                      {aiSuggestions.map((item, idx) => (
+                        <View
+                          key={idx}
+                          style={[
+                            styles.aiSuggestionCard,
+                            { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder },
+                          ]}
+                        >
+                          <View style={[styles.aiCardColorBar, { backgroundColor: item.color || '#3B82F6' }]} />
+                          <View style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12 }}>
+                            <Text style={[styles.aiCardTitle, { color: colors.text }]}>{item.title}</Text>
+                            <Text style={[styles.aiCardSubtitle, { color: colors.sub }]}>
+                              {item.type === 'interval' && `Lặp lại mỗi ${item.intervalDays} ngày`}
+                              {item.type === 'monthly' && `Ngày ${item.dayOfMonth} hàng tháng`}
+                              {item.type === 'daily' && `Mỗi ngày ${item.targetCount} ${item.unit || 'lần'}`}
+                              {item.reminderTime ? ` • Nhắc lúc ${item.reminderTime}` : ''}
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+
+                      {/* Nút áp dụng tất cả */}
+                      <Pressable
+                        onPress={handleApplyAiHabits}
+                        style={[styles.applyAiBtn, { backgroundColor: '#10B981' }]}
+                      >
+                        <Ionicons name="checkmark-done" size={20} color="#FFFFFF" />
+                        <Text style={styles.applyAiBtnText}>
+                          Thêm tất cả vào danh sách (+{aiSuggestions.length})
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              )}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -1006,6 +1211,12 @@ const styles = StyleSheet.create({
   },
   statsTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   statsTitle: { fontSize: 16, fontWeight: '800' },
+  statsActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aiSuggestTopBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
+  },
+  aiSuggestTopBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   addTopBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
@@ -1212,4 +1423,61 @@ const styles = StyleSheet.create({
   },
   historyDateText: { fontSize: 12, fontWeight: '700' },
   historyNoteText: { fontSize: 11, flex: 1, textAlign: 'right' },
+
+  // Gemini AI Modal Styles
+  aiModalCard: {
+    width: '100%', maxHeight: '88%', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 20, paddingTop: 16,
+  },
+  aiIntroText: {
+    fontSize: 13, lineHeight: 18, marginBottom: 12,
+  },
+  aiTopicChipsRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14,
+  },
+  aiTopicChip: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1,
+  },
+  aiTopicChipText: {
+    fontSize: 12, fontWeight: '700',
+  },
+  aiInputRow: {
+    flexDirection: 'row', gap: 8, marginBottom: 16,
+  },
+  aiCustomInput: {
+    flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14,
+    paddingVertical: 10, fontSize: 14,
+  },
+  aiGenerateBtn: {
+    width: 48, height: 48, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  aiResultsContainer: {
+    marginTop: 6,
+  },
+  aiResultsTitle: {
+    fontSize: 14, fontWeight: '800', marginBottom: 10,
+  },
+  aiSuggestionCard: {
+    flexDirection: 'row', borderRadius: 12, borderWidth: 1,
+    overflow: 'hidden', marginBottom: 8,
+  },
+  aiCardColorBar: {
+    width: 6,
+  },
+  aiCardTitle: {
+    fontSize: 14, fontWeight: '800', marginBottom: 2,
+  },
+  aiCardSubtitle: {
+    fontSize: 12, fontWeight: '500',
+  },
+  applyAiBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, borderRadius: 14, marginTop: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
+  },
+  applyAiBtnText: {
+    color: '#FFFFFF', fontSize: 14, fontWeight: '800',
+  },
 });

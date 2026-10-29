@@ -21,6 +21,11 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import {
+  polishTranscriptWithAi,
+  summarizeTranscriptWithAi,
+  rewriteTextToneWithAi,
+} from '../../services/geminiService';
 
 // An toàn trên Expo Go (tránh crash khi thiếu native module ExpoSpeechRecognition)
 let ExpoSpeechRecognitionModule = null;
@@ -395,6 +400,8 @@ export default function VoiceTextScreen({ navigation }) {
   const [ttsText, setTtsText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isDownloadingAudio, setIsDownloadingAudio] = useState(false);
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
+  const [aiActionType, setAiActionType] = useState('');
   const [ttsLang, setTtsLang] = useState('vi-VN');
   const [speechRate, setSpeechRate] = useState(1.0);
   const [speechPitch, setSpeechPitch] = useState(1.0);
@@ -577,6 +584,95 @@ export default function VoiceTextScreen({ navigation }) {
     setTranscript('');
     setPartialTranscript('');
   }, []);
+
+  // Gemini AI: Tút lại câu & sửa lỗi chính tả
+  const handlePolishWithAi = useCallback(async () => {
+    const raw = (transcript || partialTranscript || '').trim();
+    if (!raw) {
+      Alert.alert('Chưa có văn bản', 'Vui lòng đọc hoặc nhập nội dung để Gemini AI tút lại câu từ.');
+      return;
+    }
+    setIsAiProcessing(true);
+    setAiActionType('polish');
+    try {
+      const polished = await polishTranscriptWithAi(raw);
+      if (polished) {
+        setTranscript(polished);
+        setPartialTranscript('');
+        Alert.alert('Gemini AI ✨', 'Đã chuẩn hóa câu từ, thêm dấu câu và sửa chính tả thành công!');
+      }
+    } catch (e) {
+      Alert.alert('Lỗi', e.message || 'Không thể xử lý văn bản bằng AI.');
+    } finally {
+      setIsAiProcessing(false);
+      setAiActionType('');
+    }
+  }, [transcript, partialTranscript]);
+
+  // Gemini AI: Tóm tắt ý chính
+  const handleSummarizeWithAi = useCallback(async () => {
+    const raw = (transcript || partialTranscript || '').trim();
+    if (!raw) {
+      Alert.alert('Chưa có văn bản', 'Vui lòng đọc hoặc nhập nội dung để Gemini AI tóm tắt.');
+      return;
+    }
+    setIsAiProcessing(true);
+    setAiActionType('summarize');
+    try {
+      const summary = await summarizeTranscriptWithAi(raw);
+      if (summary) {
+        Alert.alert(
+          'Tóm tắt ý chính (Gemini AI) 📝',
+          summary,
+          [
+            { text: 'Đóng', style: 'cancel' },
+            {
+              text: 'Thay thế vào ô nhập',
+              onPress: () => {
+                setTranscript(summary);
+                setPartialTranscript('');
+              },
+            },
+            {
+              text: 'Sao chép',
+              onPress: async () => {
+                await Clipboard.setStringAsync(summary);
+                Alert.alert('Đã sao chép 📋', 'Đã sao chép bản tóm tắt vào clipboard.');
+              },
+            },
+          ]
+        );
+      }
+    } catch (e) {
+      Alert.alert('Lỗi', e.message || 'Không thể tóm tắt bằng AI.');
+    } finally {
+      setIsAiProcessing(false);
+      setAiActionType('');
+    }
+  }, [transcript, partialTranscript]);
+
+  // Gemini AI: Viết lại giọng đọc TTS
+  const handleRewriteTone = useCallback(async (toneName) => {
+    const raw = ttsText.trim();
+    if (!raw) {
+      Alert.alert('Chưa có nội dung', 'Vui lòng nhập văn bản trước khi viết lại.');
+      return;
+    }
+    setIsAiProcessing(true);
+    setAiActionType('rewrite');
+    try {
+      const rewritten = await rewriteTextToneWithAi(raw, toneName);
+      if (rewritten) {
+        setTtsText(rewritten);
+        Alert.alert('Gemini AI ✨', `Đã viết lại văn bản theo phong cách '${toneName}'!`);
+      }
+    } catch (e) {
+      Alert.alert('Lỗi', e.message || 'Không thể viết lại bằng AI.');
+    } finally {
+      setIsAiProcessing(false);
+      setAiActionType('');
+    }
+  }, [ttsText]);
 
   // ============================================================
   // TTS: NGHE THỬ GIỌNG ĐỌC MẪU (Sử dụng expo-speech chuẩn native)
@@ -825,6 +921,55 @@ export default function VoiceTextScreen({ navigation }) {
         ) : null}
       </View>
 
+      {/* Bộ công cụ Gemini AI cho văn bản nhận dạng */}
+      <View style={[styles.aiToolbar, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View style={styles.aiToolbarHeader}>
+          <View style={styles.aiBadge}>
+            <Ionicons name="sparkles" size={14} color="#7C3AED" />
+            <Text style={styles.aiBadgeText}>Trợ lý Gemini AI</Text>
+          </View>
+          <Text style={[styles.aiStatusText, { color: colors.sub }]}>Miễn phí 100%</Text>
+        </View>
+
+        <View style={styles.aiActionsRow}>
+          <Pressable
+            onPress={handlePolishWithAi}
+            disabled={(!transcript && !partialTranscript) || isAiProcessing}
+            style={[
+              styles.aiActionChip,
+              {
+                backgroundColor: colors.cardElevated,
+                borderColor: colors.cardBorder,
+                opacity: (!transcript && !partialTranscript) || isAiProcessing ? 0.5 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="color-wand-outline" size={16} color="#7C3AED" />
+            <Text style={[styles.aiActionText, { color: colors.text }]}>
+              {aiActionType === 'polish' && isAiProcessing ? 'Đang tút lại...' : 'Tút câu & chính tả ✨'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleSummarizeWithAi}
+            disabled={(!transcript && !partialTranscript) || isAiProcessing}
+            style={[
+              styles.aiActionChip,
+              {
+                backgroundColor: colors.cardElevated,
+                borderColor: colors.cardBorder,
+                opacity: (!transcript && !partialTranscript) || isAiProcessing ? 0.5 : 1,
+              },
+            ]}
+          >
+            <Ionicons name="list-outline" size={16} color="#3B82F6" />
+            <Text style={[styles.aiActionText, { color: colors.text }]}>
+              {aiActionType === 'summarize' && isAiProcessing ? 'Đang tóm tắt...' : 'Tóm tắt ý chính 📝'}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
       {/* Nút sao chép nhanh toàn bộ văn bản */}
       <Pressable
         onPress={() => handleQuickCopy(transcript || partialTranscript)}
@@ -940,6 +1085,40 @@ export default function VoiceTextScreen({ navigation }) {
               <Text style={[styles.actionText, { color: colors.danger }]}>Xóa</Text>
             </Pressable>
           )}
+        </View>
+      </View>
+
+      {/* Viết lại văn phong đọc bằng Gemini AI */}
+      <View style={[styles.aiRewriteBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View style={styles.aiToolbarHeader}>
+          <View style={styles.aiBadge}>
+            <Ionicons name="sparkles" size={14} color="#7C3AED" />
+            <Text style={styles.aiBadgeText}>Gemini AI viết lại văn phong đọc</Text>
+          </View>
+          <Text style={[styles.aiStatusText, { color: colors.sub }]}>Miễn phí 100%</Text>
+        </View>
+        <View style={styles.toneChipsRow}>
+          {[
+            { id: 'mc', label: '🎙️ MC Tin tức', tone: 'MC Tin tức truyền thanh chuẩn mực, trang trọng' },
+            { id: 'review', label: '🌟 Reviewer cuốn hút', tone: 'Reviewer mạng xã hội sôi nổi, tự nhiên, cuốn hút' },
+            { id: 'short', label: '⚡ Ngắn gọn súc tích', tone: 'Ngắn gọn, súc tích, đi thẳng vào trọng tâm' },
+          ].map((t) => (
+            <Pressable
+              key={t.id}
+              onPress={() => handleRewriteTone(t.tone)}
+              disabled={!ttsText.trim() || isAiProcessing}
+              style={[
+                styles.toneChip,
+                {
+                  backgroundColor: colors.cardElevated,
+                  borderColor: colors.cardBorder,
+                  opacity: !ttsText.trim() || isAiProcessing ? 0.5 : 1,
+                },
+              ]}
+            >
+              <Text style={[styles.toneChipText, { color: colors.text }]}>{t.label}</Text>
+            </Pressable>
+          ))}
         </View>
       </View>
 
@@ -1461,6 +1640,49 @@ const styles = StyleSheet.create({
   },
   vbeeNoteTitle: { fontSize: 13, fontWeight: '800', marginBottom: 4 },
   vbeeNoteDesc: { fontSize: 12, lineHeight: 18, fontWeight: '500' },
+
+  // Gemini AI Toolbars
+  aiToolbar: {
+    borderRadius: 16, padding: 12, borderWidth: 1,
+    marginBottom: 12,
+  },
+  aiToolbarHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  aiBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  aiBadgeText: {
+    fontSize: 13, fontWeight: '800', color: '#7C3AED',
+  },
+  aiStatusText: {
+    fontSize: 11, fontWeight: '600',
+  },
+  aiActionsRow: {
+    flexDirection: 'row', gap: 8,
+  },
+  aiActionChip: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12, borderWidth: 1,
+  },
+  aiActionText: {
+    fontSize: 12, fontWeight: '700',
+  },
+
+  aiRewriteBox: {
+    borderRadius: 16, padding: 12, borderWidth: 1,
+    marginBottom: 14,
+  },
+  toneChipsRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
+  },
+  toneChip: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1,
+  },
+  toneChipText: {
+    fontSize: 12, fontWeight: '700',
+  },
 
   activeVoiceBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
