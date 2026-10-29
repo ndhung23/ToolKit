@@ -5,7 +5,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library/legacy';
 
-const REQUEST_TIMEOUT_MS = 25000;
+const REQUEST_TIMEOUT_MS = 10000;
 
 // 4 Nền tảng được hỗ trợ theo yêu cầu
 export const SUPPORTED_PLATFORMS = [
@@ -148,7 +148,7 @@ async function resolveTikTok(url, mode, signal) {
 }
 
 // ============================================================
-// 2. YOUTUBE MULTI-INSTANCE RESOLVER (Tự động chuyển server dự phòng)
+// 2. YOUTUBE PARALLEL MULTI-INSTANCE RESOLVER (Tốc độ cao & Xử lý song song)
 // ============================================================
 async function resolveYouTube(url, mode, signal) {
   const videoId = extractYouTubeId(url);
@@ -156,91 +156,77 @@ async function resolveYouTube(url, mode, signal) {
     throw new Error('Không nhận dạng được ID video YouTube từ liên kết này.');
   }
 
-  // Danh sách các máy chủ phân giải luồng YouTube công khai (tự động thử lần lượt)
+  // Danh sách các máy chủ phân giải Piped đang hoạt động (chạy song song để có kết quả ngay trong 1-3s)
   const servers = [
-    { type: 'piped', url: 'https://api.piped.projectsegfau.lt' },
-    { type: 'piped', url: 'https://api.piped.private.coffee' },
-    { type: 'piped', url: 'https://pipedapi.kavin.rocks' },
-    { type: 'piped', url: 'https://pipedapi.ducks.party' },
-    { type: 'invidious', url: 'https://inv.tux.pizza' },
-    { type: 'invidious', url: 'https://invidious.nerdvpn.de' },
+    'https://api.piped.private.coffee',
+    'https://pipedapi.ducks.party',
   ];
 
-  for (const s of servers) {
+  let botBlocked = false;
+
+  const tryServer = async (serverUrl) => {
     if (signal?.aborted) throw new Error('Đã hủy thao tác.');
+    const c = new AbortController();
+    const timeout = setTimeout(() => c.abort(), 4000);
+    const combinedSignal = signal || c.signal;
+
     try {
-      const c = new AbortController();
-      const timeout = setTimeout(() => c.abort(), 6000);
-      const combinedSignal = signal || c.signal;
+      const res = await fetch(`${serverUrl}/streams/${videoId}`, {
+        headers: { 'Accept': 'application/json' },
+        signal: combinedSignal,
+      });
+      clearTimeout(timeout);
 
-      if (s.type === 'piped') {
-        const res = await fetch(`${s.url}/streams/${videoId}`, {
-          headers: { 'Accept': 'application/json' },
-          signal: combinedSignal,
-        });
-        clearTimeout(timeout);
-
-        if (!res.ok) continue;
-        const data = await res.json();
-        if (!data) continue;
-
-        if (mode === 'audio') {
-          const audio = data.audioStreams?.find((a) => a.url);
-          if (audio?.url) {
-            return {
-              url: audio.url,
-              filename: `youtube_${videoId}.m4a`,
-            };
+      if (!res.ok) {
+        if (res.status === 500) {
+          const errText = await res.text().catch(() => '');
+          if (errText.includes('bot') || errText.includes('LOGIN_REQUIRED')) {
+            botBlocked = true;
           }
         }
+        throw new Error(`HTTP ${res.status}`);
+      }
 
-        // Ưu tiên MPEG_4 (MP4 có audio + video)
-        const mp4Stream = data.videoStreams?.find((st) => (st.format === 'MPEG_4' || st.mimeType?.includes('mp4')) && st.url);
-        const anyStream = data.videoStreams?.find((st) => st.url);
-        const chosen = mp4Stream || anyStream;
+      const data = await res.json();
+      if (!data) throw new Error('Empty data');
 
-        if (chosen?.url) {
+      if (mode === 'audio') {
+        const audio = data.audioStreams?.find((a) => a.url);
+        if (audio?.url) {
           return {
-            url: chosen.url,
-            filename: `youtube_${videoId}.mp4`,
-          };
-        }
-      } else if (s.type === 'invidious') {
-        const res = await fetch(`${s.url}/api/v1/videos/${videoId}`, {
-          headers: { 'Accept': 'application/json' },
-          signal: combinedSignal,
-        });
-        clearTimeout(timeout);
-
-        if (!res.ok) continue;
-        const data = await res.json();
-        if (!data || !Array.isArray(data.formatStreams)) continue;
-
-        if (mode === 'audio') {
-          const audio = data.adaptiveFormats?.find((f) => f.type?.includes('audio') && f.url);
-          if (audio?.url) {
-            return {
-              url: audio.url,
-              filename: `youtube_${videoId}.m4a`,
-            };
-          }
-        }
-
-        const format = data.formatStreams.find((f) => f.type?.includes('mp4') && f.url) || data.formatStreams[0];
-        if (format?.url) {
-          return {
-            url: format.url,
-            filename: `youtube_${videoId}.mp4`,
+            url: audio.url,
+            filename: `youtube_${videoId}.m4a`,
           };
         }
       }
-    } catch {
-      // Tự động thử server tiếp theo
-      continue;
-    }
-  }
 
-  throw new Error('Tất cả máy chủ phân giải YouTube đang bận hoặc video bị giới hạn bản quyền. Vui lòng thử lại sau vài giây.');
+      // Ưu tiên MP4 có tiếng + hình
+      const mp4Stream = data.videoStreams?.find((st) => (st.format === 'MPEG_4' || st.mimeType?.includes('mp4')) && st.url);
+      const anyStream = data.videoStreams?.find((st) => st.url);
+      const chosen = mp4Stream || anyStream;
+
+      if (chosen?.url) {
+        return {
+          url: chosen.url,
+          filename: `youtube_${videoId}.mp4`,
+        };
+      }
+
+      throw new Error('No stream found');
+    } catch (err) {
+      clearTimeout(timeout);
+      throw err;
+    }
+  };
+
+  try {
+    return await Promise.any(servers.map((s) => tryServer(s)));
+  } catch {
+    if (botBlocked) {
+      throw new Error('Video YouTube này đang bị YouTube áp dụng cơ chế xác minh chống bot (Botguard). Vui lòng thử video YouTube khác hoặc dùng video từ TikTok, Facebook, Instagram.');
+    }
+    throw new Error('Không thể phân tích video YouTube này. Vui lòng kiểm tra lại link hoặc thử video khác.');
+  }
 }
 
 // ============================================================

@@ -26,7 +26,6 @@ import {
   summarizeTranscriptWithAi,
   rewriteTextToneWithAi,
 } from '../../services/geminiService';
-import GeminiApiKeyModal from '../../components/GeminiApiKeyModal';
 
 // An toàn trên Expo Go (tránh crash khi thiếu native module ExpoSpeechRecognition)
 let ExpoSpeechRecognitionModule = null;
@@ -110,7 +109,7 @@ const LANGUAGES = [
   { code: 'fr-FR', label: 'Français 🇫🇷' },
 ];
 
-// Danh sách giọng đọc AI Tiếng Việt phong cách Vbee (8 giọng đa dạng vùng miền & giới tính)
+// Danh sách giọng đọc AI Tiếng Việt (8 giọng đa dạng vùng miền & phân biệt Nam/Nữ cực rõ ràng)
 const VIETNAMESE_VOICES = [
   {
     id: 'vn-mai',
@@ -118,11 +117,11 @@ const VIETNAMESE_VOICES = [
     gender: 'female',
     genderLabel: 'Nữ',
     region: 'Miền Bắc',
-    style: 'Truyền cảm • Đọc truyện',
+    style: 'Truyền cảm • Trong trẻo',
     avatar: '👧',
-    sample: 'Xin chào! Tôi là Hà Tiểu Mai, giọng đọc nữ miền Bắc truyền cảm và dịu dàng.',
-    pitch: 1.25,
-    rate: 1.0,
+    sample: 'Xin chào! Tôi là Hà Tiểu Mai, giọng đọc nữ miền Bắc trong trẻo và dịu dàng.',
+    pitch: 1.35,
+    rate: 0.95,
     badge: 'Phổ biến',
   },
   {
@@ -131,12 +130,12 @@ const VIETNAMESE_VOICES = [
     gender: 'male',
     genderLabel: 'Nam',
     region: 'Miền Bắc',
-    style: 'Trầm ấm • Thuyết minh',
+    style: 'Trầm ấm • Nam tính',
     avatar: '👨',
-    sample: 'Xin chào! Tôi là Mạnh Dũng, giọng đọc nam miền Bắc trầm ấm và truyền cảm hứng.',
-    pitch: 0.8,
-    rate: 0.95,
-    badge: 'Yêu thích',
+    sample: 'Xin chào! Tôi là Mạnh Dũng, giọng đọc nam miền Bắc trầm ấm và mạnh mẽ.',
+    pitch: 0.58,
+    rate: 0.88,
+    badge: 'Nam Trầm',
   },
   {
     id: 'vn-nhi',
@@ -144,10 +143,10 @@ const VIETNAMESE_VOICES = [
     gender: 'female',
     genderLabel: 'Nữ',
     region: 'Miền Nam',
-    style: 'Ngọt ngào • Review sản phẩm',
+    style: 'Ngọt ngào • Reviewer',
     avatar: '👩',
     sample: 'Xin chào mọi người! Em là Thảo Nhi, giọng nữ miền Nam ngọt ngào và duyên dáng nè.',
-    pitch: 1.2,
+    pitch: 1.48,
     rate: 1.05,
     badge: 'Reviewer',
   },
@@ -157,12 +156,12 @@ const VIETNAMESE_VOICES = [
     gender: 'male',
     genderLabel: 'Nam',
     region: 'Miền Nam',
-    style: 'Hiện đại • Năng động • Vlog',
+    style: 'Hiện đại • Nam Vlog',
     avatar: '🧑',
     sample: 'Chào các bạn! Mình là Minh Hoàng, giọng nam miền Nam năng động, tự tin.',
-    pitch: 0.88,
-    rate: 1.08,
-    badge: 'Vlog',
+    pitch: 0.68,
+    rate: 1.02,
+    badge: 'Vlog Nam',
   },
   {
     id: 'vn-truc',
@@ -173,8 +172,8 @@ const VIETNAMESE_VOICES = [
     style: 'Nhẹ nhàng • Sâu lắng • Thơ ca',
     avatar: '🧕',
     sample: 'Kính chào quý thính giả! Em là Thanh Trúc, giọng nữ Huế sâu lắng và tinh tế.',
-    pitch: 1.15,
-    rate: 0.92,
+    pitch: 1.25,
+    rate: 0.88,
     badge: 'Đặc sắc',
   },
   {
@@ -185,10 +184,10 @@ const VIETNAMESE_VOICES = [
     region: 'Miền Bắc',
     style: 'Sôi nổi • Trẻ trung • TikTok',
     avatar: '🧒',
-    sample: 'Helo anh em! Bảo Nam đây, giọng nam trẻ cực kỳ sôi nổi cho video ngắn nhé!',
-    pitch: 0.96,
-    rate: 1.2,
-    badge: 'TikTok',
+    sample: 'Helo anh em! Bảo Nam đây, giọng nam trẻ sôi nổi cho video ngắn nhé!',
+    pitch: 0.75,
+    rate: 1.15,
+    badge: 'TikTok Nam',
   },
   {
     id: 'vn-phuong',
@@ -199,9 +198,9 @@ const VIETNAMESE_VOICES = [
     style: 'MC Tin tức • Thời sự chuẩn mực',
     avatar: '👩‍💼',
     sample: 'Kính chào quý vị khán giả! Tôi là Mai Phương, biên tập viên bản tin hôm nay.',
-    pitch: 1.1,
+    pitch: 1.15,
     rate: 1.0,
-    badge: 'MC Tin tức',
+    badge: 'MC Nữ',
   },
   {
     id: 'vn-tuan',
@@ -212,9 +211,9 @@ const VIETNAMESE_VOICES = [
     style: 'Hùng hồn • Sách nói • Podcast',
     avatar: '👨‍💼',
     sample: 'Xin chào thính giả! Tôi là Quốc Tuấn, chuyên đọc sách nói kinh điển và triết học.',
-    pitch: 0.75,
-    rate: 0.9,
-    badge: 'Sách nói',
+    pitch: 0.62,
+    rate: 0.90,
+    badge: 'Sách nói Nam',
   },
 ];
 
@@ -403,10 +402,10 @@ export default function VoiceTextScreen({ navigation }) {
   const [isDownloadingAudio, setIsDownloadingAudio] = useState(false);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [aiActionType, setAiActionType] = useState('');
-  const [keyModalVisible, setKeyModalVisible] = useState(false);
   const [ttsLang, setTtsLang] = useState('vi-VN');
   const [speechRate, setSpeechRate] = useState(1.0);
   const [speechPitch, setSpeechPitch] = useState(1.0);
+  const sttInputRef = useRef(null);
 
   // --- Chọn giọng đọc AI ---
   const [selectedVoiceId, setSelectedVoiceId] = useState('vn-mai');
@@ -505,10 +504,14 @@ export default function VoiceTextScreen({ navigation }) {
   // STT: BẮT ĐẦU NGHE
   // ============================================================
   const startListening = useCallback(() => {
-    // Nếu có native speech recognition module (trên Android hoặc custom dev build)
+    setIsListening(true);
+    // Tự động focus ngay vào ô nhập văn bản để bàn phím và nút Micro hệ thống sẵn sàng
+    setTimeout(() => {
+      sttInputRef.current?.focus();
+    }, 120);
+
     if (ExpoSpeechRecognitionModule?.start) {
       setPartialTranscript('');
-      setIsListening(true);
       try {
         ExpoSpeechRecognitionModule.start({
           lang: sttLang,
@@ -516,31 +519,22 @@ export default function VoiceTextScreen({ navigation }) {
           continuous: false,
           androidIntentOptions: { EXTRA_LANGUAGE_MODEL: 'free_form' },
         });
-      } catch (err) {
-        setIsListening(false);
-        Alert.alert('Lỗi nhận dạng', err.message || 'Không thể khởi động micro.');
+      } catch {
+        // safe
       }
-      return;
     }
-
-    // Trên Expo Go tiêu chuẩn: Hướng dẫn người dùng sử dụng phím Micro trên bàn phím ảo
-    Alert.alert(
-      'Nhập bằng giọng nói (STT)',
-      'Bạn hãy chạm vào ô kết quả nhận dạng bên dưới và nhấn phím Micro 🎙️ trên bàn phím điện thoại để nói. Giọng nói của bạn sẽ được chuyển thành chữ ngay lập tức!',
-      [{ text: 'Đã hiểu' }]
-    );
   }, [sttLang]);
 
   // ============================================================
   // STT: DỪNG NGHE
   // ============================================================
   const stopListening = useCallback(() => {
+    setIsListening(false);
     try {
       ExpoSpeechRecognitionModule?.stop?.();
     } catch {
       // safe
     }
-    setIsListening(false);
     if (partialTranscript) {
       setTranscript((prev) => (prev ? prev + ' ' + partialTranscript : partialTranscript));
       setPartialTranscript('');
@@ -908,10 +902,11 @@ export default function VoiceTextScreen({ navigation }) {
           </View>
         </View>
         <TextInput
+          ref={sttInputRef}
           style={[styles.transcriptInput, { color: colors.text }]}
           value={transcript || partialTranscript}
           onChangeText={setTranscript}
-          placeholder="Chạm vào đây và bấm phím Micro trên bàn phím để đọc..."
+          placeholder="Chạm vào đây và bấm phím Micro 🎙️ trên bàn phím để đọc..."
           placeholderTextColor={colors.sub}
           multiline
           scrollEnabled={false}
@@ -921,6 +916,25 @@ export default function VoiceTextScreen({ navigation }) {
             {transcript.trim().split(/\s+/).length} từ • {transcript.length} ký tự
           </Text>
         ) : null}
+
+        {/* Mẫu thử văn bản nhanh khi kiểm thử */}
+        <View style={styles.sampleChipsContainer}>
+          <Text style={[styles.sampleChipsTitle, { color: colors.sub }]}>⚡ Mẫu thử nhanh:</Text>
+          <View style={styles.sampleChipsRow}>
+            <Pressable
+              onPress={() => setTranscript('ờ thì là mà hôm nay nhóm em hoàn thành bài tập dự án di động rất tốt nhé')}
+              style={[styles.sampleChip, { backgroundColor: colors.cardElevated }]}
+            >
+              <Text style={[styles.sampleChipText, { color: colors.primary }]}>Thử mẫu 1 (Có từ đệm)</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setTranscript('Nhắc nhở nộp báo cáo môn học vào lúc năm giờ chiều nay tại phòng thực hành.')}
+              style={[styles.sampleChip, { backgroundColor: colors.cardElevated }]}
+            >
+              <Text style={[styles.sampleChipText, { color: colors.primary }]}>Thử mẫu 2 (Công việc)</Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
 
       {/* Bộ công cụ Gemini AI cho văn bản nhận dạng */}
@@ -930,10 +944,6 @@ export default function VoiceTextScreen({ navigation }) {
             <Ionicons name="sparkles" size={14} color="#7C3AED" />
             <Text style={styles.aiBadgeText}>Trợ lý Gemini AI</Text>
           </View>
-          <Pressable onPress={() => setKeyModalVisible(true)} hitSlop={8} style={styles.keyBtn}>
-            <Ionicons name="key" size={12} color="#7C3AED" />
-            <Text style={styles.keyBtnText}>Cài đặt Key</Text>
-          </Pressable>
         </View>
 
         <View style={styles.aiActionsRow}>
@@ -1100,10 +1110,6 @@ export default function VoiceTextScreen({ navigation }) {
             <Ionicons name="sparkles" size={14} color="#7C3AED" />
             <Text style={styles.aiBadgeText}>Gemini AI viết lại văn phong đọc</Text>
           </View>
-          <Pressable onPress={() => setKeyModalVisible(true)} hitSlop={8} style={styles.keyBtn}>
-            <Ionicons name="key" size={12} color="#7C3AED" />
-            <Text style={styles.keyBtnText}>Cài đặt Key</Text>
-          </Pressable>
         </View>
         <View style={styles.toneChipsRow}>
           {[
@@ -1466,11 +1472,6 @@ export default function VoiceTextScreen({ navigation }) {
           </>
         }
       />
-
-      <GeminiApiKeyModal
-        visible={keyModalVisible}
-        onClose={() => setKeyModalVisible(false)}
-      />
     </View>
   );
 }
@@ -1535,6 +1536,31 @@ const styles = StyleSheet.create({
   partialText: { fontSize: 15, lineHeight: 22, fontStyle: 'italic', marginTop: 4 },
   placeholderText: { fontSize: 14, fontStyle: 'italic', textAlign: 'center', marginTop: 12 },
   wordCount: { fontSize: 12, fontWeight: '600', marginTop: 8, textAlign: 'right' },
+  sampleChipsContainer: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  sampleChipsTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  sampleChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sampleChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  sampleChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
 
   historySection: { marginBottom: 16 },
   historyHeader: {

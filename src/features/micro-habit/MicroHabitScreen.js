@@ -21,7 +21,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 import { generateHabitsWithAi } from '../../services/geminiService';
-import GeminiApiKeyModal from '../../components/GeminiApiKeyModal';
 import {
   HABIT_TYPES,
   calculateHabitStatus,
@@ -58,7 +57,6 @@ export default function MicroHabitScreen({ navigation }) {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
-  const [keyModalVisible, setKeyModalVisible] = useState(false);
 
   // Form State thêm / chỉnh sửa việc
   const [editingId, setEditingId] = useState(null);
@@ -640,23 +638,25 @@ export default function MicroHabitScreen({ navigation }) {
             <View style={[styles.statsCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
               <View style={styles.statsHeader}>
                 <View style={styles.statsTitleRow}>
-                  <Ionicons name="repeat" size={20} color="#10B981" />
-                  <Text style={[styles.statsTitle, { color: colors.text }]}>Theo dõi chu kỳ tự động</Text>
+                  <Ionicons name="repeat" size={18} color="#10B981" />
+                  <Text style={[styles.statsTitle, { color: colors.text }]} numberOfLines={1}>
+                    Chu kỳ việc vặt
+                  </Text>
                 </View>
                 <View style={styles.statsActionsRow}>
                   <Pressable
                     onPress={handleOpenAiModal}
                     style={[styles.aiSuggestTopBtn, { backgroundColor: '#7C3AED' }]}
                   >
-                    <Ionicons name="sparkles" size={15} color="#FFFFFF" />
+                    <Ionicons name="sparkles" size={13} color="#FFFFFF" />
                     <Text style={styles.aiSuggestTopBtnText}>AI Gợi ý</Text>
                   </Pressable>
                   <Pressable
                     onPress={handleOpenAddModal}
                     style={[styles.addTopBtn, { backgroundColor: '#10B981' }]}
                   >
-                    <Ionicons name="add" size={18} color="#FFFFFF" />
-                    <Text style={styles.addTopBtnText}>Thêm việc</Text>
+                    <Ionicons name="add" size={16} color="#FFFFFF" />
+                    <Text style={styles.addTopBtnText}>+ Thêm việc</Text>
                   </Pressable>
                 </View>
               </View>
@@ -1091,15 +1091,9 @@ export default function MicroHabitScreen({ navigation }) {
                   Gemini AI Gợi ý việc vặt
                 </Text>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Pressable onPress={() => setKeyModalVisible(true)} hitSlop={6} style={styles.keyBtn}>
-                  <Ionicons name="key" size={12} color="#7C3AED" />
-                  <Text style={styles.keyBtnText}>Cài đặt Key</Text>
-                </Pressable>
-                <Pressable onPress={() => setAiModalVisible(false)} hitSlop={8}>
-                  <Ionicons name="close" size={24} color={colors.sub} />
-                </Pressable>
-              </View>
+              <Pressable onPress={() => setAiModalVisible(false)} hitSlop={8}>
+                <Ionicons name="close" size={24} color={colors.sub} />
+              </Pressable>
             </View>
 
             <FlatList
@@ -1202,12 +1196,6 @@ export default function MicroHabitScreen({ navigation }) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-
-      {/* Modal Cài đặt Gemini API Key */}
-      <GeminiApiKeyModal
-        visible={keyModalVisible}
-        onClose={() => setKeyModalVisible(false)}
-      />
     </View>
   );
 }
@@ -1223,14 +1211,14 @@ const styles = StyleSheet.create({
   statsHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12,
   },
-  statsTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  statsTitle: { fontSize: 16, fontWeight: '800' },
-  statsActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statsTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  statsTitle: { fontSize: 14, fontWeight: '800' },
+  statsActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
   aiSuggestTopBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8,
   },
-  aiSuggestTopBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  aiSuggestTopBtnText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   keyBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
@@ -1241,9 +1229,9 @@ const styles = StyleSheet.create({
   },
   addTopBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8,
   },
-  addTopBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  addTopBtnText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
 
   statsGrid: { flexDirection: 'row', gap: 8 },
   statBox: {
