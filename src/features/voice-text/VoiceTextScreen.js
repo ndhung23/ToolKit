@@ -17,7 +17,6 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import * as Speech from 'expo-speech';
-import { Audio } from 'expo-av';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 
@@ -348,10 +347,6 @@ export default function VoiceTextScreen({ navigation }) {
   // Animation cho nút mic
   const [pulseAnim] = useState(() => new Animated.Value(1));
   const pulseLoop = useRef(null);
-  const soundObjectRef = useRef(null);
-  const recordingRef = useRef(null);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const recordingTimerRef = useRef(null);
 
   // Lấy danh sách giọng AI phù hợp theo ngôn ngữ hiện tại
   const currentVoiceList = useMemo(() => {
@@ -384,31 +379,10 @@ export default function VoiceTextScreen({ navigation }) {
     setFilterCategory('all');
   };
 
-  // Khởi tạo audio mode (đặc biệt playsInSilentModeIOS: true cho iPhone) & quyền mic
+  // Cleanup khi unmount
   useEffect(() => {
-    (async () => {
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          allowsRecordingIOS: true,
-          staysActiveInBackground: false,
-        });
-        await Audio.requestPermissionsAsync();
-      } catch {
-        // safe
-      }
-    })();
     return () => {
       try {
-        if (soundObjectRef.current) {
-          soundObjectRef.current.unloadAsync().catch(() => {});
-        }
-        if (recordingRef.current) {
-          recordingRef.current.stopAndUnloadAsync().catch(() => {});
-        }
-        if (recordingTimerRef.current) {
-          clearInterval(recordingTimerRef.current);
-        }
         ExpoSpeechRecognitionModule?.abort?.();
         Speech?.stop?.();
       } catch {
@@ -459,150 +433,50 @@ export default function VoiceTextScreen({ navigation }) {
   }, [isListening, pulseAnim]);
 
   // ============================================================
-  // GOOGLE AI TTS ENGINE QUA EXPO-AV (Bỏ qua chế độ im lặng trên iOS)
+  // STT: BẮT ĐẦU NGHE
   // ============================================================
-  const playAudioWithGoogleTts = useCallback(async (text, langCode, rate = 1.0) => {
-    // Dừng âm thanh cũ nếu đang phát
-    if (soundObjectRef.current) {
+  const startListening = useCallback(() => {
+    // Nếu có native speech recognition module (trên Android hoặc custom dev build)
+    if (ExpoSpeechRecognitionModule?.start) {
+      setPartialTranscript('');
+      setIsListening(true);
       try {
-        await soundObjectRef.current.stopAsync();
-        await soundObjectRef.current.unloadAsync();
-      } catch {
-        // ignore
-      }
-      soundObjectRef.current = null;
-    }
-
-    try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        allowsRecordingIOS: false,
-        staysActiveInBackground: false,
-      });
-
-      const langMap = {
-        'vi-VN': 'vi',
-        'en-US': 'en',
-        'ja-JP': 'ja',
-        'ko-KR': 'ko',
-        'zh-CN': 'zh',
-        'fr-FR': 'fr',
-      };
-      const tl = langMap[langCode] || 'vi';
-      const cleanText = text.trim().slice(0, 500);
-      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
-
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: googleTtsUrl },
-        { shouldPlay: true, rate: Math.max(0.6, Math.min(1.8, rate)), shouldCorrectPitch: true }
-      );
-      soundObjectRef.current = sound;
-      return sound;
-    } catch {
-      // Fallback sang Speech.speak của hệ thống
-      try {
-        Speech.speak(text, { language: langCode, rate });
-      } catch {
-        // ignore
-      }
-      return null;
-    }
-  }, []);
-
-  // ============================================================
-  // STT: BẮT ĐẦU NGHE / GHI ÂM
-  // ============================================================
-  const startListening = useCallback(async () => {
-    try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Cần quyền Micro',
-          'Vui lòng cấp quyền Micro trong Cài đặt của iPhone/Android để ghi âm.',
-          [
-            { text: 'Đóng', style: 'cancel' },
-            {
-              text: 'Thử lại',
-              onPress: async () => {
-                await Audio.requestPermissionsAsync();
-              },
-            },
-          ]
-        );
-        return;
-      }
-
-      // Nếu có native speech recognition module (trên Android hoặc custom build)
-      if (ExpoSpeechRecognitionModule?.start) {
-        setPartialTranscript('');
-        setIsListening(true);
         ExpoSpeechRecognitionModule.start({
           lang: sttLang,
           interimResults: true,
           continuous: false,
           androidIntentOptions: { EXTRA_LANGUAGE_MODEL: 'free_form' },
         });
-        return;
+      } catch (err) {
+        setIsListening(false);
+        Alert.alert('Lỗi nhận dạng', err.message || 'Không thể khởi động micro.');
       }
-
-      // Trên Expo Go: Khởi động ghi âm thực tế qua expo-av
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        allowsRecordingIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = recording;
-      setIsListening(true);
-      setRecordingSeconds(0);
-
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } catch (err) {
-      setIsListening(false);
-      Alert.alert('Lỗi ghi âm', err.message || 'Không thể truy cập microphone.');
+      return;
     }
+
+    // Trên Expo Go tiêu chuẩn: Hướng dẫn người dùng sử dụng phím Micro trên bàn phím ảo
+    Alert.alert(
+      'Nhập bằng giọng nói (STT)',
+      'Bạn hãy chạm vào ô kết quả nhận dạng bên dưới và nhấn phím Micro 🎙️ trên bàn phím điện thoại để nói. Giọng nói của bạn sẽ được chuyển thành chữ ngay lập tức!',
+      [{ text: 'Đã hiểu' }]
+    );
   }, [sttLang]);
 
   // ============================================================
-  // STT: DỪNG NGHE / LƯU FILE
+  // STT: DỪNG NGHE
   // ============================================================
-  const stopListening = useCallback(async () => {
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-
+  const stopListening = useCallback(() => {
     try {
       ExpoSpeechRecognitionModule?.stop?.();
     } catch {
       // safe
     }
-
-    if (recordingRef.current) {
-      try {
-        await recordingRef.current.stopAndUnloadAsync();
-        const uri = recordingRef.current.getURI();
-        recordingRef.current = null;
-        if (uri) {
-          const recText = `Đoạn thu âm lúc ${new Date().toLocaleTimeString('vi-VN')} (${recordingSeconds}s)`;
-          setTranscript((prev) => (prev ? prev + '\n' + recText : recText));
-        }
-      } catch {
-        // ignore
-      }
-    }
-
     setIsListening(false);
     if (partialTranscript) {
       setTranscript((prev) => (prev ? prev + ' ' + partialTranscript : partialTranscript));
       setPartialTranscript('');
     }
-  }, [partialTranscript, recordingSeconds]);
+  }, [partialTranscript]);
 
   const saveToHistory = useCallback(() => {
     if (!transcript.trim()) return;
@@ -631,19 +505,10 @@ export default function VoiceTextScreen({ navigation }) {
   }, []);
 
   // ============================================================
-  // TTS: NGHE THỬ GIỌNG ĐỌC MẪU
+  // TTS: NGHE THỬ GIỌNG ĐỌC MẪU (Sử dụng expo-speech chuẩn native)
   // ============================================================
   const handlePreviewVoice = useCallback(async (voice) => {
     try {
-      if (soundObjectRef.current) {
-        try {
-          await soundObjectRef.current.stopAsync();
-          await soundObjectRef.current.unloadAsync();
-        } catch {
-          // ignore
-        }
-        soundObjectRef.current = null;
-      }
       await Speech.stop();
 
       if (previewingVoiceId === voice.id) {
@@ -654,20 +519,21 @@ export default function VoiceTextScreen({ navigation }) {
       setPreviewingVoiceId(voice.id);
       setIsSpeaking(false);
 
-      const sound = await playAudioWithGoogleTts(voice.sample, ttsLang, voice.rate || 1.0);
-      if (sound) {
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.didJustFinish) {
-            setPreviewingVoiceId(null);
-          }
-        });
-      } else {
-        setTimeout(() => setPreviewingVoiceId(null), 3000);
-      }
+      const finalPitch = Math.max(0.6, Math.min(1.8, voice.pitch || 1.0));
+      const finalRate = Math.max(0.6, Math.min(1.8, voice.rate || 1.0));
+
+      Speech.speak(voice.sample, {
+        language: ttsLang,
+        pitch: finalPitch,
+        rate: finalRate,
+        onDone: () => setPreviewingVoiceId(null),
+        onStopped: () => setPreviewingVoiceId(null),
+        onError: () => setPreviewingVoiceId(null),
+      });
     } catch {
       setPreviewingVoiceId(null);
     }
-  }, [previewingVoiceId, ttsLang, playAudioWithGoogleTts]);
+  }, [previewingVoiceId, ttsLang]);
 
   // ============================================================
   // TTS: ĐỌC VĂN BẢN ĐÃ NHẬP
@@ -680,63 +546,38 @@ export default function VoiceTextScreen({ navigation }) {
     }
 
     if (isSpeaking) {
-      if (soundObjectRef.current) {
-        try {
-          await soundObjectRef.current.stopAsync();
-          await soundObjectRef.current.unloadAsync();
-        } catch {
-          // ignore
-        }
-        soundObjectRef.current = null;
-      }
       await Speech.stop();
       setIsSpeaking(false);
       return;
     }
 
-    if (soundObjectRef.current) {
-      try {
-        await soundObjectRef.current.stopAsync();
-        await soundObjectRef.current.unloadAsync();
-      } catch {
-        // ignore
-      }
-      soundObjectRef.current = null;
-    }
     await Speech.stop();
     setPreviewingVoiceId(null);
     setIsSpeaking(true);
 
     const voice = currentVoice || VIETNAMESE_VOICES[0];
-    const finalRate = Math.max(0.5, Math.min(2.0, (voice.rate || 1.0) * speechRate));
+    const finalPitch = Math.max(0.6, Math.min(1.8, (voice.pitch || 1.0) * speechPitch));
+    const finalRate = Math.max(0.6, Math.min(1.8, (voice.rate || 1.0) * speechRate));
 
     try {
-      const sound = await playAudioWithGoogleTts(text, ttsLang, finalRate);
-      if (sound) {
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.didJustFinish) {
-            setIsSpeaking(false);
-          }
-        });
-      } else {
-        setTimeout(() => setIsSpeaking(false), Math.max(2000, text.length * 80));
-      }
-    } catch (err) {
+      Speech.speak(text, {
+        language: ttsLang,
+        pitch: finalPitch,
+        rate: finalRate,
+        onDone: () => setIsSpeaking(false),
+        onStopped: () => setIsSpeaking(false),
+        onError: () => {
+          setIsSpeaking(false);
+          Alert.alert('Lỗi đọc', 'Không thể đọc văn bản này trên thiết bị.');
+        },
+      });
+    } catch {
       setIsSpeaking(false);
-      Alert.alert('Lỗi đọc', 'Không thể phát âm thanh: ' + (err.message || 'Lỗi không xác định'));
+      Alert.alert('Lỗi đọc', 'Không thể khởi động đọc văn bản trên thiết bị.');
     }
-  }, [ttsText, isSpeaking, currentVoice, speechRate, ttsLang, playAudioWithGoogleTts]);
+  }, [ttsText, isSpeaking, currentVoice, speechPitch, speechRate, ttsLang]);
 
   const stopSpeaking = useCallback(async () => {
-    if (soundObjectRef.current) {
-      try {
-        await soundObjectRef.current.stopAsync();
-        await soundObjectRef.current.unloadAsync();
-      } catch {
-        // ignore
-      }
-      soundObjectRef.current = null;
-    }
     await Speech.stop();
     setIsSpeaking(false);
     setPreviewingVoiceId(null);
@@ -792,20 +633,20 @@ export default function VoiceTextScreen({ navigation }) {
           </Animated.View>
         </Pressable>
         <Text style={[styles.micLabel, { color: colors.sub }]}>
-          {isListening ? `Đang ghi âm (${recordingSeconds}s)... chạm để dừng` : 'Nhấn để bắt đầu ghi âm'}
+          {isListening ? 'Đang lắng nghe... chạm để dừng' : 'Nhấn để bắt đầu nói'}
         </Text>
       </View>
 
       <View style={[styles.dictationTipBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <Ionicons name="bulb-outline" size={16} color={colors.primary} />
         <Text style={[styles.dictationTipText, { color: colors.sub }]}>
-          Mẹo: Chạm vào ô nhập bên dưới hoặc bàn phím và nhấn phím Micro 🎙️ để nhận diện giọng nói tự động tức thì.
+          Mẹo: Chạm vào ô bên dưới và nhấn phím Micro 🎙️ trên bàn phím ảo của điện thoại để nhận diện giọng nói tiếng Việt tức thì!
         </Text>
       </View>
 
       <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.resultHeader}>
-          <Text style={[styles.resultTitle, { color: colors.text }]}>Kết quả nhận dạng</Text>
+          <Text style={[styles.resultTitle, { color: colors.text }]}>Văn bản nhận dạng</Text>
           <View style={styles.resultActions}>
             {transcript || partialTranscript ? (
               <>
@@ -822,18 +663,15 @@ export default function VoiceTextScreen({ navigation }) {
             ) : null}
           </View>
         </View>
-        <View style={styles.resultBody}>
-          {transcript || partialTranscript ? (
-            <>
-              {transcript ? <Text style={[styles.transcriptText, { color: colors.text }]}>{transcript}</Text> : null}
-              {partialTranscript ? <Text style={[styles.partialText, { color: colors.sub }]}>{partialTranscript}</Text> : null}
-            </>
-          ) : (
-            <Text style={[styles.placeholderText, { color: colors.sub }]}>
-              {isListening ? '🎙️ Đang lắng nghe...' : 'Kết quả nhận dạng sẽ hiện ở đây'}
-            </Text>
-          )}
-        </View>
+        <TextInput
+          style={[styles.transcriptInput, { color: colors.text }]}
+          value={transcript || partialTranscript}
+          onChangeText={setTranscript}
+          placeholder="Chạm vào đây và bấm phím Micro trên bàn phím để đọc..."
+          placeholderTextColor={colors.sub}
+          multiline
+          scrollEnabled={false}
+        />
         {transcript ? (
           <Text style={[styles.wordCount, { color: colors.sub }]}>
             {transcript.trim().split(/\s+/).length} từ • {transcript.length} ký tự
@@ -1283,6 +1121,7 @@ const styles = StyleSheet.create({
   resultActions: { flexDirection: 'row', gap: 8 },
   actionBtn: { padding: 4 },
   resultBody: { minHeight: 60 },
+  transcriptInput: { fontSize: 16, lineHeight: 24, minHeight: 80, textAlignVertical: 'top', padding: 0 },
   transcriptText: { fontSize: 16, lineHeight: 24, fontWeight: '500' },
   partialText: { fontSize: 15, lineHeight: 22, fontStyle: 'italic', marginTop: 4 },
   placeholderText: { fontSize: 14, fontStyle: 'italic', textAlign: 'center', marginTop: 12 },
