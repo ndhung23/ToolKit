@@ -7,6 +7,7 @@ import * as MediaLibrary from 'expo-media-library/legacy';
 
 // Cobalt public API endpoint
 const COBALT_API = 'https://api.cobalt.tools';
+const REQUEST_TIMEOUT_MS = 25000;
 
 // Các nền tảng được hỗ trợ
 export const SUPPORTED_PLATFORMS = [
@@ -33,20 +34,22 @@ export function detectPlatform(url) {
 }
 
 /**
- * Kiểm tra URL có hợp lệ không
+ * Kiểm tra URL có hợp lệ không (an toàn trên mọi JavaScript engine)
  */
 export function isValidUrl(text) {
   if (!text || typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return false;
   try {
-    const url = new URL(text.trim());
+    const url = new URL(trimmed);
     return url.protocol === 'http:' || url.protocol === 'https:';
   } catch {
-    return false;
+    return /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(trimmed);
   }
 }
 
 /**
- * Gọi Cobalt API để lấy link tải video
+ * Gọi Cobalt API để lấy link tải video (kèm timeout tránh treo ứng dụng)
  * @param {string} url - URL video cần tải
  * @param {'video' | 'audio'} mode - Chế độ tải (video hoặc chỉ audio)
  * @returns {Promise<{url: string, filename: string}>}
@@ -58,43 +61,62 @@ export async function fetchDownloadLink(url, mode = 'video') {
     filenameStyle: 'basic',
   };
 
-  const response = await fetch(`${COBALT_API}/`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    throw new Error(`Máy chủ phản hồi lỗi (${response.status}). ${errorText}`);
+  try {
+    const response = await fetch(`${COBALT_API}/`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      const safeMsg = (errorText || '').slice(0, 100);
+      throw new Error(`Máy chủ phản hồi mã ${response.status}${safeMsg ? ': ' + safeMsg : ''}`);
+    }
+
+    const data = await response.json();
+
+    if (!data) {
+      throw new Error('Máy chủ không trả lời dữ liệu.');
+    }
+
+    if (data.status === 'error') {
+      throw new Error(data.error?.code || 'Không thể xử lý video. Vui lòng kiểm tra lại link.');
+    }
+
+    if (data.status === 'redirect' || data.status === 'tunnel' || data.status === 'stream') {
+      return {
+        url: data.url,
+        filename: data.filename || `snap_video_${Date.now()}.mp4`,
+      };
+    }
+
+    // Trường hợp picker (nhiều lựa chọn): lấy item đầu tiên
+    if (data.status === 'picker' && Array.isArray(data.picker) && data.picker.length > 0) {
+      const firstItem = data.picker[0];
+      return {
+        url: firstItem.url,
+        filename: firstItem.filename || `snap_video_${Date.now()}.mp4`,
+      };
+    }
+
+    throw new Error('Không nhận được link tải. Video có thể ở chế độ riêng tư hoặc chưa hỗ trợ.');
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Quá thời gian kết nối (Timeout). Vui lòng kiểm tra mạng và thử lại.');
+    }
+    throw err;
   }
-
-  const data = await response.json();
-
-  if (data.status === 'error') {
-    throw new Error(data.error?.code || 'Không thể xử lý video. Vui lòng kiểm tra lại link.');
-  }
-
-  if (data.status === 'redirect' || data.status === 'tunnel' || data.status === 'stream') {
-    return {
-      url: data.url,
-      filename: data.filename || `snap_video_${Date.now()}.mp4`,
-    };
-  }
-
-  // Trường hợp picker (nhiều lựa chọn): lấy item đầu tiên
-  if (data.status === 'picker' && data.picker && data.picker.length > 0) {
-    const firstItem = data.picker[0];
-    return {
-      url: firstItem.url,
-      filename: firstItem.filename || `snap_video_${Date.now()}.mp4`,
-    };
-  }
-
-  throw new Error('Không nhận được link tải. Video có thể bị hạn chế hoặc nền tảng không hỗ trợ.');
 }
 
 /**
@@ -105,9 +127,10 @@ export async function fetchDownloadLink(url, mode = 'video') {
  * @returns {Promise<{uri: string, savedToGallery: boolean}>}
  */
 export async function downloadAndSaveVideo(downloadUrl, filename, onProgress) {
-  // Đảm bảo tên file hợp lệ
-  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const fileUri = `${FileSystem.documentDirectory}${safeName}`;
+  // Đảm bảo tên file an toàn
+  const safeName = (filename || `video_${Date.now()}.mp4`).replace(/[^a-zA-Z0-9._-]/g, '_');
+  const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+  const fileUri = `${baseDir}${safeName}`;
 
   // Tải file
   const downloadResumable = FileSystem.createDownloadResumable(
@@ -116,7 +139,7 @@ export async function downloadAndSaveVideo(downloadUrl, filename, onProgress) {
     {},
     (downloadProgress) => {
       if (onProgress && downloadProgress.totalBytesExpectedToWrite > 0) {
-        const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
+        const progress = Math.min(1, Math.max(0, downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite));
         onProgress(progress);
       }
     }
@@ -131,10 +154,12 @@ export async function downloadAndSaveVideo(downloadUrl, filename, onProgress) {
   // Lưu vào thư viện ảnh
   let savedToGallery = false;
   try {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status === 'granted') {
-      await MediaLibrary.saveToLibraryAsync(result.uri);
-      savedToGallery = true;
+    if (MediaLibrary?.requestPermissionsAsync) {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status === 'granted' && MediaLibrary?.saveToLibraryAsync) {
+        await MediaLibrary.saveToLibraryAsync(result.uri);
+        savedToGallery = true;
+      }
     }
   } catch (err) {
     console.warn('Không thể lưu vào thư viện ảnh:', err);
@@ -151,12 +176,12 @@ export async function downloadAndSaveVideo(downloadUrl, filename, onProgress) {
  */
 export async function cleanupTempFile(uri) {
   try {
+    if (!uri) return;
     const info = await FileSystem.getInfoAsync(uri);
-    if (info.exists) {
+    if (info && info.exists) {
       await FileSystem.deleteAsync(uri, { idempotent: true });
     }
   } catch {
     // Bỏ qua lỗi cleanup
   }
 }
-

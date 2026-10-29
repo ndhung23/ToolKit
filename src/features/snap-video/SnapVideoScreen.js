@@ -2,7 +2,7 @@
 // Màn hình tải video từ mạng xã hội (TikTok, Facebook, Instagram, YouTube, X, Douyin)
 // Tương tự tính năng Snap Video trên phimtat.vn
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -41,7 +41,15 @@ export default function SnapVideoScreen({ navigation }) {
   const [history, setHistory] = useState([]);
   const [detectedPlatform, setDetectedPlatform] = useState(null);
   const inputRef = useRef(null);
+  const isMountedRef = useRef(true);
   const [progressAnim] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Cập nhật platform khi URL thay đổi
   const handleUrlChange = useCallback((text) => {
@@ -96,21 +104,28 @@ export default function SnapVideoScreen({ navigation }) {
       // Bước 1: Lấy link tải từ API
       const downloadInfo = await fetchDownloadLink(trimmedUrl, downloadMode);
 
+      if (!isMountedRef.current) return;
       setStatusText('Đang tải video...');
 
-      // Bước 2: Tải và lưu file
+      // Bước 2: Tải và lưu file (với throttle progress chống giật lag UI)
+      let lastP = 0;
+      let lastTime = 0;
       const result = await downloadAndSaveVideo(
         downloadInfo.url,
         downloadInfo.filename,
         (p) => {
-          setProgress(p);
-          Animated.timing(progressAnim, {
-            toValue: p,
-            duration: 200,
-            useNativeDriver: false,
-          }).start();
+          if (!isMountedRef.current) return;
+          const now = Date.now();
+          if (p === 1 || Math.abs(p - lastP) >= 0.03 || now - lastTime > 150) {
+            lastP = p;
+            lastTime = now;
+            setProgress(p);
+            progressAnim.setValue(p);
+          }
         }
       );
+
+      if (!isMountedRef.current) return;
 
       // Bước 3: Thêm vào lịch sử
       const historyItem = {
@@ -129,6 +144,8 @@ export default function SnapVideoScreen({ navigation }) {
         await cleanupTempFile(result.uri);
       }
 
+      if (!isMountedRef.current) return;
+
       setStatusText('');
       setProgress(0);
       progressAnim.setValue(0);
@@ -140,6 +157,7 @@ export default function SnapVideoScreen({ navigation }) {
           : `${downloadMode === 'audio' ? 'Audio' : 'Video'} đã tải xong nhưng không thể lưu vào thư viện ảnh. Kiểm tra quyền truy cập.`
       );
     } catch (err) {
+      if (!isMountedRef.current) return;
       setStatusText('');
       setProgress(0);
       progressAnim.setValue(0);
@@ -148,7 +166,9 @@ export default function SnapVideoScreen({ navigation }) {
         err.message || 'Đã xảy ra lỗi. Vui lòng kiểm tra link và thử lại.'
       );
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [url, downloadMode, detectedPlatform, progressAnim]);
 

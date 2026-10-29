@@ -362,8 +362,12 @@ export default function VoiceTextScreen({ navigation }) {
   // Request quyền mic
   const requestSttPermission = useCallback(async () => {
     try {
+      if (!ExpoSpeechRecognitionModule?.requestPermissionsAsync) {
+        setHasSttPermission(false);
+        return;
+      }
       const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      setHasSttPermission(result.granted);
+      setHasSttPermission(result?.granted ?? false);
     } catch {
       setHasSttPermission(false);
     }
@@ -379,15 +383,22 @@ export default function VoiceTextScreen({ navigation }) {
     setFilterCategory('all');
   };
 
-  // Yêu cầu quyền mic & load voice hệ thống khi mount
+  // Yêu cầu quyền mic & load voice hệ thống khi mount (chống crash khi thiếu module)
   useEffect(() => {
     let isMounted = true;
     (async () => {
       try {
-        const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-        if (isMounted) setHasSttPermission(result.granted);
-        const voices = await Speech.getAvailableVoicesAsync();
-        if (isMounted) setSystemVoices(voices || []);
+        if (ExpoSpeechRecognitionModule?.requestPermissionsAsync) {
+          const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+          if (isMounted) setHasSttPermission(result?.granted ?? false);
+        } else {
+          if (isMounted) setHasSttPermission(false);
+        }
+
+        if (Speech?.getAvailableVoicesAsync) {
+          const voices = await Speech.getAvailableVoicesAsync();
+          if (isMounted && Array.isArray(voices)) setSystemVoices(voices);
+        }
       } catch {
         if (isMounted) {
           setHasSttPermission(false);
@@ -397,8 +408,12 @@ export default function VoiceTextScreen({ navigation }) {
     })();
     return () => {
       isMounted = false;
-      ExpoSpeechRecognitionModule.abort();
-      Speech.stop();
+      try {
+        ExpoSpeechRecognitionModule?.abort?.();
+        Speech?.stop?.();
+      } catch {
+        // Safe cleanup
+      }
     };
   }, []);
 
@@ -459,6 +474,10 @@ export default function VoiceTextScreen({ navigation }) {
       return;
     }
     try {
+      if (!ExpoSpeechRecognitionModule?.start) {
+        Alert.alert('Không hỗ trợ', 'Tính năng nhận dạng giọng nói yêu cầu môi trường hỗ trợ micro.');
+        return;
+      }
       setPartialTranscript('');
       setIsListening(true);
       ExpoSpeechRecognitionModule.start({
@@ -477,7 +496,11 @@ export default function VoiceTextScreen({ navigation }) {
   // STT: DỪNG NGHE
   // ============================================================
   const stopListening = useCallback(() => {
-    ExpoSpeechRecognitionModule.stop();
+    try {
+      ExpoSpeechRecognitionModule?.stop?.();
+    } catch {
+      // Safe call
+    }
     setIsListening(false);
     if (partialTranscript) {
       setTranscript((prev) => (prev ? prev + ' ' + partialTranscript : partialTranscript));
@@ -513,11 +536,11 @@ export default function VoiceTextScreen({ navigation }) {
 
   // Tìm giọng hệ thống khớp với ngôn ngữ và giới tính nếu có
   const findMatchingSystemVoice = useCallback((lang, gender) => {
-    if (!systemVoices.length) return null;
-    const prefix = lang.split('-')[0].toLowerCase();
+    if (!Array.isArray(systemVoices) || !systemVoices.length) return null;
+    const prefix = (lang || '').split('-')[0].toLowerCase();
     const langVoices = systemVoices.filter((v) => {
       const vl = (v.language || '').toLowerCase();
-      return vl.startsWith(prefix) || vl === lang.toLowerCase();
+      return vl.startsWith(prefix) || vl === (lang || '').toLowerCase();
     });
     if (!langVoices.length) return null;
 
@@ -604,7 +627,12 @@ export default function VoiceTextScreen({ navigation }) {
 
     if (sysVoice) options.voice = sysVoice;
 
-    Speech.speak(text, options);
+    try {
+      Speech.speak(text, options);
+    } catch {
+      setIsSpeaking(false);
+      Alert.alert('Lỗi đọc', 'Không thể khởi động đọc văn bản.');
+    }
   }, [ttsText, isSpeaking, currentVoice, findMatchingSystemVoice, ttsLang, speechPitch, speechRate]);
 
   const stopSpeaking = useCallback(async () => {
