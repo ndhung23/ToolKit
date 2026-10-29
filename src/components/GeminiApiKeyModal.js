@@ -95,7 +95,7 @@ export default function GeminiApiKeyModal({ visible, onClose, onKeySaved }) {
               style={[styles.input, { color: colors.text, borderColor: colors.cardBorder }]}
               value={keyInput}
               onChangeText={setKeyInput}
-              placeholder="Dán mã API Key (AIzaSy...)"
+              placeholder="Dán mã API Key của bạn vào đây"
               placeholderTextColor={colors.sub}
               autoCapitalize="none"
               autoCorrect={false}
@@ -172,3 +172,4 @@ const styles = StyleSheet.create({
   btnDanger: { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderWidth: 1, borderColor: '#EF4444' },
   btnDangerText: { color: '#EF4444', fontSize: 13, fontWeight: '700' },
 });
+
