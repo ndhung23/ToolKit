@@ -1,7 +1,21 @@
 // src/features/micro-habit/microHabitService.js
-// Logic tính toán chu kỳ, kiểm tra hạn chót, màu sắc cảnh báo và lưu trữ dữ liệu việc vặt
+// Logic tính toán chu kỳ, kiểm tra hạn chót, màu sắc cảnh báo, thông báo hẹn giờ và lưu trữ dữ liệu việc vặt
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+
+// Cấu hình hiển thị thông báo an toàn trong Expo Go
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+} catch {
+  // Safe fallback
+}
 
 export const STORAGE_KEY_HABITS = '@toolkit_micro_habits_v1';
 
@@ -31,6 +45,81 @@ export function getDaysDiff(targetDate, baseDate = new Date()) {
   const t = getMidnight(targetDate).getTime();
   const b = getMidnight(baseDate).getTime();
   return Math.round((t - b) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Lên lịch hoặc hủy thông báo hẹn giờ nhắc nhở cho từng việc vặt
+ * @param {object} habit 
+ * @returns {Promise<string|null>} notificationId mới hoặc null
+ */
+export async function scheduleHabitReminder(habit) {
+  if (!habit) return null;
+
+  // Hủy thông báo cũ nếu có
+  if (habit.notificationId) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(habit.notificationId);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Nếu không bật nhắc nhở hoặc không có giờ
+  if (!habit.reminderEnabled || !habit.reminderTime) {
+    return null;
+  }
+
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      return null;
+    }
+
+    const parts = habit.reminderTime.split(':');
+    const hour = parseInt(parts[0], 10);
+    const minute = parseInt(parts[1] || '0', 10);
+
+    if (isNaN(hour) || isNaN(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return null;
+    }
+
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `Nhắc việc: ${habit.title}`,
+        body: habit.note ? `${habit.note}` : `Đã đến giờ thực hiện "${habit.title}"!`,
+        sound: true,
+        data: { habitId: habit.id },
+      },
+      trigger: {
+        hour,
+        minute,
+        repeats: true,
+      },
+    });
+
+    return id;
+  } catch (err) {
+    console.warn('Lỗi lên lịch thông báo việc vặt:', err);
+    return null;
+  }
+}
+
+/**
+ * Hủy thông báo của việc vặt
+ * @param {string} notificationId 
+ */
+export async function cancelHabitReminder(notificationId) {
+  if (!notificationId) return;
+  try {
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -163,7 +252,7 @@ export function calculateHabitStatus(item) {
   };
 }
 
-// Dữ liệu mẫu ban đầu đúng như yêu cầu của người dùng
+// Dữ liệu mẫu ban đầu chuẩn thực tế
 export const DEFAULT_HABITS = [
   {
     id: 'habit-oil',
@@ -175,6 +264,9 @@ export const DEFAULT_HABITS = [
     color: '#F59E0B',
     category: 'Xe cộ',
     note: 'Nhớt tổng hợp 10W40, kiểm tra cả nước mát',
+    reminderEnabled: false,
+    reminderTime: '08:00',
+    notificationId: null,
     history: [
       { id: '1', timestamp: new Date(Date.now() - 36 * 24 * 60 * 60 * 1000).toISOString(), note: 'Thay nhớt Motul 7100' }
     ],
@@ -189,6 +281,9 @@ export const DEFAULT_HABITS = [
     color: '#3B82F6',
     category: 'Gia đình',
     note: 'Đại lý Lavie / Gas Petrolimex gần nhà',
+    reminderEnabled: true,
+    reminderTime: '09:00',
+    notificationId: null,
     history: [],
   },
   {
@@ -201,6 +296,9 @@ export const DEFAULT_HABITS = [
     color: '#8B5CF6',
     category: 'Nhà cửa',
     note: 'Ngâm xả Comfort và phơi nắng to',
+    reminderEnabled: false,
+    reminderTime: '08:00',
+    notificationId: null,
     history: [],
   },
   {
@@ -213,6 +311,9 @@ export const DEFAULT_HABITS = [
     color: '#EF4444',
     category: 'Chi phí',
     note: 'Chuyển khoản qua số tài khoản chủ nhà',
+    reminderEnabled: true,
+    reminderTime: '08:30',
+    notificationId: null,
     history: [],
   },
   {
@@ -225,6 +326,9 @@ export const DEFAULT_HABITS = [
     color: '#06B6D4',
     category: 'Dịch vụ',
     note: 'Gói 120k/tháng Viettel',
+    reminderEnabled: false,
+    reminderTime: '09:00',
+    notificationId: null,
     history: [],
   },
   {
@@ -239,6 +343,9 @@ export const DEFAULT_HABITS = [
     color: '#EC4899',
     category: 'Sức khỏe',
     note: 'Uống sau bữa ăn sáng và tối',
+    reminderEnabled: true,
+    reminderTime: '08:00',
+    notificationId: null,
     history: [],
   },
   {
@@ -253,6 +360,9 @@ export const DEFAULT_HABITS = [
     color: '#10B981',
     category: 'Sức khỏe',
     note: 'Mỗi cốc khoảng 250ml (tổng 2L/ngày)',
+    reminderEnabled: false,
+    reminderTime: '10:00',
+    notificationId: null,
     history: [],
   },
 ];
@@ -281,14 +391,18 @@ export async function loadHabits() {
       const todayStr = getTodayDateString();
       // Tự động kiểm tra reset daily counters nếu sang ngày mới
       const validated = parsed.map((item) => {
+        let updated = { ...item };
         if (item.type === HABIT_TYPES.DAILY && item.lastDailyDate !== todayStr) {
-          return {
-            ...item,
-            currentCount: 0,
-            lastDailyDate: todayStr,
-          };
+          updated.currentCount = 0;
+          updated.lastDailyDate = todayStr;
         }
-        return item;
+        if (updated.reminderEnabled === undefined) {
+          updated.reminderEnabled = false;
+        }
+        if (!updated.reminderTime) {
+          updated.reminderTime = '08:00';
+        }
+        return updated;
       });
       return validated;
     }
@@ -297,4 +411,3 @@ export async function loadHabits() {
     return DEFAULT_HABITS;
   }
 }
-

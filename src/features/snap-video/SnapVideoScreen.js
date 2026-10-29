@@ -1,5 +1,5 @@
 // src/features/snap-video/SnapVideoScreen.js
-// Màn hình tải video từ mạng xã hội (TikTok, Facebook, Instagram, YouTube, X, Douyin)
+// Màn hình tải video từ 4 mạng xã hội: TikTok, YouTube, Facebook, Instagram
 // Tương tự tính năng Snap Video trên phimtat.vn
 
 import { useState, useRef, useCallback, useEffect } from 'react';
@@ -86,7 +86,7 @@ export default function SnapVideoScreen({ navigation }) {
     const trimmedUrl = url.trim();
 
     if (!trimmedUrl) {
-      Alert.alert('Thiếu link', 'Vui lòng dán link video từ TikTok, YouTube, Facebook, Instagram...');
+      Alert.alert('Thiếu link', 'Vui lòng dán link video từ TikTok, YouTube, Facebook hoặc Instagram.');
       return;
     }
 
@@ -237,7 +237,7 @@ export default function SnapVideoScreen({ navigation }) {
               </View>
               <Text style={[styles.heroTitle, { color: colors.text }]}>Tải video không logo</Text>
               <Text style={[styles.heroDesc, { color: colors.sub }]}>
-                Dán link video từ TikTok, YouTube, Facebook, Instagram... và tải về máy nhanh chóng, không dính watermark.
+                Dán link video từ TikTok, YouTube, Facebook hoặc Instagram và tải về máy nhanh chóng, không dính watermark.
               </Text>
             </View>
 

@@ -555,6 +555,9 @@ export default function VoiceTextScreen({ navigation }) {
     if (!Array.isArray(systemVoices) || !systemVoices.length) return null;
     const prefix = (lang || '').split('-')[0].toLowerCase();
     const langVoices = systemVoices.filter((v) => {
+      const idLower = (v.identifier || '').toLowerCase();
+      // Bỏ qua compact / super-compact voices chưa tải trên iOS gây crash
+      if (idLower.includes('compact')) return false;
       const vl = (v.language || '').toLowerCase();
       return vl.startsWith(prefix) || vl === (lang || '').toLowerCase();
     });
@@ -594,11 +597,27 @@ export default function VoiceTextScreen({ navigation }) {
         rate: voice.rate,
         onDone: () => setPreviewingVoiceId(null),
         onStopped: () => setPreviewingVoiceId(null),
-        onError: () => setPreviewingVoiceId(null),
+        onError: () => {
+          if (options.voice) {
+            delete options.voice;
+            try {
+              Speech.speak(voice.sample, options);
+              return;
+            } catch {
+              // ignore
+            }
+          }
+          setPreviewingVoiceId(null);
+        },
       };
       if (sysVoice) options.voice = sysVoice;
 
-      Speech.speak(voice.sample, options);
+      try {
+        Speech.speak(voice.sample, options);
+      } catch {
+        delete options.voice;
+        Speech.speak(voice.sample, options);
+      }
     } catch {
       setPreviewingVoiceId(null);
     }
@@ -636,8 +655,17 @@ export default function VoiceTextScreen({ navigation }) {
       onDone: () => setIsSpeaking(false),
       onStopped: () => setIsSpeaking(false),
       onError: () => {
+        if (options.voice) {
+          delete options.voice;
+          try {
+            Speech.speak(text, options);
+            return;
+          } catch {
+            // ignore
+          }
+        }
         setIsSpeaking(false);
-        Alert.alert('Lỗi đọc', 'Không thể đọc văn bản này. Vui lòng kiểm tra lại thiết bị.');
+        Alert.alert('Lỗi đọc', 'Không thể đọc văn bản này trên thiết bị.');
       },
     };
 
@@ -646,8 +674,13 @@ export default function VoiceTextScreen({ navigation }) {
     try {
       Speech.speak(text, options);
     } catch {
-      setIsSpeaking(false);
-      Alert.alert('Lỗi đọc', 'Không thể khởi động đọc văn bản.');
+      delete options.voice;
+      try {
+        Speech.speak(text, options);
+      } catch {
+        setIsSpeaking(false);
+        Alert.alert('Lỗi đọc', 'Không thể khởi động đọc văn bản.');
+      }
     }
   }, [ttsText, isSpeaking, currentVoice, findMatchingSystemVoice, ttsLang, speechPitch, speechRate]);
 

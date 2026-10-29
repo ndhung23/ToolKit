@@ -149,6 +149,12 @@ export const translations = {
         desc: 'Tải video TikTok, YouTube, Facebook, Instagram không dính watermark',
         badge: 'Mới',
       },
+      micro_habit: {
+        title: 'Theo dõi việc vặt & Chu kỳ sinh hoạt',
+        shortTitle: 'Chu kỳ việc vặt',
+        desc: 'Bấm nút để reset vòng lặp: thay nhớt, đổi ga nước, tiền trọ, uống thuốc...',
+        badge: 'Mới',
+      },
     },
 
     // Chung (Common)
@@ -309,6 +315,12 @@ export const translations = {
         title: 'Download social media videos without watermark',
         shortTitle: 'Snap Video',
         desc: 'Download TikTok, YouTube, Facebook, Instagram videos without watermark',
+        badge: 'New',
+      },
+      micro_habit: {
+        title: 'Micro-Habit & Refill Tracker',
+        shortTitle: 'Refill Tracker',
+        desc: 'Tap to reset loop: oil change, water refill, rent, vitamins...',
         badge: 'New',
       },
     },

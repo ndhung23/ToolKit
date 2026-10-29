@@ -1,6 +1,6 @@
 // src/features/micro-habit/MicroHabitScreen.js
 // Màn hình theo dõi việc vặt & Chu kỳ sinh hoạt (Micro-Habit & Refill Tracker)
-// Hoạt động theo cơ chế "Bấm nút để Reset vòng lặp" dựa trên 3 kiểu chu kỳ thực tế
+// Tự động đếm ngược, cảnh báo màu sắc, hỗ trợ tùy chọn thông báo nhắc nhở theo giờ
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
@@ -12,6 +12,9 @@ import {
   Alert,
   FlatList,
   Modal,
+  Switch,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
@@ -22,6 +25,8 @@ import {
   loadHabits,
   saveHabits,
   getTodayDateString,
+  scheduleHabitReminder,
+  cancelHabitReminder,
 } from './microHabitService';
 
 const FILTER_TABS = [
@@ -32,7 +37,7 @@ const FILTER_TABS = [
   { id: 'daily', label: 'Trong ngày 🎯' },
 ];
 
-const PRESET_ICONS = ['construct', 'water', 'bed', 'home', 'wifi', 'medkit', 'pint', 'car', 'fitness', 'repeat'];
+const PRESET_HOURS = ['07:00', '08:00', '12:00', '18:00', '20:00', '22:00'];
 const PRESET_COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#06B6D4', '#64748B'];
 
 export default function MicroHabitScreen({ navigation }) {
@@ -43,7 +48,7 @@ export default function MicroHabitScreen({ navigation }) {
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [selectedHabitForHistory, setSelectedHabitForHistory] = useState(null);
 
-  // Form State thêm việc mới
+  // Form State thêm / chỉnh sửa việc
   const [editingId, setEditingId] = useState(null);
   const [formTitle, setFormTitle] = useState('');
   const [formType, setFormType] = useState(HABIT_TYPES.INTERVAL);
@@ -55,6 +60,8 @@ export default function MicroHabitScreen({ navigation }) {
   const [formNote, setFormNote] = useState('');
   const [formIcon, setFormIcon] = useState('repeat');
   const [formColor, setFormColor] = useState('#10B981');
+  const [formReminderEnabled, setFormReminderEnabled] = useState(false);
+  const [formReminderTime, setFormReminderTime] = useState('08:00');
 
   // Tải danh sách thói quen khi mount
   useEffect(() => {
@@ -173,7 +180,11 @@ export default function MicroHabitScreen({ navigation }) {
         {
           text: 'Xóa vĩnh viễn',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            const habitToDelete = habits.find((h) => h.id === id);
+            if (habitToDelete?.notificationId) {
+              await cancelHabitReminder(habitToDelete.notificationId);
+            }
             const remaining = habits.filter((h) => h.id !== id);
             updateHabitsList(remaining);
           },
@@ -195,40 +206,102 @@ export default function MicroHabitScreen({ navigation }) {
     setFormNote('');
     setFormIcon('repeat');
     setFormColor('#10B981');
+    setFormReminderEnabled(false);
+    setFormReminderTime('08:00');
     setModalVisible(true);
   };
 
-  // 5. Lưu việc vặt từ Modal
-  const handleSaveForm = () => {
+  // 5. Mở Modal Chỉnh sửa
+  const handleOpenEditModal = (item) => {
+    setEditingId(item.id);
+    setFormTitle(item.title || '');
+    setFormType(item.type || HABIT_TYPES.INTERVAL);
+    setFormIntervalDays(String(item.intervalDays || 30));
+    setFormDayOfMonth(String(item.dayOfMonth || 5));
+    setFormTargetCount(String(item.targetCount || 2));
+    setFormUnit(item.unit || 'lần');
+    setFormCategory(item.category || 'Sinh hoạt');
+    setFormNote(item.note || '');
+    setFormIcon(item.icon || 'repeat');
+    setFormColor(item.color || '#10B981');
+    setFormReminderEnabled(!!item.reminderEnabled);
+    setFormReminderTime(item.reminderTime || '08:00');
+    setModalVisible(true);
+  };
+
+  // 6. Bật/Tắt nhanh nhắc nhở trên thẻ
+  const handleQuickToggleReminder = async (item) => {
+    const newEnabled = !item.reminderEnabled;
+    let newNotifId = null;
+
+    if (newEnabled) {
+      newNotifId = await scheduleHabitReminder({
+        ...item,
+        reminderEnabled: true,
+        reminderTime: item.reminderTime || '08:00',
+      });
+      Alert.alert('Đã bật nhắc nhở', `Thông báo sẽ nhắc lúc ${item.reminderTime || '08:00'} hàng ngày.`);
+    } else {
+      await cancelHabitReminder(item.notificationId);
+      Alert.alert('Đã tắt nhắc nhở', `Đã hủy lịch nhắc cho "${item.title}".`);
+    }
+
+    const updated = habits.map((h) => {
+      if (h.id === item.id) {
+        return {
+          ...h,
+          reminderEnabled: newEnabled,
+          notificationId: newNotifId,
+        };
+      }
+      return h;
+    });
+    updateHabitsList(updated);
+  };
+
+  // 7. Lưu việc vặt từ Modal (Thêm hoặc Sửa)
+  const handleSaveForm = async () => {
     const trimmedTitle = formTitle.trim();
     if (!trimmedTitle) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập tên công việc / thói quen.');
       return;
     }
 
+    let validTime = formReminderTime.trim();
+    if (formReminderEnabled) {
+      if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(validTime)) {
+        Alert.alert('Giờ không hợp lệ', 'Vui lòng nhập giờ theo định dạng HH:mm (VD: 08:00, 19:30).');
+        return;
+      }
+    }
+
     if (editingId) {
-      // Sửa
-      const updated = habits.map((h) => {
-        if (h.id === editingId) {
-          return {
-            ...h,
-            title: trimmedTitle,
-            type: formType,
-            intervalDays: parseInt(formIntervalDays || 1, 10),
-            dayOfMonth: parseInt(formDayOfMonth || 1, 10),
-            targetCount: parseInt(formTargetCount || 1, 10),
-            unit: formUnit.trim() || 'lần',
-            category: formCategory.trim() || 'Khác',
-            note: formNote.trim(),
-            icon: formIcon,
-            color: formColor,
-          };
-        }
-        return h;
-      });
+      // Đang sửa
+      const currentItem = habits.find((h) => h.id === editingId);
+      const habitDraft = {
+        ...(currentItem || {}),
+        id: editingId,
+        title: trimmedTitle,
+        type: formType,
+        intervalDays: parseInt(formIntervalDays || 1, 10),
+        dayOfMonth: parseInt(formDayOfMonth || 1, 10),
+        targetCount: parseInt(formTargetCount || 1, 10),
+        unit: formUnit.trim() || 'lần',
+        category: formCategory.trim() || 'Khác',
+        note: formNote.trim(),
+        icon: formIcon,
+        color: formColor,
+        reminderEnabled: formReminderEnabled,
+        reminderTime: validTime || '08:00',
+      };
+
+      const newNotifId = await scheduleHabitReminder(habitDraft);
+      habitDraft.notificationId = newNotifId;
+
+      const updated = habits.map((h) => (h.id === editingId ? habitDraft : h));
       updateHabitsList(updated);
     } else {
-      // Thêm mới
+      // Đang thêm mới
       const newHabit = {
         id: `habit-${Date.now()}`,
         title: trimmedTitle,
@@ -244,8 +317,17 @@ export default function MicroHabitScreen({ navigation }) {
         lastCompletedDate: new Date().toISOString(),
         currentCount: 0,
         lastDailyDate: getTodayDateString(),
+        reminderEnabled: formReminderEnabled,
+        reminderTime: validTime || '08:00',
+        notificationId: null,
         history: [],
       };
+
+      if (formReminderEnabled) {
+        const notifId = await scheduleHabitReminder(newHabit);
+        newHabit.notificationId = notifId;
+      }
+
       updateHabitsList([newHabit, ...habits]);
     }
 
@@ -266,7 +348,7 @@ export default function MicroHabitScreen({ navigation }) {
 
     return (
       <View style={[styles.habitCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        {/* Header thẻ: Icon, Tên, Category, Nút Xóa */}
+        {/* Header thẻ: Icon, Tên, Category, Nút Sửa, Nút Xóa */}
         <View style={styles.cardHeader}>
           <View style={[styles.cardIconBox, { backgroundColor: item.color + '20' }]}>
             <Ionicons name={item.icon || 'repeat'} size={22} color={item.color || colors.primary} />
@@ -286,16 +368,27 @@ export default function MicroHabitScreen({ navigation }) {
               </Text>
             ) : null}
           </View>
+
+          {/* Nút Sửa */}
+          <Pressable
+            onPress={() => handleOpenEditModal(item)}
+            hitSlop={8}
+            style={styles.cardHeaderBtn}
+          >
+            <Ionicons name="pencil-outline" size={18} color={colors.sub} />
+          </Pressable>
+
+          {/* Nút Xóa */}
           <Pressable
             onPress={() => handleDeleteHabit(item.id, item.title)}
             hitSlop={8}
-            style={styles.deleteBtn}
+            style={styles.cardHeaderBtn}
           >
             <Ionicons name="trash-outline" size={18} color={colors.sub} />
           </Pressable>
         </View>
 
-        {/* Badge trạng thái cảnh báo màu sắc */}
+        {/* Trạng thái hạn chót & Huy hiệu nhắc nhở theo giờ */}
         <View style={styles.statusRow}>
           <View style={[styles.urgencyBadge, { backgroundColor: urgencyColor + '20', borderColor: urgencyColor }]}>
             <View style={[styles.urgencyDot, { backgroundColor: urgencyColor }]} />
@@ -304,22 +397,51 @@ export default function MicroHabitScreen({ navigation }) {
             </Text>
           </View>
 
-          {/* Nút xem lịch sử */}
-          {item.history && item.history.length > 0 && (
+          <View style={styles.statusRightRow}>
+            {/* Huy hiệu nhắc nhở theo giờ (bấm để bật/tắt nhanh) */}
             <Pressable
-              onPress={() => {
-                setSelectedHabitForHistory(item);
-                setHistoryModalVisible(true);
-              }}
+              onPress={() => handleQuickToggleReminder(item)}
               hitSlop={6}
-              style={styles.historyLink}
+              style={[
+                styles.reminderBadge,
+                {
+                  backgroundColor: item.reminderEnabled ? '#10B98120' : colors.cardElevated,
+                  borderColor: item.reminderEnabled ? '#10B981' : colors.border,
+                },
+              ]}
             >
-              <Ionicons name="time-outline" size={14} color={colors.sub} />
-              <Text style={[styles.historyLinkText, { color: colors.sub }]}>
-                {item.history.length} lần xong
+              <Ionicons
+                name={item.reminderEnabled ? 'notifications' : 'notifications-off-outline'}
+                size={13}
+                color={item.reminderEnabled ? '#10B981' : colors.sub}
+              />
+              <Text
+                style={[
+                  styles.reminderBadgeText,
+                  { color: item.reminderEnabled ? '#10B981' : colors.sub },
+                ]}
+              >
+                {item.reminderEnabled ? item.reminderTime || '08:00' : 'Tắt'}
               </Text>
             </Pressable>
-          )}
+
+            {/* Nút xem lịch sử */}
+            {item.history && item.history.length > 0 && (
+              <Pressable
+                onPress={() => {
+                  setSelectedHabitForHistory(item);
+                  setHistoryModalVisible(true);
+                }}
+                hitSlop={6}
+                style={styles.historyLink}
+              >
+                <Ionicons name="time-outline" size={14} color={colors.sub} />
+                <Text style={[styles.historyLinkText, { color: colors.sub }]}>
+                  {item.history.length} lần
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </View>
 
         {/* Thanh tiến trình chu kỳ */}
@@ -479,15 +601,18 @@ export default function MicroHabitScreen({ navigation }) {
         ListFooterComponent={<View style={{ height: 100 }} />}
       />
 
-      {/* Modal Thêm / Chỉnh sửa việc vặt */}
+      {/* Modal Thêm / Chỉnh sửa việc vặt (Sử dụng FlatList cuộn chuẩn - CẤM ScrollView) */}
       <Modal
         visible={modalVisible}
         animationType="slide"
         transparent
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 {editingId ? 'Chỉnh sửa việc vặt' : 'Thêm việc vặt & Chu kỳ mới'}
@@ -497,133 +622,222 @@ export default function MicroHabitScreen({ navigation }) {
               </Pressable>
             </View>
 
-            {/* Chọn loại chu kỳ */}
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>Loại chu kỳ lặp</Text>
-            <View style={styles.typeSelectorRow}>
-              {[
-                { type: HABIT_TYPES.INTERVAL, label: 'Theo số ngày 🔄', desc: 'Mỗi X ngày' },
-                { type: HABIT_TYPES.MONTHLY, label: 'Hàng tháng 📅', desc: 'Ngày cố định' },
-                { type: HABIT_TYPES.DAILY, label: 'Trong ngày 🎯', desc: 'Đếm số lần' },
-              ].map((t) => (
-                <Pressable
-                  key={t.type}
-                  onPress={() => setFormType(t.type)}
-                  style={[
-                    styles.typeBtn,
-                    {
-                      backgroundColor: formType === t.type ? '#10B981' : colors.cardElevated,
-                      borderColor: formType === t.type ? '#10B981' : colors.cardBorder,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.typeBtnText, { color: formType === t.type ? '#FFFFFF' : colors.text }]}>
-                    {t.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            <FlatList
+              data={[{ key: 'form-body' }]}
+              keyExtractor={(item) => item.key}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              renderItem={() => (
+                <View style={styles.formContainer}>
+                  {/* Chọn loại chu kỳ */}
+                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Loại chu kỳ lặp</Text>
+                  <View style={styles.typeSelectorRow}>
+                    {[
+                      { type: HABIT_TYPES.INTERVAL, label: 'Theo ngày 🔄' },
+                      { type: HABIT_TYPES.MONTHLY, label: 'Hàng tháng 📅' },
+                      { type: HABIT_TYPES.DAILY, label: 'Trong ngày 🎯' },
+                    ].map((t) => (
+                      <Pressable
+                        key={t.type}
+                        onPress={() => setFormType(t.type)}
+                        style={[
+                          styles.typeBtn,
+                          {
+                            backgroundColor: formType === t.type ? '#10B981' : colors.cardElevated,
+                            borderColor: formType === t.type ? '#10B981' : colors.cardBorder,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.typeBtnText, { color: formType === t.type ? '#FFFFFF' : colors.text }]}>
+                          {t.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
 
-            {/* Tên việc */}
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>Tên việc vặt / Thói quen</Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-              value={formTitle}
-              onChangeText={setFormTitle}
-              placeholder="VD: Thay nhớt xe, Đóng tiền trọ, Uống thuốc..."
-              placeholderTextColor={colors.sub}
-              autoCapitalize="sentences"
-            />
-
-            {/* Thiết lập tham số chu kỳ tương ứng */}
-            {formType === HABIT_TYPES.INTERVAL && (
-              <>
-                <Text style={[styles.fieldLabel, { color: colors.text }]}>Chu kỳ lặp lại (Số ngày)</Text>
-                <TextInput
-                  style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                  value={formIntervalDays}
-                  onChangeText={setFormIntervalDays}
-                  keyboardType="numeric"
-                  placeholder="VD: 15, 30, 45 ngày"
-                  placeholderTextColor={colors.sub}
-                />
-              </>
-            )}
-
-            {formType === HABIT_TYPES.MONTHLY && (
-              <>
-                <Text style={[styles.fieldLabel, { color: colors.text }]}>Ngày đến hạn hàng tháng (1 - 31)</Text>
-                <TextInput
-                  style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                  value={formDayOfMonth}
-                  onChangeText={setFormDayOfMonth}
-                  keyboardType="numeric"
-                  placeholder="VD: 5 (mùng 5 hàng tháng)"
-                  placeholderTextColor={colors.sub}
-                />
-              </>
-            )}
-
-            {formType === HABIT_TYPES.DAILY && (
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Mục tiêu ngày</Text>
+                  {/* Tên việc */}
+                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Tên việc vặt / Thói quen</Text>
                   <TextInput
                     style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                    value={formTargetCount}
-                    onChangeText={setFormTargetCount}
-                    keyboardType="numeric"
-                    placeholder="VD: 8"
+                    value={formTitle}
+                    onChangeText={setFormTitle}
+                    placeholder="VD: Thay nhớt xe, Đóng tiền trọ, Uống thuốc..."
                     placeholderTextColor={colors.sub}
+                    autoCapitalize="sentences"
                   />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Đơn vị tính</Text>
+
+                  {/* Thiết lập tham số chu kỳ tương ứng */}
+                  {formType === HABIT_TYPES.INTERVAL && (
+                    <>
+                      <Text style={[styles.fieldLabel, { color: colors.text }]}>Chu kỳ lặp lại (Số ngày)</Text>
+                      <TextInput
+                        style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                        value={formIntervalDays}
+                        onChangeText={setFormIntervalDays}
+                        keyboardType="numeric"
+                        placeholder="VD: 15, 30, 45 ngày"
+                        placeholderTextColor={colors.sub}
+                      />
+                    </>
+                  )}
+
+                  {formType === HABIT_TYPES.MONTHLY && (
+                    <>
+                      <Text style={[styles.fieldLabel, { color: colors.text }]}>Ngày đến hạn hàng tháng (1 - 31)</Text>
+                      <TextInput
+                        style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                        value={formDayOfMonth}
+                        onChangeText={setFormDayOfMonth}
+                        keyboardType="numeric"
+                        placeholder="VD: 5 (mùng 5 hàng tháng)"
+                        placeholderTextColor={colors.sub}
+                      />
+                    </>
+                  )}
+
+                  {formType === HABIT_TYPES.DAILY && (
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.fieldLabel, { color: colors.text }]}>Mục tiêu ngày</Text>
+                        <TextInput
+                          style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                          value={formTargetCount}
+                          onChangeText={setFormTargetCount}
+                          keyboardType="numeric"
+                          placeholder="VD: 8"
+                          placeholderTextColor={colors.sub}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.fieldLabel, { color: colors.text }]}>Đơn vị tính</Text>
+                        <TextInput
+                          style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                          value={formUnit}
+                          onChangeText={setFormUnit}
+                          placeholder="VD: cốc, lần, viên"
+                          placeholderTextColor={colors.sub}
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {/* THIẾT LẬP THÔNG BÁO NHẮC NHỞ THEO GIỜ (TÙY CHỌN) */}
+                  <View style={[styles.reminderSection, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}>
+                    <View style={styles.reminderHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="notifications" size={18} color="#10B981" />
+                        <Text style={[styles.reminderSectionTitle, { color: colors.text }]}>
+                          Nhắc nhở theo giờ (Tùy chọn)
+                        </Text>
+                      </View>
+                      <Switch
+                        value={formReminderEnabled}
+                        onValueChange={setFormReminderEnabled}
+                        trackColor={{ false: colors.cardBorder, true: '#10B981' }}
+                        thumbColor="#FFFFFF"
+                      />
+                    </View>
+
+                    {formReminderEnabled && (
+                      <View style={styles.reminderBody}>
+                        <Text style={[styles.reminderHint, { color: colors.sub }]}>
+                          Chọn khung giờ hoặc nhập giờ nhắc cụ thể (HH:mm):
+                        </Text>
+
+                        {/* Các mốc giờ phổ biến */}
+                        <View style={styles.presetHoursRow}>
+                          {PRESET_HOURS.map((h) => (
+                            <Pressable
+                              key={h}
+                              onPress={() => setFormReminderTime(h)}
+                              style={[
+                                styles.hourChip,
+                                {
+                                  backgroundColor: formReminderTime === h ? '#10B981' : colors.card,
+                                  borderColor: formReminderTime === h ? '#10B981' : colors.border,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.hourChipText,
+                                  { color: formReminderTime === h ? '#FFFFFF' : colors.text },
+                                ]}
+                              >
+                                {h}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+
+                        {/* Input nhập giờ tùy chỉnh */}
+                        <View style={styles.customTimeInputRow}>
+                          <Text style={[styles.customTimeLabel, { color: colors.sub }]}>Giờ cụ thể:</Text>
+                          <TextInput
+                            style={[styles.customTimeInput, { color: colors.text, borderColor: colors.border }]}
+                            value={formReminderTime}
+                            onChangeText={setFormReminderTime}
+                            placeholder="08:00"
+                            placeholderTextColor={colors.sub}
+                            maxLength={5}
+                            keyboardType="numbers-and-punctuation"
+                          />
+                        </View>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Danh mục */}
+                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Nhóm / Danh mục</Text>
                   <TextInput
                     style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                    value={formUnit}
-                    onChangeText={setFormUnit}
-                    placeholder="VD: cốc, lần, viên"
+                    value={formCategory}
+                    onChangeText={setFormCategory}
+                    placeholder="VD: Xe cộ, Sức khỏe, Gia đình, Chi phí..."
                     placeholderTextColor={colors.sub}
                   />
+
+                  {/* Ghi chú */}
+                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Ghi chú thêm</Text>
+                  <TextInput
+                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                    value={formNote}
+                    onChangeText={setFormNote}
+                    placeholder="VD: Nhớt 10W40, STK chủ nhà..."
+                    placeholderTextColor={colors.sub}
+                  />
+
+                  {/* Chọn màu sắc */}
+                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Màu đại diện</Text>
+                  <View style={styles.colorPalette}>
+                    {PRESET_COLORS.map((c) => (
+                      <Pressable
+                        key={c}
+                        onPress={() => setFormColor(c)}
+                        style={[
+                          styles.colorCircle,
+                          { backgroundColor: c },
+                          formColor === c && styles.colorCircleSelected,
+                        ]}
+                      />
+                    ))}
+                  </View>
+
+                  {/* Nút Submit */}
+                  <Pressable
+                    onPress={handleSaveForm}
+                    style={[styles.saveBtn, { backgroundColor: '#10B981' }]}
+                  >
+                    <Text style={styles.saveBtnText}>
+                      {editingId ? 'Cập nhật việc vặt' : 'Lưu việc vặt mới'}
+                    </Text>
+                  </Pressable>
+                  <View style={{ height: 20 }} />
                 </View>
-              </View>
-            )}
-
-            {/* Ghi chú */}
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>Ghi chú thêm</Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-              value={formNote}
-              onChangeText={setFormNote}
-              placeholder="VD: Nhớt 10W40, STK chủ nhà 1903..."
-              placeholderTextColor={colors.sub}
+              )}
             />
-
-            {/* Chọn màu sắc */}
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>Màu đại diện</Text>
-            <View style={styles.colorPalette}>
-              {PRESET_COLORS.map((c) => (
-                <Pressable
-                  key={c}
-                  onPress={() => setFormColor(c)}
-                  style={[
-                    styles.colorCircle,
-                    { backgroundColor: c },
-                    formColor === c && styles.colorCircleSelected,
-                  ]}
-                />
-              ))}
-            </View>
-
-            {/* Nút Submit */}
-            <Pressable
-              onPress={handleSaveForm}
-              style={[styles.saveBtn, { backgroundColor: '#10B981' }]}
-            >
-              <Text style={styles.saveBtnText}>Lưu việc vặt</Text>
-            </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Modal Xem lịch sử lần hoàn thành */}
@@ -634,7 +848,7 @@ export default function MicroHabitScreen({ navigation }) {
         onRequestClose={() => setHistoryModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 Lịch sử: {selectedHabitForHistory?.title}
@@ -644,21 +858,25 @@ export default function MicroHabitScreen({ navigation }) {
               </Pressable>
             </View>
 
-            <View style={{ maxHeight: 300, marginVertical: 12 }}>
-              {selectedHabitForHistory?.history && selectedHabitForHistory.history.length > 0 ? (
-                selectedHabitForHistory.history.map((h, idx) => (
-                  <View key={h.id || idx} style={[styles.historyRow, { borderBottomColor: colors.cardBorder }]}>
-                    <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                    <Text style={[styles.historyDateText, { color: colors.text }]}>
-                      {new Date(h.timestamp).toLocaleDateString('vi-VN')} {new Date(h.timestamp).toLocaleTimeString('vi-VN')}
-                    </Text>
-                    <Text style={[styles.historyNoteText, { color: colors.sub }]}>{h.note}</Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={[styles.emptyText, { color: colors.sub }]}>Chưa có lịch sử.</Text>
+            <FlatList
+              data={selectedHabitForHistory?.history || []}
+              keyExtractor={(h, idx) => h.id || String(idx)}
+              style={{ maxHeight: 320, marginVertical: 12 }}
+              renderItem={({ item: h }) => (
+                <View style={[styles.historyRow, { borderBottomColor: colors.cardBorder }]}>
+                  <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                  <Text style={[styles.historyDateText, { color: colors.text }]}>
+                    {new Date(h.timestamp).toLocaleDateString('vi-VN')} {new Date(h.timestamp).toLocaleTimeString('vi-VN')}
+                  </Text>
+                  <Text style={[styles.historyNoteText, { color: colors.sub }]}>{h.note}</Text>
+                </View>
               )}
-            </View>
+              ListEmptyComponent={
+                <Text style={[styles.emptyText, { color: colors.sub, textAlign: 'center', marginVertical: 20 }]}>
+                  Chưa có lịch sử.
+                </Text>
+              }
+            />
 
             <Pressable
               onPress={() => setHistoryModalVisible(false)}
@@ -710,7 +928,7 @@ const styles = StyleSheet.create({
   habitCard: {
     borderRadius: 18, padding: 16, borderWidth: 1, marginBottom: 12,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   cardIconBox: {
     width: 44, height: 44, borderRadius: 14,
     alignItems: 'center', justifyContent: 'center',
@@ -721,10 +939,13 @@ const styles = StyleSheet.create({
   categoryBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   categoryBadgeText: { fontSize: 10, fontWeight: '700' },
   cardNote: { fontSize: 12, fontWeight: '500', marginTop: 2 },
-  deleteBtn: { padding: 4 },
+  cardHeaderBtn: { padding: 4 },
 
   statusRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8,
+  },
+  statusRightRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   urgencyBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -732,6 +953,11 @@ const styles = StyleSheet.create({
   },
   urgencyDot: { width: 6, height: 6, borderRadius: 3 },
   urgencyText: { fontSize: 12, fontWeight: '700' },
+  reminderBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7, borderWidth: 1,
+  },
+  reminderBadgeText: { fontSize: 11, fontWeight: '700' },
   historyLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   historyLinkText: { fontSize: 11, fontWeight: '600' },
 
@@ -764,15 +990,16 @@ const styles = StyleSheet.create({
   // Modal
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center', padding: 20,
+    justifyContent: 'center', padding: 16,
   },
-  modalContent: {
-    borderRadius: 24, padding: 20, maxHeight: '85%',
+  modalCard: {
+    borderRadius: 24, padding: 18, maxHeight: '88%',
   },
   modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12,
   },
   modalTitle: { fontSize: 17, fontWeight: '800' },
+  formContainer: { paddingVertical: 4 },
   fieldLabel: { fontSize: 13, fontWeight: '700', marginBottom: 6, marginTop: 10 },
   typeSelectorRow: { flexDirection: 'row', gap: 6 },
   typeBtn: { flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
@@ -780,6 +1007,29 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14,
   },
+
+  // Reminder section in modal
+  reminderSection: {
+    borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 14,
+  },
+  reminderHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  reminderSectionTitle: { fontSize: 13, fontWeight: '800' },
+  reminderBody: { marginTop: 10 },
+  reminderHint: { fontSize: 12, marginBottom: 8 },
+  presetHoursRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  hourChip: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1,
+  },
+  hourChipText: { fontSize: 12, fontWeight: '700' },
+  customTimeInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  customTimeLabel: { fontSize: 12, fontWeight: '600' },
+  customTimeInput: {
+    borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
+    width: 80, textAlign: 'center', fontSize: 14, fontWeight: '700',
+  },
+
   colorPalette: { flexDirection: 'row', gap: 8, marginVertical: 6 },
   colorCircle: { width: 28, height: 28, borderRadius: 14 },
   colorCircleSelected: { borderWidth: 3, borderColor: '#FFFFFF' },
@@ -795,4 +1045,3 @@ const styles = StyleSheet.create({
   historyDateText: { fontSize: 12, fontWeight: '700' },
   historyNoteText: { fontSize: 11, flex: 1, textAlign: 'right' },
 });
-
