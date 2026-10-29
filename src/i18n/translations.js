@@ -137,6 +137,12 @@ export const translations = {
         desc: 'Phân tích ngữ cảnh tin nhắn đến và gợi ý câu trả lời thông minh',
         badge: 'VIP AI',
       },
+      voice_text: {
+        title: 'Chuyển giọng nói thành văn bản và ngược lại',
+        shortTitle: 'Giọng nói ↔ Chữ',
+        desc: 'Nhận dạng giọng nói thành chữ viết và đọc văn bản thành tiếng',
+        badge: 'Mới',
+      },
       snap_video: {
         title: 'Tải video từ mạng xã hội không logo',
         shortTitle: 'Snap Video',
@@ -292,6 +298,12 @@ export const translations = {
         shortTitle: 'AI Reply',
         desc: 'Analyze conversation context and suggest smart quick replies',
         badge: 'VIP AI',
+      },
+      voice_text: {
+        title: 'Voice to Text and Text to Voice',
+        shortTitle: 'Voice ↔ Text',
+        desc: 'Recognize speech to text and read text aloud, multilingual support',
+        badge: 'New',
       },
       snap_video: {
         title: 'Download social media videos without watermark',

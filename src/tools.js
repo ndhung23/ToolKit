@@ -71,6 +71,17 @@ export const TOOLS = [
     tier: 'vip',
   },
   {
+    id: 'voice_text',
+    title: 'Chuyển giọng nói thành văn bản và ngược lại',
+    shortTitle: 'Giọng nói ↔ Chữ',
+    desc: 'Nhận dạng giọng nói thành chữ viết và đọc văn bản thành tiếng, hỗ trợ nhiều ngôn ngữ',
+    icon: 'mic',
+    color: '#7C3AED',
+    route: 'VoiceText',
+    badge: 'Mới',
+    tier: 'free',
+  },
+  {
     id: 'snap_video',
     title: 'Tải video từ mạng xã hội không logo',
     shortTitle: 'Snap Video',

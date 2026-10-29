@@ -46,7 +46,8 @@
           "color": "#FFD000"
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-speech-recognition"
     ],
     "extra": {
       "eas": {

@@ -33,3 +33,6 @@ export * from './home';
 
 // 11. Tải video từ mạng xã hội (Snap Video)
 export * from './snap-video';
+
+// 12. Chuyển giọng nói thành văn bản & văn bản thành giọng nói
+export * from './voice-text';
