@@ -56,7 +56,8 @@ export async function callGemini(prompt, systemInstruction = '') {
     ],
     generationConfig: {
       temperature: 0.4,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 2048,
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 
@@ -227,6 +228,13 @@ const PRESET_TOPIC_TEMPLATES = {
     { title: 'Giặt chăn ga gối', type: 'interval', intervalDays: 14, color: '#8B5CF6', reminderTime: '09:00', unit: 'lần' },
     { title: 'Uống đủ nước', type: 'daily', targetCount: 8, color: '#06B6D4', reminderTime: '08:00', unit: 'cốc' },
   ],
+  study: [
+    { title: 'Xem lại thời khóa biểu ngày mai', type: 'daily', targetCount: 1, color: '#3B82F6', reminderTime: '21:00', unit: 'lần' },
+    { title: 'Soạn sách vở và bài tập cần nộp', type: 'daily', targetCount: 1, color: '#8B5CF6', reminderTime: '21:30', unit: 'lần' },
+    { title: 'Thức dậy và chuẩn bị đồ đi học', type: 'daily', targetCount: 1, color: '#10B981', reminderTime: '06:00', unit: 'lần' },
+    { title: 'Ăn sáng trước giờ lên lớp', type: 'daily', targetCount: 1, color: '#F59E0B', reminderTime: '06:30', unit: 'lần' },
+    { title: 'Xuất phát đến trường đúng giờ', type: 'daily', targetCount: 1, color: '#06B6D4', reminderTime: '06:50', unit: 'lần' },
+  ],
   motor: [
     { title: 'Thay nhớt máy xe', type: 'interval', intervalDays: 50, color: '#EF4444', reminderTime: '09:00', unit: 'lần' },
     { title: 'Thay nhớt láp / hộp số', type: 'interval', intervalDays: 120, color: '#F59E0B', reminderTime: '09:00', unit: 'lần' },
@@ -303,6 +311,9 @@ Lưu ý:
   }
 
   // Khớp chủ đề cục bộ
+  if (query.includes('học') || query.includes('trường') || query.includes('lớp') || query.includes('thời khóa biểu')) {
+    return PRESET_TOPIC_TEMPLATES.study;
+  }
   if (query.includes('xe') || query.includes('nhớt') || query.includes('bảo dưỡng')) {
     return PRESET_TOPIC_TEMPLATES.motor;
   }
@@ -316,4 +327,116 @@ Lưu ý:
     return PRESET_TOPIC_TEMPLATES.home;
   }
   return PRESET_TOPIC_TEMPLATES.health;
+}
+
+// ============================================================
+// 5. TẠO ÂM THANH GIỌNG ĐỌC AI THẬT QUA GEMINI (NAM/NỮ CHUẨN)
+// ============================================================
+
+function pcmBase64ToWavBase64(base64Pcm, sampleRate = 24000) {
+  try {
+    const binaryString = atob(base64Pcm);
+    const pcmLen = binaryString.length;
+    const pcmBytes = new Uint8Array(pcmLen);
+    for (let i = 0; i < pcmLen; i++) {
+      pcmBytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    const dataSize = pcmLen;
+
+    const wavBytes = new Uint8Array(44 + dataSize);
+    const view = new DataView(wavBytes.buffer);
+
+    // 'RIFF'
+    wavBytes[0] = 82; wavBytes[1] = 73; wavBytes[2] = 70; wavBytes[3] = 70;
+    view.setUint32(4, 36 + dataSize, true);
+    // 'WAVE'
+    wavBytes[8] = 87; wavBytes[9] = 65; wavBytes[10] = 86; wavBytes[11] = 69;
+    // 'fmt '
+    wavBytes[12] = 102; wavBytes[13] = 109; wavBytes[14] = 116; wavBytes[15] = 32;
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM format
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
+    // 'data'
+    wavBytes[36] = 100; wavBytes[37] = 97; wavBytes[38] = 116; wavBytes[39] = 97;
+    view.setUint32(40, dataSize, true);
+
+    wavBytes.set(pcmBytes, 44);
+
+    let binary = '';
+    const len = wavBytes.byteLength;
+    for (let i = 0; i < len; i += 8192) {
+      const chunk = wavBytes.subarray(i, Math.min(i + 8192, len));
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    return btoa(binary);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tạo file âm thanh AI thật bằng Gemini (Nam / Nữ riêng biệt 100%)
+ * @param {string} text - Văn bản cần đọc
+ * @param {'male'|'female'} gender - Giới tính giọng đọc
+ * @returns {Promise<{audioBase64: string, format: string}|null>}
+ */
+export async function synthesizeSpeechWithGemini(text, gender = 'female') {
+  if (!text || !text.trim()) return null;
+  const apiKey = await getGeminiApiKey();
+  if (!apiKey) return null;
+
+  // Giọng Nam: Puck / Charon, Giọng Nữ: Kore / Aoede
+  const geminiVoice = gender === 'male' ? 'Puck' : 'Kore';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `Đọc bằng tiếng Việt tự nhiên: ${text.slice(0, 300)}` }] }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: geminiVoice,
+              },
+            },
+          },
+        },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const pcmBase64 = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!pcmBase64) return null;
+
+    const wavBase64 = pcmBase64ToWavBase64(pcmBase64);
+    if (!wavBase64) return null;
+
+    return {
+      audioBase64: wavBase64,
+      format: 'wav',
+      mimeType: 'audio/wav',
+    };
+  } catch {
+    clearTimeout(timeout);
+    return null;
+  }
 }

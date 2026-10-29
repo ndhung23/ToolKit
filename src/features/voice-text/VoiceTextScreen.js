@@ -25,6 +25,7 @@ import {
   polishTranscriptWithAi,
   summarizeTranscriptWithAi,
   rewriteTextToneWithAi,
+  synthesizeSpeechWithGemini,
 } from '../../services/geminiService';
 
 // An toàn trên Expo Go (tránh crash khi thiếu native module ExpoSpeechRecognition)
@@ -415,6 +416,48 @@ export default function VoiceTextScreen({ navigation }) {
   // Animation cho nút mic
   const [pulseAnim] = useState(() => new Animated.Value(1));
   const pulseLoop = useRef(null);
+  const [nativeVoices, setNativeVoices] = useState([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await Speech.getAvailableVoicesAsync();
+        if (list && Array.isArray(list)) {
+          setNativeVoices(list);
+        }
+      } catch {
+        // safe
+      }
+    })();
+  }, []);
+
+  // Tìm voice identifier hệ thống phù hợp với giới tính đã chọn
+  const getMatchingVoiceIdentifier = useCallback((targetVoice, lang) => {
+    if (!nativeVoices || !nativeVoices.length) return undefined;
+    const prefix = (lang || 'vi').split('-')[0].toLowerCase();
+    const matchingLang = nativeVoices.filter((v) =>
+      v.language?.toLowerCase().startsWith(prefix)
+    );
+    if (!matchingLang.length) return undefined;
+
+    if (targetVoice?.gender === 'male') {
+      const maleVoice = matchingLang.find((v) => {
+        const name = (v.name || '').toLowerCase();
+        const id = (v.identifier || '').toLowerCase();
+        return name.includes('male') || name.includes('khoi') || name.includes('an') || name.includes('nam') || id.includes('male');
+      });
+      if (maleVoice) return maleVoice.identifier;
+    } else if (targetVoice?.gender === 'female') {
+      const femaleVoice = matchingLang.find((v) => {
+        const name = (v.name || '').toLowerCase();
+        const id = (v.identifier || '').toLowerCase();
+        return name.includes('female') || name.includes('linh') || name.includes('mai') || id.includes('female');
+      });
+      if (femaleVoice) return femaleVoice.identifier;
+    }
+
+    return matchingLang[0]?.identifier;
+  }, [nativeVoices]);
 
   // Lấy danh sách giọng AI phù hợp theo ngôn ngữ hiện tại
   const currentVoiceList = useMemo(() => {
@@ -505,10 +548,7 @@ export default function VoiceTextScreen({ navigation }) {
   // ============================================================
   const startListening = useCallback(() => {
     setIsListening(true);
-    // Tự động focus ngay vào ô nhập văn bản để bàn phím và nút Micro hệ thống sẵn sàng
-    setTimeout(() => {
-      sttInputRef.current?.focus();
-    }, 120);
+    sttInputRef.current?.focus();
 
     if (ExpoSpeechRecognitionModule?.start) {
       setPartialTranscript('');
@@ -685,11 +725,13 @@ export default function VoiceTextScreen({ navigation }) {
       setPreviewingVoiceId(voice.id);
       setIsSpeaking(false);
 
-      const finalPitch = Math.max(0.6, Math.min(1.8, voice.pitch || 1.0));
-      const finalRate = Math.max(0.6, Math.min(1.8, voice.rate || 1.0));
+      const finalPitch = Math.max(0.45, Math.min(1.9, voice.pitch || 1.0));
+      const finalRate = Math.max(0.5, Math.min(1.8, voice.rate || 1.0));
+      const matchedVoice = getMatchingVoiceIdentifier(voice, ttsLang);
 
       Speech.speak(voice.sample, {
         language: ttsLang,
+        voice: matchedVoice,
         pitch: finalPitch,
         rate: finalRate,
         onDone: () => setPreviewingVoiceId(null),
@@ -699,7 +741,7 @@ export default function VoiceTextScreen({ navigation }) {
     } catch {
       setPreviewingVoiceId(null);
     }
-  }, [previewingVoiceId, ttsLang]);
+  }, [previewingVoiceId, ttsLang, getMatchingVoiceIdentifier]);
 
   // ============================================================
   // TTS: ĐỌC VĂN BẢN ĐÃ NHẬP
@@ -722,12 +764,14 @@ export default function VoiceTextScreen({ navigation }) {
     setIsSpeaking(true);
 
     const voice = currentVoice || VIETNAMESE_VOICES[0];
-    const finalPitch = Math.max(0.6, Math.min(1.8, (voice.pitch || 1.0) * speechPitch));
-    const finalRate = Math.max(0.6, Math.min(1.8, (voice.rate || 1.0) * speechRate));
+    const finalPitch = Math.max(0.45, Math.min(1.9, (voice.pitch || 1.0) * speechPitch));
+    const finalRate = Math.max(0.5, Math.min(1.8, (voice.rate || 1.0) * speechRate));
+    const matchedVoice = getMatchingVoiceIdentifier(voice, ttsLang);
 
     try {
       Speech.speak(text, {
         language: ttsLang,
+        voice: matchedVoice,
         pitch: finalPitch,
         rate: finalRate,
         onDone: () => setIsSpeaking(false),
@@ -741,7 +785,7 @@ export default function VoiceTextScreen({ navigation }) {
       setIsSpeaking(false);
       Alert.alert('Lỗi đọc', 'Không thể khởi động đọc văn bản trên thiết bị.');
     }
-  }, [ttsText, isSpeaking, currentVoice, speechPitch, speechRate, ttsLang]);
+  }, [ttsText, isSpeaking, currentVoice, speechPitch, speechRate, ttsLang, getMatchingVoiceIdentifier]);
 
   const stopSpeaking = useCallback(async () => {
     await Speech.stop();
@@ -761,7 +805,33 @@ export default function VoiceTextScreen({ navigation }) {
 
     setIsDownloadingAudio(true);
     try {
-      // Tách văn bản thành các câu/đoạn vừa phải (tối đa 170 ký tự) để engine TTS không bị lỗi
+      const safeVoiceName = (currentVoice?.name || 'giong_ai').replace(/[^a-zA-Z0-9]/g, '_');
+      const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+
+      // Ưu tiên 1: Tạo âm thanh AI thật bằng Google Gemini (Chuẩn Nam / Nữ 100%)
+      const geminiAudio = await synthesizeSpeechWithGemini(text, currentVoice?.gender || 'female');
+      if (geminiAudio && geminiAudio.audioBase64) {
+        const filename = `giong_ai_${safeVoiceName}_${Date.now()}.wav`;
+        const fileUri = `${baseDir}${filename}`;
+
+        await FileSystem.writeAsStringAsync(fileUri, geminiAudio.audioBase64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'audio/wav',
+            dialogTitle: `Lưu file âm thanh AI (${currentVoice?.name || 'Giọng AI'})`,
+            UTI: 'com.microsoft.waveform-audio',
+          });
+        } else {
+          Alert.alert('Đã tạo thành công 🎉', `File âm thanh AI chất lượng cao đã sẵn sàng: ${filename}`);
+        }
+        return;
+      }
+
+      // Dự phòng: Engine TTS chuẩn hóa
       const chunks = splitTextIntoTtsChunks(text, 170);
       const langPrefix = (ttsLang || 'vi-VN').split('-')[0];
 
@@ -780,7 +850,6 @@ export default function VoiceTextScreen({ navigation }) {
         buffers.push(new Uint8Array(buf));
       }
 
-      // Hợp nhất các khối nhị phân MP3 thành một tệp hoàn chỉnh
       let totalLength = 0;
       for (const b of buffers) totalLength += b.byteLength;
       const combined = new Uint8Array(totalLength);
@@ -791,16 +860,13 @@ export default function VoiceTextScreen({ navigation }) {
       }
 
       const base64Audio = uint8ArrayToBase64(combined);
-      const safeVoiceName = (currentVoice?.name || 'giong_ai').replace(/[^a-zA-Z0-9]/g, '_');
       const filename = `giong_ai_${safeVoiceName}_${Date.now()}.mp3`;
-      const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
       const fileUri = `${baseDir}${filename}`;
 
       await FileSystem.writeAsStringAsync(fileUri, base64Audio, {
         encoding: FileSystem.EncodingType.Base64,
       });
 
-      // Mở menu chia sẻ hoặc lưu file vào Tệp (Files)
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
         await Sharing.shareAsync(fileUri, {
