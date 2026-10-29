@@ -6,7 +6,9 @@
 import { getStoredItem, setStoredItem } from '../utils/storage';
 
 const STORAGE_GEMINI_KEY = '@toolkit_gemini_api_key';
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-3-flash-preview';
+const FALLBACK_MODEL = 'gemini-3.5-flash';
+const DEFAULT_API_KEY = 'PLACEHOLDER_KEY';
 
 /**
  * Lấy API Key Gemini từ máy hoặc biến môi trường
@@ -17,10 +19,10 @@ export async function getGeminiApiKey() {
     if (saved && typeof saved === 'string' && saved.trim()) {
       return saved.trim();
     }
-    const envKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+    const envKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || DEFAULT_API_KEY;
     return envKey.trim();
   } catch {
-    return '';
+    return DEFAULT_API_KEY;
   }
 }
 
@@ -46,8 +48,6 @@ export async function callGemini(prompt, systemInstruction = '') {
     throw new Error('NO_API_KEY');
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
   const requestBody = {
     contents: [
       {
@@ -66,35 +66,48 @@ export async function callGemini(prompt, systemInstruction = '') {
     };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const tryCallModel = async (modelName) => {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 18000);
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        const msg = errData?.error?.message || `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
+      const candidate = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!candidate) {
+        throw new Error('Không nhận được phản hồi từ Gemini AI.');
+      }
+      return candidate.trim();
+    } catch (err) {
+      clearTimeout(timeout);
+      throw err;
+    }
+  };
 
   try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => null);
-      const msg = errData?.error?.message || `HTTP ${res.status}`;
-      throw new Error(msg);
-    }
-
-    const data = await res.json();
-    const candidate = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!candidate) {
-      throw new Error('Không nhận được phản hồi từ Gemini AI.');
-    }
-    return candidate.trim();
+    return await tryCallModel(GEMINI_MODEL);
   } catch (err) {
-    clearTimeout(timeout);
-    throw err;
+    try {
+      return await tryCallModel(FALLBACK_MODEL);
+    } catch {
+      throw err;
+    }
   }
 }
 
