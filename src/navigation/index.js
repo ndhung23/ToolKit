@@ -23,6 +23,7 @@ import { FbMultiScreen } from '../features/fb-multi';
 import { AiReplyScreen } from '../features/ai-reply';
 import { SnapVideoScreen } from '../features/snap-video';
 import { VoiceTextScreen } from '../features/voice-text';
+import { MicroHabitScreen } from '../features/micro-habit';
 import { SettingsScreen } from '../features/settings';
 import { AdminScreen } from '../features/admin';
 import FloatingTabBar from '../components/FloatingTabBar';
@@ -113,6 +114,11 @@ function AppStack() {
         name="VoiceText"
         component={VoiceTextScreen}
         options={{ title: 'Giọng nói ↔ Văn bản' }}
+      />
+      <AppStackNav.Screen
+        name="MicroHabit"
+        component={MicroHabitScreen}
+        options={{ title: 'Chu kỳ việc vặt' }}
       />
       <AppStackNav.Screen
         name="Settings"

@@ -92,6 +92,17 @@ export const TOOLS = [
     badge: 'Mới',
     tier: 'free',
   },
+  {
+    id: 'micro_habit',
+    title: 'Theo dõi việc vặt & Chu kỳ sinh hoạt',
+    shortTitle: 'Chu kỳ việc vặt',
+    desc: 'Bấm nút để reset vòng lặp: thay nhớt, đổi ga nước, tiền trọ, uống thuốc...',
+    icon: 'repeat',
+    color: '#10B981',
+    route: 'MicroHabit',
+    badge: 'Mới',
+    tier: 'free',
+  },
 ];
 
 export function openTool(navigation, tool, user, onUpgradeRequired, customTiers = null) {
@@ -126,5 +137,3 @@ export function openTool(navigation, tool, user, onUpgradeRequired, customTiers 
     navigation.navigate(tool.route, { tool });
   }
 }
-
-
