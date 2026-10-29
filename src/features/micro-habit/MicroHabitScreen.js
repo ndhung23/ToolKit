@@ -21,6 +21,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 import { generateHabitsWithAi } from '../../services/geminiService';
+import GeminiApiKeyModal from '../../components/GeminiApiKeyModal';
 import {
   HABIT_TYPES,
   calculateHabitStatus,
@@ -57,6 +58,7 @@ export default function MicroHabitScreen({ navigation }) {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [keyModalVisible, setKeyModalVisible] = useState(false);
 
   // Form State thêm / chỉnh sửa việc
   const [editingId, setEditingId] = useState(null);
@@ -1089,9 +1091,15 @@ export default function MicroHabitScreen({ navigation }) {
                   Gemini AI Gợi ý việc vặt
                 </Text>
               </View>
-              <Pressable onPress={() => setAiModalVisible(false)} hitSlop={8}>
-                <Ionicons name="close" size={24} color={colors.sub} />
-              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Pressable onPress={() => setKeyModalVisible(true)} hitSlop={6} style={styles.keyBtn}>
+                  <Ionicons name="key" size={12} color="#7C3AED" />
+                  <Text style={styles.keyBtnText}>Cài đặt Key</Text>
+                </Pressable>
+                <Pressable onPress={() => setAiModalVisible(false)} hitSlop={8}>
+                  <Ionicons name="close" size={24} color={colors.sub} />
+                </Pressable>
+              </View>
             </View>
 
             <FlatList
@@ -1194,6 +1202,12 @@ export default function MicroHabitScreen({ navigation }) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Modal Cài đặt Gemini API Key */}
+      <GeminiApiKeyModal
+        visible={keyModalVisible}
+        onClose={() => setKeyModalVisible(false)}
+      />
     </View>
   );
 }
@@ -1217,6 +1231,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
   },
   aiSuggestTopBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  keyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+    backgroundColor: 'rgba(124, 58, 237, 0.1)',
+  },
+  keyBtnText: {
+    fontSize: 11, fontWeight: '700', color: '#7C3AED',
+  },
   addTopBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,

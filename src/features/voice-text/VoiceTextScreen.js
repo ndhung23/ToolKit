@@ -26,6 +26,7 @@ import {
   summarizeTranscriptWithAi,
   rewriteTextToneWithAi,
 } from '../../services/geminiService';
+import GeminiApiKeyModal from '../../components/GeminiApiKeyModal';
 
 // An toàn trên Expo Go (tránh crash khi thiếu native module ExpoSpeechRecognition)
 let ExpoSpeechRecognitionModule = null;
@@ -402,6 +403,7 @@ export default function VoiceTextScreen({ navigation }) {
   const [isDownloadingAudio, setIsDownloadingAudio] = useState(false);
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [aiActionType, setAiActionType] = useState('');
+  const [keyModalVisible, setKeyModalVisible] = useState(false);
   const [ttsLang, setTtsLang] = useState('vi-VN');
   const [speechRate, setSpeechRate] = useState(1.0);
   const [speechPitch, setSpeechPitch] = useState(1.0);
@@ -928,7 +930,10 @@ export default function VoiceTextScreen({ navigation }) {
             <Ionicons name="sparkles" size={14} color="#7C3AED" />
             <Text style={styles.aiBadgeText}>Trợ lý Gemini AI</Text>
           </View>
-          <Text style={[styles.aiStatusText, { color: colors.sub }]}>Miễn phí 100%</Text>
+          <Pressable onPress={() => setKeyModalVisible(true)} hitSlop={8} style={styles.keyBtn}>
+            <Ionicons name="key" size={12} color="#7C3AED" />
+            <Text style={styles.keyBtnText}>Cài đặt Key</Text>
+          </Pressable>
         </View>
 
         <View style={styles.aiActionsRow}>
@@ -1095,7 +1100,10 @@ export default function VoiceTextScreen({ navigation }) {
             <Ionicons name="sparkles" size={14} color="#7C3AED" />
             <Text style={styles.aiBadgeText}>Gemini AI viết lại văn phong đọc</Text>
           </View>
-          <Text style={[styles.aiStatusText, { color: colors.sub }]}>Miễn phí 100%</Text>
+          <Pressable onPress={() => setKeyModalVisible(true)} hitSlop={8} style={styles.keyBtn}>
+            <Ionicons name="key" size={12} color="#7C3AED" />
+            <Text style={styles.keyBtnText}>Cài đặt Key</Text>
+          </Pressable>
         </View>
         <View style={styles.toneChipsRow}>
           {[
@@ -1458,6 +1466,11 @@ export default function VoiceTextScreen({ navigation }) {
           </>
         }
       />
+
+      <GeminiApiKeyModal
+        visible={keyModalVisible}
+        onClose={() => setKeyModalVisible(false)}
+      />
     </View>
   );
 }
@@ -1655,6 +1668,14 @@ const styles = StyleSheet.create({
   },
   aiBadgeText: {
     fontSize: 13, fontWeight: '800', color: '#7C3AED',
+  },
+  keyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+    backgroundColor: 'rgba(124, 58, 237, 0.1)',
+  },
+  keyBtnText: {
+    fontSize: 11, fontWeight: '700', color: '#7C3AED',
   },
   aiStatusText: {
     fontSize: 11, fontWeight: '600',
