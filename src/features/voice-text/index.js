@@ -3,3 +3,4 @@
 // Tương tự phím tắt trên phimtat.vn/chuyen-giong-noi-thanh-van-ban/
 
 export { default, default as VoiceTextScreen } from './VoiceTextScreen';
+
