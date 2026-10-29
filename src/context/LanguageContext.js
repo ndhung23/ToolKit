@@ -48,7 +48,7 @@ export function LanguageProvider({ children }) {
 
   // Hàm dịch chuỗi linh hoạt hỗ trợ nested keys (vd: 'settings.title') và tham số thay thế
   const t = useCallback(
-    (key, params = {}) => {
+    (key, params = {}, defaultVal = '') => {
       if (!key) return '';
       const keys = key.split('.');
       let current = translations[language];
@@ -77,7 +77,7 @@ export function LanguageProvider({ children }) {
       }
 
       if (typeof current !== 'string') {
-        return key;
+        return defaultVal || key;
       }
 
       // Thay thế các tham số dạng {name} trong chuỗi

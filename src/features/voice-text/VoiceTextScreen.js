@@ -17,6 +17,8 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import * as Speech from 'expo-speech';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 
@@ -34,6 +36,62 @@ try {
   // Module native không có sẵn trong Expo Go tiêu chuẩn
   ExpoSpeechRecognitionModule = null;
   useSpeechRecognitionEvent = () => {};
+}
+
+// Tách văn bản thành các đoạn nhỏ <= 170 ký tự để tạo audio mượt mà
+function splitTextIntoTtsChunks(text, maxLen = 170) {
+  if (!text) return [];
+  if (text.length <= maxLen) return [text];
+
+  const chunks = [];
+  const sentences = text.match(/[^.!?\n]+[.!?\n]+|[^.!?\n]+$/g) || [text];
+
+  let currentChunk = '';
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    if (!trimmed) continue;
+
+    if ((currentChunk + ' ' + trimmed).trim().length <= maxLen) {
+      currentChunk = (currentChunk + ' ' + trimmed).trim();
+    } else {
+      if (currentChunk) chunks.push(currentChunk);
+
+      if (trimmed.length <= maxLen) {
+        currentChunk = trimmed;
+      } else {
+        const words = trimmed.split(' ');
+        let wordChunk = '';
+        for (const w of words) {
+          if ((wordChunk + ' ' + w).trim().length <= maxLen) {
+            wordChunk = (wordChunk + ' ' + w).trim();
+          } else {
+            if (wordChunk) chunks.push(wordChunk);
+            wordChunk = w;
+          }
+        }
+        currentChunk = wordChunk;
+      }
+    }
+  }
+  if (currentChunk) chunks.push(currentChunk);
+  return chunks;
+}
+
+// Chuyển đổi Uint8Array nhị phân sang Base64 chuẩn hóa
+function uint8ArrayToBase64(bytes) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let b64 = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i += 3) {
+    const b1 = bytes[i];
+    const b2 = i + 1 < len ? bytes[i + 1] : 0;
+    const b3 = i + 2 < len ? bytes[i + 2] : 0;
+    b64 += chars[b1 >> 2];
+    b64 += chars[((b1 & 3) << 4) | (b2 >> 4)];
+    b64 += i + 1 < len ? chars[((b2 & 15) << 2) | (b3 >> 6)] : '=';
+    b64 += i + 2 < len ? chars[b3 & 63] : '=';
+  }
+  return b64;
 }
 
 // Danh sách ngôn ngữ hỗ trợ
@@ -331,10 +389,12 @@ export default function VoiceTextScreen({ navigation }) {
   const [partialTranscript, setPartialTranscript] = useState('');
   const [sttLang, setSttLang] = useState('vi-VN');
   const [sttHistory, setSttHistory] = useState([]);
+  const [isCopied, setIsCopied] = useState(false);
 
   // --- Văn bản → Giọng nói (TTS) ---
   const [ttsText, setTtsText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isDownloadingAudio, setIsDownloadingAudio] = useState(false);
   const [ttsLang, setTtsLang] = useState('vi-VN');
   const [speechRate, setSpeechRate] = useState(1.0);
   const [speechPitch, setSpeechPitch] = useState(1.0);
@@ -496,7 +556,21 @@ export default function VoiceTextScreen({ navigation }) {
 
   const copyTranscript = useCallback(async (text) => {
     await Clipboard.setStringAsync(text);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2500);
     Alert.alert('Đã sao chép ✅', 'Văn bản đã được sao chép vào clipboard.');
+  }, []);
+
+  const handleQuickCopy = useCallback(async (textToCopy) => {
+    const content = (textToCopy || '').trim();
+    if (!content) {
+      Alert.alert('Chưa có nội dung', 'Vui lòng đọc hoặc nhập văn bản trước khi sao chép.');
+      return;
+    }
+    await Clipboard.setStringAsync(content);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2500);
+    Alert.alert('Đã sao chép! 📋', 'Đoạn văn bản đã được sao chép vào bộ nhớ tạm. Bạn có thể dán vào bất cứ đâu.');
   }, []);
 
   const clearTranscript = useCallback(() => {
@@ -582,6 +656,78 @@ export default function VoiceTextScreen({ navigation }) {
     setIsSpeaking(false);
     setPreviewingVoiceId(null);
   }, []);
+
+  // ============================================================
+  // TTS: TẢI ÂM THANH GIỌNG ĐỌC VĂN BẢN (.MP3)
+  // ============================================================
+  const handleDownloadTtsAudio = useCallback(async () => {
+    const text = ttsText.trim();
+    if (!text) {
+      Alert.alert('Thiếu nội dung', 'Vui lòng nhập văn bản cần chuyển thành file âm thanh.');
+      return;
+    }
+
+    setIsDownloadingAudio(true);
+    try {
+      // Tách văn bản thành các câu/đoạn vừa phải (tối đa 170 ký tự) để engine TTS không bị lỗi
+      const chunks = splitTextIntoTtsChunks(text, 170);
+      const langPrefix = (ttsLang || 'vi-VN').split('-')[0];
+
+      const buffers = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${langPrefix}&client=tw-ob&q=${encodeURIComponent(chunks[i])}`;
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
+          },
+        });
+        if (!res.ok) {
+          throw new Error(`Máy chủ âm thanh phản hồi mã ${res.status}. Vui lòng thử lại.`);
+        }
+        const buf = await res.arrayBuffer();
+        buffers.push(new Uint8Array(buf));
+      }
+
+      // Hợp nhất các khối nhị phân MP3 thành một tệp hoàn chỉnh
+      let totalLength = 0;
+      for (const b of buffers) totalLength += b.byteLength;
+      const combined = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const b of buffers) {
+        combined.set(b, offset);
+        offset += b.byteLength;
+      }
+
+      const base64Audio = uint8ArrayToBase64(combined);
+      const safeVoiceName = (currentVoice?.name || 'giong_ai').replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `giong_ai_${safeVoiceName}_${Date.now()}.mp3`;
+      const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+      const fileUri = `${baseDir}${filename}`;
+
+      await FileSystem.writeAsStringAsync(fileUri, base64Audio, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      // Mở menu chia sẻ hoặc lưu file vào Tệp (Files)
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'audio/mpeg',
+          dialogTitle: 'Lưu hoặc chia sẻ file âm thanh giọng đọc (.mp3)',
+          UTI: 'public.mp3',
+        });
+      } else {
+        Alert.alert(
+          'Đã tải thành công 🎉',
+          `File âm thanh MP3 đã được tạo thành công: ${filename}`
+        );
+      }
+    } catch (err) {
+      Alert.alert('Không thể tạo file âm thanh', err.message || 'Có lỗi xảy ra trong quá trình tạo file. Vui lòng thử lại.');
+    } finally {
+      setIsDownloadingAudio(false);
+    }
+  }, [ttsText, ttsLang, currentVoice]);
 
   // ============================================================
   // RENDER STT TAB (Giọng nói -> Văn bản)
@@ -678,6 +824,33 @@ export default function VoiceTextScreen({ navigation }) {
           </Text>
         ) : null}
       </View>
+
+      {/* Nút sao chép nhanh toàn bộ văn bản */}
+      <Pressable
+        onPress={() => handleQuickCopy(transcript || partialTranscript)}
+        disabled={!transcript && !partialTranscript}
+        style={[
+          styles.quickCopyBtn,
+          {
+            backgroundColor: isCopied ? colors.success : colors.primary,
+            opacity: !transcript && !partialTranscript ? 0.45 : 1,
+          },
+        ]}
+      >
+        <Ionicons
+          name={isCopied ? 'checkmark-circle' : 'copy'}
+          size={20}
+          color={isCopied ? '#FFFFFF' : colors.primaryText}
+        />
+        <Text
+          style={[
+            styles.quickCopyBtnText,
+            { color: isCopied ? '#FFFFFF' : colors.primaryText },
+          ]}
+        >
+          {isCopied ? 'Đã sao chép vào bộ nhớ tạm! ✓' : 'Sao chép nhanh toàn bộ văn bản 📋'}
+        </Text>
+      </Pressable>
 
       {sttHistory.length > 0 && (
         <View style={styles.historySection}>
@@ -982,6 +1155,37 @@ export default function VoiceTextScreen({ navigation }) {
         )}
       </Pressable>
 
+      {/* Nút tải âm thanh MP3 về máy */}
+      <Pressable
+        onPress={handleDownloadTtsAudio}
+        disabled={!ttsText.trim() || isDownloadingAudio}
+        style={[
+          styles.downloadAudioBtn,
+          {
+            backgroundColor: !ttsText.trim() ? colors.cardElevated : '#059669',
+            opacity: !ttsText.trim() ? 0.5 : 1,
+          },
+        ]}
+      >
+        {isDownloadingAudio ? (
+          <ActivityIndicator size="small" color="#FFFFFF" />
+        ) : (
+          <Ionicons
+            name="cloud-download-outline"
+            size={22}
+            color={!ttsText.trim() ? colors.sub : '#FFFFFF'}
+          />
+        )}
+        <Text
+          style={[
+            styles.downloadAudioBtnText,
+            { color: !ttsText.trim() ? colors.sub : '#FFFFFF' },
+          ]}
+        >
+          {isDownloadingAudio ? 'Đang tạo file MP3...' : 'Tải file âm thanh giọng đọc (.MP3) 📥'}
+        </Text>
+      </Pressable>
+
       {/* Thông tin giọng đọc đang áp dụng */}
       {currentVoice && !isSpeaking && (
         <View style={[styles.activeVoiceBar, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
@@ -997,6 +1201,19 @@ export default function VoiceTextScreen({ navigation }) {
           <Ionicons name="checkmark-circle" size={20} color={colors.success} />
         </View>
       )}
+
+      {/* Hộp giải thích về giọng AI & phong cách Vbee */}
+      <View style={[styles.vbeeNoteBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <Ionicons name="sparkles-outline" size={20} color="#7C3AED" />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.vbeeNoteTitle, { color: colors.text }]}>
+            Kho giọng đọc AI đa phong cách
+          </Text>
+          <Text style={[styles.vbeeNoteDesc, { color: colors.sub }]}>
+            Hệ thống cung cấp 8 nhân vật giọng AI tiếng Việt theo vùng miền (Bắc - Trung - Nam). Bạn có thể bấm nghe thử và tải file MP3 trực tiếp về điện thoại hoàn toàn miễn phí.
+          </Text>
+        </View>
+      </View>
     </>
   );
 
@@ -1221,6 +1438,29 @@ const styles = StyleSheet.create({
     paddingVertical: 16, borderRadius: 16, marginBottom: 10, gap: 10,
   },
   speakBtnText: { fontSize: 16, fontWeight: '800' },
+
+  downloadAudioBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, borderRadius: 16, marginBottom: 14, gap: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 4, elevation: 3,
+  },
+  downloadAudioBtnText: { fontSize: 15, fontWeight: '800' },
+
+  quickCopyBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, borderRadius: 14, marginBottom: 16, gap: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 4, elevation: 3,
+  },
+  quickCopyBtnText: { fontSize: 15, fontWeight: '800' },
+
+  vbeeNoteBox: {
+    flexDirection: 'row', gap: 10, padding: 14, borderRadius: 14,
+    borderWidth: 1, marginTop: 8, marginBottom: 12, alignItems: 'flex-start',
+  },
+  vbeeNoteTitle: { fontSize: 13, fontWeight: '800', marginBottom: 4 },
+  vbeeNoteDesc: { fontSize: 12, lineHeight: 18, fontWeight: '500' },
 
   activeVoiceBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
