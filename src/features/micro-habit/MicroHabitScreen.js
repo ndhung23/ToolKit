@@ -27,6 +27,7 @@ import {
   getTodayDateString,
   scheduleHabitReminder,
   cancelHabitReminder,
+  testInstantNotification,
 } from './microHabitService';
 
 const FILTER_TABS = [
@@ -37,7 +38,8 @@ const FILTER_TABS = [
   { id: 'daily', label: 'Trong ngày 🎯' },
 ];
 
-const PRESET_HOURS = ['07:00', '08:00', '12:00', '18:00', '20:00', '22:00'];
+const ALL_HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTE_PRESETS = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
 const PRESET_COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#06B6D4', '#64748B'];
 
 export default function MicroHabitScreen({ navigation }) {
@@ -62,6 +64,43 @@ export default function MicroHabitScreen({ navigation }) {
   const [formColor, setFormColor] = useState('#10B981');
   const [formReminderEnabled, setFormReminderEnabled] = useState(false);
   const [formReminderTime, setFormReminderTime] = useState('08:00');
+
+  // Giờ và phút hiện tại từ formReminderTime
+  const [selectedHour, selectedMinute] = useMemo(() => {
+    const parts = (formReminderTime || '08:00').split(':');
+    return [parts[0] || '08', parts[1] || '00'];
+  }, [formReminderTime]);
+
+  const handleSelectHour = useCallback((hourStr) => {
+    setFormReminderTime(`${hourStr}:${selectedMinute}`);
+  }, [selectedMinute]);
+
+  const handleSelectMinute = useCallback((minuteStr) => {
+    setFormReminderTime(`${selectedHour}:${minuteStr}`);
+  }, [selectedHour]);
+
+  const handleStepMinute = useCallback((delta) => {
+    let m = parseInt(selectedMinute, 10) + delta;
+    if (m < 0) m = 59;
+    if (m > 59) m = 0;
+    setFormReminderTime(`${selectedHour}:${String(m).padStart(2, '0')}`);
+  }, [selectedHour, selectedMinute]);
+
+  // Thử nghiệm gửi thông báo tức thì (2 giây)
+  const handleTestNotification = useCallback(async () => {
+    try {
+      await testInstantNotification(
+        '🔔 Nhắc việc: ' + (formTitle.trim() || 'Thay nhớt xe máy'),
+        'Đã đến giờ kiểm tra và hoàn thành chu kỳ sinh hoạt!'
+      );
+      Alert.alert(
+        'Đã bắn thông báo thử nghiệm! 🎉',
+        'Thông báo sẽ hiển thị trên thanh thông báo trong 2 giây. Bạn có thể vuốt lên màn hình chính để thấy banner & chuông.'
+      );
+    } catch (err) {
+      Alert.alert('Không thể gửi thông báo', err.message || 'Hãy kiểm tra quyền thông báo trong Cài đặt máy.');
+    }
+  }, [formTitle]);
 
   // Tải danh sách thói quen khi mount
   useEffect(() => {
@@ -740,49 +779,112 @@ export default function MicroHabitScreen({ navigation }) {
 
                     {formReminderEnabled && (
                       <View style={styles.reminderBody}>
-                        <Text style={[styles.reminderHint, { color: colors.sub }]}>
-                          Chọn khung giờ hoặc nhập giờ nhắc cụ thể (HH:mm):
-                        </Text>
+                        {/* Đồng hồ số hiển thị giờ đã chọn */}
+                        <View style={[styles.clockDisplayBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                          <Ionicons name="alarm-outline" size={22} color="#10B981" />
+                          <View style={styles.clockDigitsRow}>
+                            <View style={styles.digitBlock}>
+                              <Text style={[styles.digitLabel, { color: colors.sub }]}>GIỜ</Text>
+                              <Text style={[styles.digitValue, { color: colors.text }]}>{selectedHour}</Text>
+                            </View>
+                            <Text style={[styles.colonText, { color: '#10B981' }]}>:</Text>
+                            <View style={styles.digitBlock}>
+                              <Text style={[styles.digitLabel, { color: colors.sub }]}>PHÚT</Text>
+                              <Text style={[styles.digitValue, { color: colors.text }]}>{selectedMinute}</Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.clockHint, { color: colors.sub }]}>Nhắc mỗi ngày</Text>
+                        </View>
 
-                        {/* Các mốc giờ phổ biến */}
-                        <View style={styles.presetHoursRow}>
-                          {PRESET_HOURS.map((h) => (
-                            <Pressable
-                              key={h}
-                              onPress={() => setFormReminderTime(h)}
-                              style={[
-                                styles.hourChip,
-                                {
-                                  backgroundColor: formReminderTime === h ? '#10B981' : colors.card,
-                                  borderColor: formReminderTime === h ? '#10B981' : colors.border,
-                                },
-                              ]}
-                            >
-                              <Text
+                        {/* Bảng chọn Giờ (00 -> 23) */}
+                        <Text style={[styles.subPickerTitle, { color: colors.text }]}>1. Chọn giờ trong ngày (0 - 23h)</Text>
+                        <View style={styles.hoursGrid}>
+                          {ALL_HOURS.map((h) => {
+                            const isSelected = selectedHour === h;
+                            return (
+                              <Pressable
+                                key={h}
+                                onPress={() => handleSelectHour(h)}
                                 style={[
-                                  styles.hourChipText,
-                                  { color: formReminderTime === h ? '#FFFFFF' : colors.text },
+                                  styles.hourGridCell,
+                                  {
+                                    backgroundColor: isSelected ? '#10B981' : colors.card,
+                                    borderColor: isSelected ? '#10B981' : colors.border,
+                                  },
                                 ]}
                               >
-                                {h}
-                              </Text>
-                            </Pressable>
-                          ))}
+                                <Text
+                                  style={[
+                                    styles.hourGridCellText,
+                                    { color: isSelected ? '#FFFFFF' : colors.text },
+                                  ]}
+                                >
+                                  {h}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
                         </View>
 
-                        {/* Input nhập giờ tùy chỉnh */}
-                        <View style={styles.customTimeInputRow}>
-                          <Text style={[styles.customTimeLabel, { color: colors.sub }]}>Giờ cụ thể:</Text>
-                          <TextInput
-                            style={[styles.customTimeInput, { color: colors.text, borderColor: colors.border }]}
-                            value={formReminderTime}
-                            onChangeText={setFormReminderTime}
-                            placeholder="08:00"
-                            placeholderTextColor={colors.sub}
-                            maxLength={5}
-                            keyboardType="numbers-and-punctuation"
-                          />
+                        {/* Bảng chọn Phút (Mốc 5 phút + Nút tinh chỉnh +-1 phút) */}
+                        <Text style={[styles.subPickerTitle, { color: colors.text }]}>2. Chọn phút</Text>
+                        <View style={styles.minutesGrid}>
+                          {MINUTE_PRESETS.map((m) => {
+                            const isSelected = selectedMinute === m;
+                            return (
+                              <Pressable
+                                key={m}
+                                onPress={() => handleSelectMinute(m)}
+                                style={[
+                                  styles.minuteGridCell,
+                                  {
+                                    backgroundColor: isSelected ? '#10B981' : colors.card,
+                                    borderColor: isSelected ? '#10B981' : colors.border,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.minuteGridCellText,
+                                    { color: isSelected ? '#FFFFFF' : colors.text },
+                                  ]}
+                                >
+                                  :{m}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
                         </View>
+
+                        {/* Tinh chỉnh từng phút */}
+                        <View style={styles.minuteStepperRow}>
+                          <Pressable
+                            onPress={() => handleStepMinute(-1)}
+                            style={[styles.stepperBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                          >
+                            <Ionicons name="remove" size={16} color={colors.text} />
+                            <Text style={[styles.stepperBtnText, { color: colors.text }]}>-1p</Text>
+                          </Pressable>
+                          <Text style={[styles.stepperCurrentText, { color: colors.sub }]}>
+                            Khung giờ: <Text style={{ color: '#10B981', fontWeight: '800' }}>{selectedHour}:{selectedMinute}</Text>
+                          </Text>
+                          <Pressable
+                            onPress={() => handleStepMinute(1)}
+                            style={[styles.stepperBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                          >
+                            <Ionicons name="add" size={16} color={colors.text} />
+                            <Text style={[styles.stepperBtnText, { color: colors.text }]}>+1p</Text>
+                          </Pressable>
+                        </View>
+
+                        {/* Nút bắn thông báo thử nghiệm ngay (2s) để test loa & banner trên iOS & Android */}
+                        <Pressable
+                          onPress={handleTestNotification}
+                          style={[styles.testNotifBtn, { backgroundColor: colors.card, borderColor: '#10B981' }]}
+                        >
+                          <Ionicons name="notifications-circle" size={18} color="#10B981" />
+                          <Text style={styles.testNotifBtnText}>🔔 Thử chuông thông báo ngay (2s)</Text>
+                        </Pressable>
                       </View>
                     )}
                   </View>
@@ -1016,18 +1118,84 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   reminderSectionTitle: { fontSize: 13, fontWeight: '800' },
-  reminderBody: { marginTop: 10 },
-  reminderHint: { fontSize: 12, marginBottom: 8 },
-  presetHoursRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  hourChip: {
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1,
+  reminderBody: { marginTop: 12 },
+
+  // Clock display box
+  clockDisplayBox: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12,
   },
-  hourChipText: { fontSize: 12, fontWeight: '700' },
-  customTimeInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  customTimeLabel: { fontSize: 12, fontWeight: '600' },
-  customTimeInput: {
-    borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
-    width: 80, textAlign: 'center', fontSize: 14, fontWeight: '700',
+  clockDigitsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  digitBlock: {
+    alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8,
+  },
+  digitLabel: {
+    fontSize: 9, fontWeight: '700', marginBottom: 2,
+  },
+  digitValue: {
+    fontSize: 20, fontWeight: '800', fontVariant: ['tabular-nums'],
+  },
+  colonText: {
+    fontSize: 22, fontWeight: '900',
+  },
+  clockHint: {
+    fontSize: 12, fontWeight: '600',
+  },
+
+  subPickerTitle: {
+    fontSize: 12, fontWeight: '700', marginBottom: 8, marginTop: 6,
+  },
+
+  // Hours Grid (6 cols x 4 rows)
+  hoursGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12,
+  },
+  hourGridCell: {
+    width: '14.5%', aspectRatio: 1.2, borderRadius: 8, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  hourGridCellText: {
+    fontSize: 12, fontWeight: '700',
+  },
+
+  // Minutes Grid (6 cols x 2 rows)
+  minutesGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10,
+  },
+  minuteGridCell: {
+    width: '14.5%', aspectRatio: 1.2, borderRadius: 8, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  minuteGridCellText: {
+    fontSize: 11, fontWeight: '700',
+  },
+
+  // Minute stepper
+  minuteStepperRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginVertical: 6,
+  },
+  stepperBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 1,
+  },
+  stepperBtnText: {
+    fontSize: 12, fontWeight: '700',
+  },
+  stepperCurrentText: {
+    fontSize: 12, fontWeight: '600',
+  },
+
+  // Test Notification Button
+  testNotifBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: 10, borderWidth: 1, marginTop: 12,
+  },
+  testNotifBtnText: {
+    color: '#10B981', fontSize: 13, fontWeight: '800',
   },
 
   colorPalette: { flexDirection: 'row', gap: 8, marginVertical: 6 },

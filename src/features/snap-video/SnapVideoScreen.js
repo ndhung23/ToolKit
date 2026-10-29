@@ -24,7 +24,7 @@ import {
   detectPlatform,
   isValidUrl,
   fetchDownloadLink,
-  downloadAndSaveVideo,
+  startVideoDownload,
   cleanupTempFile,
 } from './videoDownloadService';
 
@@ -42,12 +42,20 @@ export default function SnapVideoScreen({ navigation }) {
   const [detectedPlatform, setDetectedPlatform] = useState(null);
   const inputRef = useRef(null);
   const isMountedRef = useRef(true);
+  const currentAbortControllerRef = useRef(null);
+  const currentDownloadHandleRef = useRef(null);
   const [progressAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      if (currentAbortControllerRef.current) {
+        currentAbortControllerRef.current.abort();
+      }
+      if (currentDownloadHandleRef.current) {
+        currentDownloadHandleRef.current.cancel();
+      }
     };
   }, []);
 
@@ -72,6 +80,26 @@ export default function SnapVideoScreen({ navigation }) {
     }
   }, [handleUrlChange]);
 
+  // Hủy tải video giữa chừng
+  const handleCancelDownload = useCallback(async () => {
+    try {
+      if (currentAbortControllerRef.current) {
+        currentAbortControllerRef.current.abort();
+        currentAbortControllerRef.current = null;
+      }
+      if (currentDownloadHandleRef.current) {
+        await currentDownloadHandleRef.current.cancel();
+        currentDownloadHandleRef.current = null;
+      }
+    } catch {
+      // safe
+    }
+    setLoading(false);
+    setStatusText('');
+    setProgress(0);
+    progressAnim.setValue(0);
+  }, [progressAnim]);
+
   // Xóa link
   const handleClear = useCallback(() => {
     setUrl('');
@@ -95,26 +123,30 @@ export default function SnapVideoScreen({ navigation }) {
       return;
     }
 
+    const abortCtrl = new AbortController();
+    currentAbortControllerRef.current = abortCtrl;
+    currentDownloadHandleRef.current = null;
+
     setLoading(true);
     setProgress(0);
     progressAnim.setValue(0);
     setStatusText('Đang phân tích link...');
 
     try {
-      // Bước 1: Lấy link tải từ API
-      const downloadInfo = await fetchDownloadLink(trimmedUrl, downloadMode);
+      // Bước 1: Lấy link tải từ API (có hỗ trợ hủy)
+      const downloadInfo = await fetchDownloadLink(trimmedUrl, downloadMode, abortCtrl.signal);
 
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || abortCtrl.signal.aborted) return;
       setStatusText('Đang tải video...');
 
-      // Bước 2: Tải và lưu file (với throttle progress chống giật lag UI)
+      // Bước 2: Tải và lưu file (với throttle progress chống giật lag UI & hỗ trợ hủy)
       let lastP = 0;
       let lastTime = 0;
-      const result = await downloadAndSaveVideo(
+      const downloadHandle = startVideoDownload(
         downloadInfo.url,
         downloadInfo.filename,
         (p) => {
-          if (!isMountedRef.current) return;
+          if (!isMountedRef.current || abortCtrl.signal.aborted) return;
           const now = Date.now();
           if (p === 1 || Math.abs(p - lastP) >= 0.03 || now - lastTime > 150) {
             lastP = p;
@@ -125,7 +157,10 @@ export default function SnapVideoScreen({ navigation }) {
         }
       );
 
-      if (!isMountedRef.current) return;
+      currentDownloadHandleRef.current = downloadHandle;
+      const result = await downloadHandle.promise;
+
+      if (!isMountedRef.current || abortCtrl.signal.aborted) return;
 
       // Bước 3: Thêm vào lịch sử
       const historyItem = {
@@ -157,15 +192,19 @@ export default function SnapVideoScreen({ navigation }) {
           : `${downloadMode === 'audio' ? 'Audio' : 'Video'} đã tải xong nhưng không thể lưu vào thư viện ảnh. Kiểm tra quyền truy cập.`
       );
     } catch (err) {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || abortCtrl.signal.aborted) return;
       setStatusText('');
       setProgress(0);
       progressAnim.setValue(0);
-      Alert.alert(
-        'Tải thất bại',
-        err.message || 'Đã xảy ra lỗi. Vui lòng kiểm tra link và thử lại.'
-      );
+      if (err.message !== 'Đã hủy tải video.' && err.message !== 'Đã hủy thao tác.') {
+        Alert.alert(
+          'Tải thất bại',
+          err.message || 'Đã xảy ra lỗi. Vui lòng kiểm tra link và thử lại.'
+        );
+      }
     } finally {
+      currentAbortControllerRef.current = null;
+      currentDownloadHandleRef.current = null;
       if (isMountedRef.current) {
         setLoading(false);
       }
@@ -377,31 +416,42 @@ export default function SnapVideoScreen({ navigation }) {
               </View>
             )}
 
-            {/* Nút Tải Video */}
-            <Pressable
-              onPress={handleDownload}
-              disabled={loading || !url.trim()}
-              style={[
-                styles.downloadBtn,
-                {
-                  backgroundColor: loading || !url.trim() ? colors.cardElevated : '#FF2D55',
-                  opacity: loading || !url.trim() ? 0.5 : 1,
-                },
-              ]}
-            >
-              {loading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
+            {/* Nút Tải Video / Hủy Tải */}
+            {loading ? (
+              <View style={styles.loadingActionRow}>
+                <View style={[styles.downloadBtnLoading, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}>
+                  <ActivityIndicator size="small" color="#FF2D55" />
+                  <Text style={[styles.downloadBtnLoadingText, { color: colors.text }]} numberOfLines={1}>
+                    {statusText || 'Đang xử lý...'}
+                  </Text>
+                </View>
+
+                <Pressable
+                  onPress={handleCancelDownload}
+                  style={styles.cancelDownloadBtn}
+                >
+                  <Ionicons name="close-circle" size={18} color="#FFFFFF" />
+                  <Text style={styles.cancelDownloadBtnText}>Hủy tải</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={handleDownload}
+                disabled={!url.trim()}
+                style={[
+                  styles.downloadBtn,
+                  {
+                    backgroundColor: !url.trim() ? colors.cardElevated : '#FF2D55',
+                    opacity: !url.trim() ? 0.5 : 1,
+                  },
+                ]}
+              >
                 <Ionicons name="download" size={22} color="#FFFFFF" />
-              )}
-              <Text style={styles.downloadBtnText}>
-                {loading
-                  ? 'Đang xử lý...'
-                  : downloadMode === 'audio'
-                    ? 'Tải Audio'
-                    : 'Tải Video'}
-              </Text>
-            </Pressable>
+                <Text style={styles.downloadBtnText}>
+                  {downloadMode === 'audio' ? 'Tải Audio' : 'Tải Video'}
+                </Text>
+              </Pressable>
+            )}
 
             {/* Tiêu đề lịch sử */}
             {history.length > 0 && (
@@ -606,6 +656,42 @@ const styles = StyleSheet.create({
   },
   downloadBtnText: {
     fontSize: 17,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  loadingActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
+  downloadBtnLoading: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+    paddingHorizontal: 12,
+  },
+  downloadBtnLoadingText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cancelDownloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+    paddingVertical: 15,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    gap: 6,
+  },
+  cancelDownloadBtnText: {
+    fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
   },

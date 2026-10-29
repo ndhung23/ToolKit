@@ -1,6 +1,7 @@
 // src/features/micro-habit/microHabitService.js
 // Logic tính toán chu kỳ, kiểm tra hạn chót, màu sắc cảnh báo, thông báo hẹn giờ và lưu trữ dữ liệu việc vặt
 
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 
@@ -13,6 +14,15 @@ try {
       shouldSetBadge: false,
     }),
   });
+
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync('default', {
+      name: 'Nhắc nhở việc vặt',
+      importance: 5, // AndroidImportance.MAX
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#10B981',
+    }).catch(() => {});
+  }
 } catch {
   // Safe fallback
 }
@@ -119,6 +129,47 @@ export async function cancelHabitReminder(notificationId) {
     await Notifications.cancelScheduledNotificationAsync(notificationId);
   } catch {
     // ignore
+  }
+}
+
+/**
+ * Bắn thông báo thử nghiệm ngay lập tức sau 2 giây để người dùng kiểm tra âm thanh & banner trên iOS / Android
+ */
+export async function testInstantNotification(title = '🔔 Thử nghiệm thông báo', body = 'Thông báo việc vặt hoạt động chuẩn xác!') {
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      throw new Error('Chưa cấp quyền thông báo trên thiết bị. Vui lòng cho phép quyền thông báo trong Cài đặt máy.');
+    }
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Nhắc nhở việc vặt',
+        importance: 5, // AndroidImportance.MAX
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#10B981',
+      });
+    }
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 2,
+      },
+    });
+    return true;
+  } catch (err) {
+    throw err;
   }
 }
 
