@@ -17,12 +17,24 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import * as Speech from 'expo-speech';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from 'expo-speech-recognition';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+
+// An toàn trên Expo Go (tránh crash khi thiếu native module ExpoSpeechRecognition)
+let ExpoSpeechRecognitionModule = null;
+let useSpeechRecognitionEvent = () => {};
+
+try {
+  const speechRec = require('expo-speech-recognition');
+  if (speechRec) {
+    ExpoSpeechRecognitionModule = speechRec.ExpoSpeechRecognitionModule || null;
+    useSpeechRecognitionEvent = speechRec.useSpeechRecognitionEvent || (() => {});
+  }
+} catch {
+  // Module native không có sẵn trong Expo Go tiêu chuẩn
+  ExpoSpeechRecognitionModule = null;
+  useSpeechRecognitionEvent = () => {};
+}
 
 // Danh sách ngôn ngữ hỗ trợ
 const LANGUAGES = [
@@ -475,7 +487,11 @@ export default function VoiceTextScreen({ navigation }) {
     }
     try {
       if (!ExpoSpeechRecognitionModule?.start) {
-        Alert.alert('Không hỗ trợ', 'Tính năng nhận dạng giọng nói yêu cầu môi trường hỗ trợ micro.');
+        Alert.alert(
+          'Thông báo',
+          'Tính năng nhận dạng giọng nói (STT) yêu cầu bản build native trên thiết bị. Bạn có thể trải nghiệm tính năng Chuyển văn bản thành giọng nói (TTS) với kho giọng AI phong phú ở tab bên cạnh nhé!',
+          [{ text: 'Đã hiểu' }]
+        );
         return;
       }
       setPartialTranscript('');
