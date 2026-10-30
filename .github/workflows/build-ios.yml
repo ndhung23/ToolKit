@@ -51,35 +51,27 @@ jobs:
             exit 1
           fi
 
-      - name: Build iOS Application (Unsigned Release)
+      - name: Build iOS Application (Unsigned Release Archive)
         run: |
           WORKSPACE=$(find ios -name "*.xcworkspace" | head -n 1)
           SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag{gsub(/^[ \t]+/, ""); print; exit}')
-          echo "Building workspace: $WORKSPACE with scheme: $SCHEME"
-          xcodebuild -workspace "$WORKSPACE" \
+          echo "Archiving workspace: $WORKSPACE with scheme: $SCHEME"
+          xcodebuild archive \
+            -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
+            -archivePath build/ToolKit.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            PROVISIONING_PROFILE="" \
-            CODE_SIGN_STYLE=Manual \
-            clean build
+            CODE_SIGN_IDENTITY=""
 
       - name: Package into IPA format for Sideloadly / AltStore
         run: |
-          echo "Listing all compiled .app bundles:"
-          find build -type d -name "*.app"
-          APP_PATH=$(find build -type d -name "*.app" | head -n 1)
-          echo "Selected app bundle: $APP_PATH"
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: No .app bundle found in build folder"
-            exit 1
-          fi
+          echo "Listing applications in archive:"
+          ls -la build/ToolKit.xcarchive/Products/Applications/
           mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
+          cp -R build/ToolKit.xcarchive/Products/Applications/*.app Payload/
           zip -qr ToolKit.ipa Payload
           rm -rf Payload
           ls -lh ToolKit.ipa
