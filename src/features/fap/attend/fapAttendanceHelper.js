@@ -749,6 +749,40 @@ export const SAMPLE_TODAY_SLOTS = [
 ];
 
 /**
+ * Tạo khóa định danh duy nhất cho một ca học (theo ngày, ca và mã môn)
+ */
+export function getSlotUniqueKey(slot) {
+  if (!slot) return '';
+  const date = (slot.date || '').trim();
+  const slotNum = Number(slot.slot) || 1;
+  const subCode = (slot.subjectCode || '').trim().toUpperCase();
+  return `${date}_${slotNum}_${subCode}`;
+}
+
+/**
+ * Kiểm tra xem slot học có phải là ca học của ngày HÔM NAY hay không
+ */
+export function isSlotForToday(slot, now = new Date()) {
+  if (!slot) return false;
+  const { dayIndex, dateStr } = getCurrentVietnamDayInfo(now);
+  const pad = (n) => String(n).padStart(2, '0');
+
+  if (slot.date) {
+    const m = String(slot.date).match(/(\d{1,2})\/(\d{1,2})/);
+    if (m) {
+      const slotDateStr = `${pad(m[1])}/${pad(m[2])}`;
+      return slotDateStr === dateStr;
+    }
+  }
+
+  if (slot.dayIndex !== undefined && slot.dayIndex !== null) {
+    return Number(slot.dayIndex) === Number(dayIndex);
+  }
+
+  return false;
+}
+
+/**
  * Tính toán mốc Date cảnh báo (+10 phút sau khi kết thúc Slot)
  */
 export function getSlotAlertTimestamp(slotNumber, dateObj = new Date()) {
@@ -759,7 +793,13 @@ export function getSlotAlertTimestamp(slotNumber, dateObj = new Date()) {
 }
 
 /**
- * Kiểm tra xem slot học có bị Absent và đã chạm mốc giờ cảnh báo (hết ca + 10p) hay chưa
+ * Kiểm tra xem slot học có bị Absent và đã chạm mốc giờ cảnh báo (hết ca + 10p) hay chưa.
+ * QUY TẮC CHẶT CHẼ:
+ * 1. Ca học PHẢI là ca của ngày HÔM NAY (không báo ca quá khứ hoặc ca các ngày khác trong tuần).
+ * 2. Chưa từng được thông báo (notified !== true).
+ * 3. Đang trong khung giờ cảnh báo hợp lệ (đã tới mốc +10p nhưng không trôi qua quá 45 phút).
+ *    Nếu ca học đã kết thúc từ lâu trong quá khứ (ví dụ ca sáng nhưng tối mới mở app),
+ *    sẽ tự động trả về isExpiredPast: true để đánh dấu đã qua, KHÔNG bắn chuông/popup phiền người dùng.
  */
 export function checkSlotAbsentAlert(slotItem, now = new Date()) {
   const isAbsent =
@@ -772,17 +812,80 @@ export function checkSlotAbsentAlert(slotItem, now = new Date()) {
     return { shouldAlert: false, isAbsent, diffMs: 0, alertTimeText: '--:--' };
   }
 
+  // 1. Phải là ca học của ngày HÔM NAY
+  if (!isSlotForToday(slotItem, now)) {
+    return { shouldAlert: false, isAbsent, diffMs: 0, alertTimeText: '--:--' };
+  }
+
   const alertDate = getSlotAlertTimestamp(slotItem.slot, now);
   const diffMs = alertDate.getTime() - now.getTime();
   const pad = (n) => String(n).padStart(2, '0');
   const alertTimeText = `${pad(alertDate.getHours())}:${pad(alertDate.getMinutes())}`;
 
+  // 2. Chỉ cảnh báo nếu:
+  // - Đã đến giờ cảnh báo: diffMs <= 0
+  // - Và trong cửa sổ gần đây (trong vòng 45 phút từ mốc báo).
+  // Nếu đã qua mốc hơn 45 phút (ví dụ slot 1 sáng, mở app vào buổi tối),
+  // ta coi như đã biết/lịch sử cũ, không báo động giật mình.
+  const isRecentWindow = diffMs <= 0 && Math.abs(diffMs) <= 45 * 60 * 1000;
+  const isExpiredPast = diffMs < -45 * 60 * 1000;
+
   return {
-    shouldAlert: diffMs <= 0,
+    shouldAlert: isRecentWindow,
+    isExpiredPast,
     isAbsent: true,
     diffMs,
     alertDate,
     alertTimeText,
   };
+}
+
+/**
+ * Hợp nhất danh sách ca học mới cào được với lịch sử đã lưu,
+ * BẢO TOÀN trạng thái đã thông báo (notified) và TỰ ĐỘNG dập tắt cảnh báo với các ca cũ trong quá khứ.
+ */
+export function mergeSlotsWithNotifiedHistory(incomingSlots = [], existingSlots = [], now = new Date()) {
+  const existingMap = new Map();
+  (existingSlots || []).forEach((s) => {
+    const key = getSlotUniqueKey(s);
+    if (key) existingMap.set(key, s);
+  });
+
+  const sanitized = sanitizeSlots(incomingSlots);
+
+  return sanitized.map((slot) => {
+    const key = getSlotUniqueKey(slot);
+    const old = existingMap.get(key);
+
+    const isAbsent =
+      slot.status === ATTENDANCE_STATUS.ABSENT ||
+      slot.status?.toLowerCase() === 'absent' ||
+      slot.status?.toLowerCase() === 'vắng' ||
+      slot.status?.toLowerCase() === 'vắng mặt';
+
+    // Giữ cờ notified cũ nếu trước đó đã từng được xử lý
+    let notified = old?.notified || slot.notified || false;
+
+    // Nếu slot bị VẮNG MẶT nhưng:
+    // a) Không phải ca học của ngày hôm nay (ca tuần trước, ca hôm qua...), HOẶC
+    // b) Là ca hôm nay nhưng mốc giờ cảnh báo đã trôi qua hơn 45 phút trước khi cào dữ liệu:
+    // -> TỰ ĐỘNG ĐÁNH DẤU notified = true để KHÔNG bao giờ làm phiền người dùng!
+    if (isAbsent && !notified) {
+      if (!isSlotForToday(slot, now)) {
+        notified = true;
+      } else {
+        const alertDate = getSlotAlertTimestamp(slot.slot, now);
+        const diffMs = alertDate.getTime() - now.getTime();
+        if (diffMs < -45 * 60 * 1000) {
+          notified = true;
+        }
+      }
+    }
+
+    return {
+      ...slot,
+      notified,
+    };
+  });
 }
 

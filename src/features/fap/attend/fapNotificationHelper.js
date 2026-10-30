@@ -157,10 +157,23 @@ export async function scheduleAttendanceSlotReminders(slots = [], absentAlertEna
   }
 }
 
+// Tập hợp lưu các ca học đã bắn cảnh báo vắng trong phiên hiện tại để tránh trùng lặp
+const recentlyTriggeredAbsentSet = new Set();
+
 /**
  * Kích hoạt cảnh báo chuông và Push Notification khi sinh viên bị đánh Absent
  */
 export async function triggerAbsentNotification(slotItem) {
+  if (!slotItem) return;
+
+  const slotKey = `${slotItem.date || ''}_${slotItem.slot || ''}_${slotItem.subjectCode || ''}`;
+  if (slotKey && recentlyTriggeredAbsentSet.has(slotKey)) {
+    return; // Đã bắn thông báo cho ca học này rồi, không báo lại!
+  }
+  if (slotKey) {
+    recentlyTriggeredAbsentSet.add(slotKey);
+  }
+
   const cfg = FAP_TIMESLOTS.find((s) => s.slot === Number(slotItem.slot));
   const timeDesc = cfg ? cfg.time : slotItem.time || 'Ca học';
   const alertTimeStr = cfg ? cfg.alertTime : 'Cuối ca + 10 phút';

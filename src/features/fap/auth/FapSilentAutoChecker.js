@@ -98,15 +98,22 @@ export default function FapSilentAutoChecker({
         newSlot.status?.toLowerCase() === 'present' ||
         newSlot.status?.toLowerCase() === 'có mặt';
 
-      const wasUnknown =
-        !oldSlot ||
-        oldSlot.status === 'Not yet' ||
-        oldSlot.status?.toLowerCase() === 'chưa điểm danh' ||
-        !oldSlot.status;
+      // CHỈ coi là "Mới phát hiện vắng" khi:
+      // 1. Phải có oldSlot từ trước (không phải lần đầu nạp/cào từ đầu)
+      // 2. Trạng thái cũ đang là 'Not yet' (chưa điểm danh)
+      // 3. Trạng thái mới đổi thành 'Absent'
+      // 4. Cả oldSlot lẫn newSlot đều chưa từng được notified
+      const wasAwaitingAttendance =
+        Boolean(oldSlot) &&
+        (oldSlot.status === 'Not yet' ||
+          oldSlot.status?.toLowerCase() === 'chưa điểm danh' ||
+          !oldSlot.status);
 
-      if (isNowAbsent && wasUnknown) {
+      const alreadyNotified = Boolean(oldSlot?.notified || newSlot.notified);
+
+      if (isNowAbsent && wasAwaitingAttendance && !alreadyNotified) {
         newAbsents.push(newSlot);
-      } else if (isNowPresent && wasUnknown) {
+      } else if (isNowPresent && wasAwaitingAttendance && !alreadyNotified) {
         newPresents.push(newSlot);
       }
     });

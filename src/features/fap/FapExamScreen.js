@@ -29,6 +29,7 @@ import {
   checkSlotAbsentAlert,
   extractTodaySlotsFromCourses,
   sanitizeSlots,
+  mergeSlotsWithNotifiedHistory,
   triggerAbsentNotification,
   scheduleAttendanceSlotReminders,
   findRecentlyEndedSlot,
@@ -139,7 +140,7 @@ export default function FapExamScreen({ navigation }) {
         if (savedSlots) {
           const parsedSlots = JSON.parse(savedSlots);
           if (Array.isArray(parsedSlots) && parsedSlots.length > 0) {
-            const clean = sanitizeSlots(parsedSlots);
+            const clean = mergeSlotsWithNotifiedHistory(parsedSlots, []);
             setTodaySlots(clean);
             if (JSON.stringify(clean) !== savedSlots) {
               await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(clean));
@@ -191,6 +192,10 @@ export default function FapExamScreen({ navigation }) {
           if (check.shouldAlert) {
             hasSlotTriggered = true;
             triggerAbsentNotification(slot);
+            return { ...slot, notified: true };
+          }
+          if (check.isExpiredPast) {
+            hasSlotTriggered = true;
             return { ...slot, notified: true };
           }
           return slot;
@@ -274,7 +279,7 @@ export default function FapExamScreen({ navigation }) {
     }
 
     if (Array.isArray(liveTodaySlots) && liveTodaySlots.length > 0) {
-      const clean = sanitizeSlots(liveTodaySlots);
+      const clean = mergeSlotsWithNotifiedHistory(liveTodaySlots, todaySlotsRef.current);
       setTodaySlots(clean);
       await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(clean));
       await scheduleAttendanceSlotReminders(clean, absentAlertEnabled);
@@ -378,7 +383,7 @@ export default function FapExamScreen({ navigation }) {
     const prevSlots = todaySlotsRef.current || [];
     const newKeys = new Set(slotList.map((s) => `${s.date || ''}_${s.slot}_${s.subjectCode}`));
     const retainedSlots = prevSlots.filter((s) => !newKeys.has(`${s.date || ''}_${s.slot}_${s.subjectCode}`));
-    const nextSlots = sanitizeSlots([...retainedSlots, ...slotList]);
+    const nextSlots = mergeSlotsWithNotifiedHistory([...retainedSlots, ...slotList], prevSlots);
 
     setTodaySlots(nextSlots);
     await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(nextSlots));
@@ -407,8 +412,9 @@ export default function FapExamScreen({ navigation }) {
     // Tự động suy ra các ca học hôm nay từ toàn bộ các môn đã cào
     const derivedToday = extractTodaySlotsFromCourses(nextCourses);
     if (derivedToday.length > 0) {
-      setTodaySlots(derivedToday);
-      await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(derivedToday));
+      const clean = mergeSlotsWithNotifiedHistory(derivedToday, todaySlotsRef.current);
+      setTodaySlots(clean);
+      await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(clean));
     }
   };
 
