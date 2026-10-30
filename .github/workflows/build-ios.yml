@@ -12,6 +12,9 @@ on:
       - 'package.json'
       - '.github/workflows/build-ios.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build-ipa:
     name: Compile iOS IPA (No $99 Apple Account)
@@ -41,7 +44,7 @@ jobs:
       - name: Verify iOS Project Structure
         run: |
           ls -la ios
-          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
+          WORKSPACE=$(find ios -name "*.xcworkspace" | head -n 1)
           echo "Found workspace: $WORKSPACE"
           if [ -z "$WORKSPACE" ]; then
             echo "Error: No .xcworkspace found in ios/"
@@ -50,7 +53,7 @@ jobs:
 
       - name: Build iOS Application (Unsigned Release)
         run: |
-          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
+          WORKSPACE=$(find ios -name "*.xcworkspace" | head -n 1)
           SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag{gsub(/^[ \t]+/, ""); print; exit}')
           echo "Building workspace: $WORKSPACE with scheme: $SCHEME"
           xcodebuild -workspace "$WORKSPACE" \
@@ -67,14 +70,16 @@ jobs:
 
       - name: Package into IPA format for Sideloadly / AltStore
         run: |
-          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -n 1)
-          echo "Found compiled app at: $APP_PATH"
+          echo "Listing all compiled .app bundles:"
+          find build -type d -name "*.app"
+          APP_PATH=$(find build -type d -name "*.app" | head -n 1)
+          echo "Selected app bundle: $APP_PATH"
           if [ -z "$APP_PATH" ]; then
-            echo "Error: No .app found in build/Build/Products/Release-iphoneos"
+            echo "Error: No .app bundle found in build folder"
             exit 1
           fi
           mkdir -p Payload
-          cp -r "$APP_PATH" Payload/
+          cp -R "$APP_PATH" Payload/
           zip -qr ToolKit.ipa Payload
           rm -rf Payload
           ls -lh ToolKit.ipa
@@ -85,3 +90,18 @@ jobs:
           name: ToolKit-iOS-IPA
           path: ToolKit.ipa
           retention-days: 14
+
+      - name: Create or Update GitHub Release with Direct IPA Download
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: ios-latest
+          name: "ToolKit iOS Latest (Unsigned IPA for Sideloadly)"
+          body: |
+            ## 📱 ToolKit iOS IPA (Cài đặt trên iPhone không cần tài khoản 99$)
+            - File IPA này dùng để cài vào iPhone cá nhân bằng **Sideloadly** trên máy tính Windows.
+            - Không cần mua tài khoản Apple Developer 99$.
+            - Tải file `ToolKit.ipa` bên dưới và làm theo hướng dẫn cài đặt.
+          files: ToolKit.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
