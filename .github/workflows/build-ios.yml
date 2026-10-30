@@ -51,27 +51,42 @@ jobs:
             exit 1
           fi
 
-      - name: Build iOS Application (Unsigned Release Archive)
+      - name: Build & Package Unsigned iOS IPA
         run: |
           WORKSPACE=$(find ios -name "*.xcworkspace" | head -n 1)
           SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag{gsub(/^[ \t]+/, ""); print; exit}')
           echo "Archiving workspace: $WORKSPACE with scheme: $SCHEME"
+          
+          mkdir -p build
+          ARCHIVE_PATH="$(pwd)/build/ToolKit.xcarchive"
+          
           xcodebuild archive \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath build/ToolKit.xcarchive \
+            -archivePath "$ARCHIVE_PATH" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
-
-      - name: Package into IPA format for Sideloadly / AltStore
-        run: |
-          echo "Listing applications in archive:"
-          ls -la build/ToolKit.xcarchive/Products/Applications/
+          
+          echo "Locating compiled .app bundle..."
+          APP_PATH=$(find "$ARCHIVE_PATH" -type d -name "*.app" 2>/dev/null | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find "$HOME/Library/Developer/Xcode/Archives" -type d -name "*.app" 2>/dev/null | head -n 1)
+          fi
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find . -type d -name "*.app" 2>/dev/null | grep -v "Pods" | head -n 1)
+          fi
+          
+          echo "Found application bundle: $APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: Could not locate .app bundle anywhere"
+            exit 1
+          fi
+          
           mkdir -p Payload
-          cp -R build/ToolKit.xcarchive/Products/Applications/*.app Payload/
+          cp -R "$APP_PATH" Payload/
           zip -qr ToolKit.ipa Payload
           rm -rf Payload
           ls -lh ToolKit.ipa
