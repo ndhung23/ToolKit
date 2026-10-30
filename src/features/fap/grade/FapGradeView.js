@@ -9,9 +9,12 @@ import {
   Pressable,
   Modal,
   StyleSheet,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useSafeTop } from '../../components/ui';
+import { useSafeTop } from '../../../components/ui';
 import {
   GRADE_STATUS,
   calculateGpaSummary,
@@ -25,6 +28,7 @@ export default function FapGradeView({
   headerComponent = null,
 }) {
   const safeTop = useSafeTop();
+  const insets = useSafeAreaInsets();
   const [filterStatus, setFilterStatus] = useState('ALL'); // 'ALL' | 'IN_PROGRESS' | 'PASSED' | 'FAILED'
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
@@ -266,7 +270,7 @@ export default function FapGradeView({
             </Pressable>
           </View>
         }
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: Math.max(insets.bottom + 30, 60) }]}
         keyboardShouldPersistTaps="handled"
       />
 
@@ -284,7 +288,7 @@ export default function FapGradeView({
               {
                 backgroundColor: colors.card,
                 borderColor: colors.cardBorder,
-                paddingTop: safeTop > 0 ? safeTop : 16,
+                paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 12 : (safeTop > 0 ? safeTop : 16),
               },
             ]}
           >
@@ -391,7 +395,7 @@ export default function FapGradeView({
                   </Text>
                 </View>
               }
-              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom + 20, 36) }}
             />
           </View>
         </View>

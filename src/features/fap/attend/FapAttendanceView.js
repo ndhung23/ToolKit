@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   ATTENDANCE_STATUS,
@@ -47,6 +48,7 @@ export default function FapAttendanceView({
   onOpenPasteModal,
   headerComponent = null,
 }) {
+  const insets = useSafeAreaInsets();
   const [viewMode, setViewMode] = useState('today'); // 'courses' | 'today' | 'week'
   const [weekOffset, setWeekOffset] = useState(0); // 0 = tuần này, 1 = tuần sau, -1 = tuần trước...
   const [selectedDayFilter, setSelectedDayFilter] = useState('all'); // 'all' | 2..8
@@ -453,7 +455,7 @@ export default function FapAttendanceView({
       contentContainerStyle={styles.listContent}
       keyboardShouldPersistTaps="handled"
       initialNumToRender={8}
-      ListFooterComponent={<View style={{ height: 40 }} />}
+      ListFooterComponent={<View style={{ height: Math.max(insets.bottom + 24, 48) }} />}
     />
   );
 }

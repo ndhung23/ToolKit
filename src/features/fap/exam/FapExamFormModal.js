@@ -11,11 +11,14 @@ import {
   StyleSheet,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { parseFapExamScheduleRaw, parseFapStudentInfo } from './fapExamHelper';
-import { parseWeeklyTimetableRawText } from './fapAttendanceHelper';
+import { parseWeeklyTimetableRawText } from '../attend/fapAttendanceHelper';
 
 export function FapExamFormModal({
   visible,
@@ -27,6 +30,7 @@ export function FapExamFormModal({
   onImportTimetable,
   onImportCourse,
 }) {
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState('manual'); // 'manual' | 'import'
   const [subjectCode, setSubjectCode] = useState('');
   const [subjectName, setSubjectName] = useState('');
@@ -145,9 +149,10 @@ export function FapExamFormModal({
 
     // 2. Kiểm tra nếu là văn bản Thời khóa biểu tuần (copy từ WeekPartial hoặc bảng FAP)
     const timetableSlots = parseWeeklyTimetableRawText(text);
+    const extractedUser = parseFapStudentInfo(text);
     if (timetableSlots.length > 0) {
       if (onImportTimetable) {
-        onImportTimetable(timetableSlots);
+        onImportTimetable(timetableSlots, extractedUser);
         Alert.alert(
           'Nhập TKB thành công! 🎉',
           `Đã bóc tách thành công ${timetableSlots.length} ca học trong tuần từ văn bản FAP!`
@@ -160,7 +165,6 @@ export function FapExamFormModal({
 
     // 3. Mặc định: Bóc tách Lịch thi từ bảng FAP copy
     const extracted = parseFapExamScheduleRaw(text);
-    const extractedUser = parseFapStudentInfo(text);
     if (extracted.length === 0) {
       Alert.alert(
         'Không tìm thấy dữ liệu',
@@ -177,7 +181,7 @@ export function FapExamFormModal({
     try {
       const text = await Clipboard.getStringAsync();
       if (!text || !text.trim()) {
-        Alert.alert('Bộ nhớ tạm trống', 'Hãy copy lịch thi trên trang web FAP trước khi bấm nút này.');
+        Alert.alert('Bộ nhớ tạm trống', 'Hãy copy lịch thi hoặc TKB trên trang web FAP trước khi bấm nút này.');
         return;
       }
       setRawPasteText(text);
@@ -200,12 +204,34 @@ export function FapExamFormModal({
             },
           ]
         );
-      } else {
-        Alert.alert(
-          'Đã dán nội dung',
-          'Đã dán văn bản từ bộ nhớ tạm vào ô bên dưới. Vui lòng bấm "Bóc tách & Nạp lịch thi" để thử lại.'
-        );
+        return;
       }
+
+      const timetableSlots = parseWeeklyTimetableRawText(text);
+      if (timetableSlots.length > 0) {
+        Alert.alert(
+          'Đã tìm thấy Thời khóa biểu! ⏰',
+          `Phát hiện ${timetableSlots.length} ca học trong bộ nhớ tạm:\n${timetableSlots.slice(0, 3).map((s) => `• Ca ${s.slot} (${s.subjectCode})`).join('\n')}${timetableSlots.length > 3 ? '\n...' : ''}`,
+          [
+            { text: 'Kiểm tra lại', style: 'cancel' },
+            {
+              text: 'Nạp ngay',
+              style: 'default',
+              onPress: () => {
+                onImportTimetable?.(timetableSlots, extractedUser);
+                setRawPasteText('');
+                onClose();
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Đã dán nội dung',
+        'Đã dán văn bản từ bộ nhớ tạm vào ô bên dưới. Vui lòng kiểm tra và bấm "Bóc tách & Nhập lịch thi / TKB".'
+      );
     } catch {
       Alert.alert('Thông báo', 'Không thể đọc nội dung bộ nhớ tạm.');
     }
@@ -213,8 +239,20 @@ export function FapExamFormModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.modalOverlay}
+      >
+        <View
+          style={[
+            styles.modalContainer,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.cardBorder,
+              paddingBottom: Math.max(insets.bottom, 18),
+            },
+          ]}
+        >
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>
               {editingExam ? `Chỉnh sửa lịch thi: ${editingExam.subjectCode}` : 'Cập nhật lịch thi FAP'}
@@ -413,7 +451,7 @@ export function FapExamFormModal({
             }
           />
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

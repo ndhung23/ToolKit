@@ -241,11 +241,15 @@ export function ToolCard({ tool, onPress }) {
         },
       ]}
     >
-      <View style={[styles.iconBoxGrid, { backgroundColor: tool.color + '22' }]}>
+      <View
+        style={[
+          styles.iconBoxGrid,
+          { backgroundColor: tool.color + '22' },
+          tool.imageIcon && { backgroundColor: 'transparent' },
+        ]}
+      >
         {tool.imageIcon ? (
-          <View style={{ width: 28, height: 28, borderRadius: 8, overflow: 'hidden' }}>
-            <Image source={tool.imageIcon} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-          </View>
+          <Image source={tool.imageIcon} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         ) : (
           <Ionicons name={tool.icon} size={24} color={tool.color} />
         )}
@@ -281,12 +285,11 @@ export function ToolRow({ tool, locked = false, onPress }) {
         style={[
           styles.iconBoxRow,
           { backgroundColor: locked ? 'rgba(255, 208, 0, 0.12)' : tool.color + '22' },
+          tool.imageIcon && { backgroundColor: 'transparent' },
         ]}
       >
         {tool.imageIcon ? (
-          <View style={{ width: 26, height: 26, borderRadius: 7, overflow: 'hidden' }}>
-            <Image source={tool.imageIcon} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-          </View>
+          <Image source={tool.imageIcon} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         ) : (
           <Ionicons name={tool.icon} size={22} color={locked ? '#FFD000' : tool.color} />
         )}

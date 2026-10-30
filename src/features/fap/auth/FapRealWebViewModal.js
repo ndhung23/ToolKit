@@ -16,11 +16,16 @@ import {
   Alert,
   StyleSheet,
   Linking,
+  BackHandler,
+  StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeTop } from '../../components/ui';
+import * as Clipboard from 'expo-clipboard';
+import { useSafeTop } from '../../../components/ui';
 import { FAP_SCRAPER_INJECTED_JS } from './fapScraperScript';
+import { parseWeeklyTimetableRawText } from '../attend/fapAttendanceHelper';
+import { parseFapExamScheduleRaw, parseFapStudentInfo } from '../exam/fapExamHelper';
 
 // Nạp an toàn WebView từ react-native-webview trên Mobile (tránh lỗi trên Web)
 let NativeWebView = null;
@@ -63,7 +68,23 @@ export default function FapRealWebViewModal({
   const [currentUrl, setCurrentUrl] = useState(initialUri);
   const [loading, setLoading] = useState(false);
   const [scrapingProgress, setScrapingProgress] = useState(null);
+  const [canGoBack, setCanGoBack] = useState(false);
   const webViewRef = useRef(null);
+
+  // Xử lý nút Back phần cứng của Android (Hardware Back Button)
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !visible) return;
+    const onBackPress = () => {
+      if (webViewRef.current && canGoBack) {
+        webViewRef.current.goBack();
+        return true;
+      }
+      onClose?.();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [visible, canGoBack, onClose]);
 
   useEffect(() => {
     if (visible) {
@@ -196,12 +217,12 @@ export default function FapRealWebViewModal({
           var btns = document.querySelectorAll('button, a, input[type="submit"]');
           for (var i = 0; i < btns.length; i++) {
             var t = (btns[i].innerText || btns[i].value || '').toLowerCase();
-            if (t.indexOf('google') !== -1) {
+            if (t.indexOf('google') !== -1 || t.indexOf('fpt.edu.vn') !== -1 || t.indexOf('gmail') !== -1) {
               btns[i].click();
               return true;
             }
           }
-          var gBtn = document.querySelector('button[value="Google"], a[href*="Google"], .btn-google');
+          var gBtn = document.querySelector('button[value="Google"], a[href*="Google"], a[href*="provider=Google"], .btn-google');
           if (gBtn) gBtn.click();
           true;
         })();
@@ -233,6 +254,62 @@ export default function FapRealWebViewModal({
     }
   };
 
+  // Web fallback: Dán nhanh trực tiếp từ Bộ nhớ tạm (Clipboard)
+  const handleDirectWebClipboardPaste = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (!text || !text.trim()) {
+        Alert.alert(
+          'Bộ nhớ tạm trống',
+          'Vui lòng sang tab FAP kế bên (đã mở sẵn), bấm Ctrl+A rồi Ctrl+C để copy toàn bộ trang, sau đó bấm nút này lại!'
+        );
+        return;
+      }
+
+      // 1. Kiểm tra Thời khóa biểu
+      const slots = parseWeeklyTimetableRawText(text);
+      const studentUser = parseFapStudentInfo(text);
+      if (slots && slots.length > 0) {
+        onSyncTimetableSuccess?.(studentUser, slots);
+        Alert.alert(
+          'Đồng bộ Thời khóa biểu thành công! 🎉',
+          `Đã bóc tách thành công ${slots.length} ca học trong tuần từ FAP!\nSinh viên: ${studentUser?.name || 'Nguyễn Duy Hưng'} (${studentUser?.studentId || 'HE190591'})`
+        );
+        onClose();
+        return;
+      }
+
+      // 2. Kiểm tra Lịch thi
+      const exams = parseFapExamScheduleRaw(text);
+      if (exams && exams.length > 0) {
+        onSyncSuccess?.(studentUser, exams);
+        Alert.alert(
+          'Đồng bộ Lịch thi thành công! 🎉',
+          `Đã bóc tách thành công ${exams.length} ca thi từ FAP!\nSinh viên: ${studentUser?.name || 'Nguyễn Duy Hưng'} (${studentUser?.studentId || 'HE190591'})`
+        );
+        onClose();
+        return;
+      }
+
+      Alert.alert(
+        'Chưa nhận diện được lịch',
+        'Hãy sang tab fap.fpt.edu.vn, bôi đen bảng lịch hoặc bấm Ctrl+A rồi Ctrl+C, sau đó quay lại đây bấm Dán!'
+      );
+    } catch {
+      Alert.alert('Lỗi', 'Không thể đọc nội dung bộ nhớ tạm.');
+    }
+  };
+
+  // Web fallback: Copy mã Console FAP 1-Dòng
+  const handleCopyConsoleSnippet = async () => {
+    const code = `var slots=[];document.querySelectorAll('table tbody tr, table tr').forEach(r=>{var cells=r.querySelectorAll('td');if(cells.length<8)return;var slotNum=parseInt(cells[0].innerText.replace(/\\D/g,''))||1;for(var c=1;c<=7;c++){var txt=cells[c]?.innerText?.trim();if(!txt||txt==='-')continue;var m=txt.match(/([A-Z]{3}\\d{3}[A-Z0-9]?)/i);if(m){var sub=m[1].toUpperCase();var roomM=txt.match(/at\\s+([A-Z0-9-]+)/i);var room=roomM?roomM[1]:'DE-422';var isAbsent=/vắng|absent/i.test(txt);var isPresent=/có mặt|present/i.test(txt);slots.push({id:'slot_'+slotNum+'_'+c+'_'+sub,slot:slotNum,dayIndex:c+1,dayName:'Thứ '+(c===7?'CN':(c+1)),subjectCode:sub,subjectName:sub,room:room,status:isAbsent?'Absent':isPresent?'Present':'Not yet'});}}});copy(JSON.stringify(slots));alert('Đã copy '+slots.length+' ca học! Quay lại app bấm Dán!');`;
+    await Clipboard.setStringAsync(code);
+    Alert.alert(
+      'Đã copy mã Console! 🚀',
+      'Bước 1: Sang tab fap.fpt.edu.vn kế bên -> Bấm F12 -> Chọn Console.\nBước 2: Bấm Ctrl+V và nhấn Enter.\nBước 3: Quay lại tab này bấm "Dán nhanh từ Clipboard" là xong ngay!'
+    );
+  };
+
   const isExamUrl = currentUrl.toLowerCase().includes('examschedule') || currentUrl.toLowerCase().includes('scheduleexams');
   const isTimetableUrl = currentUrl.toLowerCase().includes('weeklytimetable') || currentUrl.toLowerCase().includes('scheduleofweek');
   const isAttendanceUrl = currentUrl.toLowerCase().includes('report/attendance') || currentUrl.toLowerCase().includes('viewattendance');
@@ -240,15 +317,16 @@ export default function FapRealWebViewModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.card} />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header né tai thỏ / Dynamic Island */}
+        {/* Header né tai thỏ / Dynamic Island & Android Status Bar */}
         <View
           style={[
             styles.header,
             {
               backgroundColor: colors.card,
               borderBottomColor: colors.cardBorder,
-              paddingTop: safeTop + 6,
+              paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 8 : safeTop + 6,
             },
           ]}
         >
@@ -325,10 +403,15 @@ export default function FapRealWebViewModal({
               source={{ uri: initialUri }}
               originWhitelist={['*']}
               userAgent={
-                Platform.OS === 'ios'
-                  ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1'
-                  : 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'
+                Platform.OS === 'android'
+                  ? 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36'
+                  : undefined
               }
+              androidLayerType="hardware"
+              androidHardwareAccelerationDisabled={false}
+              mixedContentMode="always"
+              setSupportMultipleWindows={false}
+              overScrollMode="never"
               javaScriptEnabled={true}
               domStorageEnabled={true}
               sharedCookiesEnabled={true}
@@ -378,6 +461,7 @@ export default function FapRealWebViewModal({
               }}
               onNavigationStateChange={(navState) => {
                 setCurrentUrl(navState.url);
+                setCanGoBack(navState.canGoBack);
               }}
               onMessage={handleNativeMessage}
               style={styles.webview}
@@ -558,31 +642,47 @@ export default function FapRealWebViewModal({
           <View style={styles.webSyncContainer}>
             <View style={[styles.webSyncCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
               <View style={styles.badgeRow}>
-                <Ionicons name="phone-portrait-outline" size={20} color="#3B82F6" />
+                <Ionicons name="desktop-outline" size={20} color="#3B82F6" />
                 <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>
-                  Đồng bộ FAP Chuẩn Thực Tế
+                  Đồng bộ FAP trên Web Trình Duyệt
                 </Text>
               </View>
 
               <Text style={[styles.webSyncTitle, { color: colors.text }]}>
-                URL Chuẩn Hệ Thống FAP
+                Cổng Đào Tạo FAP (fap.fpt.edu.vn)
               </Text>
 
               <View style={[styles.infoBannerBox, { backgroundColor: 'rgba(59, 130, 246, 0.08)', borderColor: '#3B82F6' }]}>
-                <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19 }}>
-                  • <Text style={{ fontWeight: '800' }}>Lịch học cả môn:</Text> https://fap.fpt.edu.vn/Report/Attendance{'\n'}
-                  • <Text style={{ fontWeight: '800' }}>Thời khóa biểu tuần:</Text> https://fap.fpt.edu.vn/WeeklyTimetable{'\n'}
-                  • <Text style={{ fontWeight: '800' }}>Lịch thi:</Text> https://fap.fpt.edu.vn/ExamSchedule
+                <Text style={{ color: colors.text, fontSize: 12.5, lineHeight: 18 }}>
+                  💡 <Text style={{ fontWeight: '800' }}>Lưu ý bảo mật Web:</Text> Trình duyệt Chrome ngăn cách 2 tab khác nhau (CORS). Sau khi bạn mở tab FAP và đăng nhập, tab bên này cần dữ liệu từ bộ nhớ tạm (Clipboard) để nạp vào app.
                 </Text>
               </View>
 
-              <View style={{ gap: 10, marginTop: 8 }}>
+              <View style={{ gap: 10, marginTop: 4 }}>
+                <Pressable
+                  onPress={handleDirectWebClipboardPaste}
+                  style={[styles.actionButton, { backgroundColor: '#10B981' }]}
+                >
+                  <Ionicons name="clipboard-outline" size={18} color="#FFFFFF" />
+                  <Text style={[styles.actionButtonText, { fontWeight: '900' }]}>
+                    📋 Dán nhanh từ Clipboard (1-Chạm)
+                  </Text>
+                </Pressable>
+
                 <Pressable
                   onPress={handleOpenFapWeb}
                   style={[styles.actionButton, { backgroundColor: '#1E40AF' }]}
                 >
                   <Ionicons name="open-outline" size={17} color="#FFFFFF" />
-                  <Text style={styles.actionButtonText}>Mở fap.fpt.edu.vn</Text>
+                  <Text style={styles.actionButtonText}>Mở fap.fpt.edu.vn trong tab mới</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={handleCopyConsoleSnippet}
+                  style={[styles.actionButton, { backgroundColor: '#4F46E5' }]}
+                >
+                  <Ionicons name="code-slash-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.actionButtonText}>⚡ Copy mã FAP Console (1-Click)</Text>
                 </Pressable>
 
                 <Pressable
@@ -590,11 +690,11 @@ export default function FapRealWebViewModal({
                     onClose();
                     onOpenPasteModal?.();
                   }}
-                  style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                  style={[styles.actionButton, { backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }]}
                 >
-                  <Ionicons name="clipboard-outline" size={17} color="#121214" />
-                  <Text style={[styles.actionButtonText, { color: '#121214' }]}>
-                    Dán lịch thi / TKB từ Web FAP
+                  <Ionicons name="create-outline" size={16} color={colors.text} />
+                  <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                    Mở hộp thoại Dán tay / Tùy chỉnh
                   </Text>
                 </Pressable>
               </View>

@@ -560,82 +560,161 @@ export function parseWeeklyTimetableRawText(text = '') {
     } catch {}
   }
 
-  // 2. Bóc tách dạng danh sách Mobile WeekPartial (Thứ X (dd/MM) [count] \n slot \n môn \n giờ \n phòng \n GV)
   const lines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const slots = [];
-  let currentDay = '';
-  let currentDate = '';
-  let currentDayIndex = 2;
 
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const dayMatch = line.match(/(Thứ\s*\d+|Chủ\s*nhật)\s*\(?(\d{1,2}\/\d{1,2})\)?/i);
-    if (dayMatch) {
-      currentDay = dayMatch[1];
-      currentDate = dayMatch[2];
-      if (/Thứ 2/i.test(currentDay)) currentDayIndex = 2;
-      else if (/Thứ 3/i.test(currentDay)) currentDayIndex = 3;
-      else if (/Thứ 4/i.test(currentDay)) currentDayIndex = 4;
-      else if (/Thứ 5/i.test(currentDay)) currentDayIndex = 5;
-      else if (/Thứ 6/i.test(currentDay)) currentDayIndex = 6;
-      else if (/Thứ 7/i.test(currentDay)) currentDayIndex = 7;
-      else if (/Chủ\s*nhật/i.test(currentDay)) currentDayIndex = 8;
-      i++;
-      continue;
+  const dayHeaderRegex = /(?:(Thứ\s*(\d)|Chủ\s*nhật)|(Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?))\s*\(?(\d{1,2}\/\d{1,2})?\)?/i;
+
+  const getDayIndex = (dayStr) => {
+    if (!dayStr) return 2;
+    const s = dayStr.toLowerCase();
+    if (s.includes('mon') || s.includes('thứ 2') || s === '2') return 2;
+    if (s.includes('tue') || s.includes('thứ 3') || s === '3') return 3;
+    if (s.includes('wed') || s.includes('thứ 4') || s === '4') return 4;
+    if (s.includes('thu') || s.includes('thứ 5') || s === '5') return 5;
+    if (s.includes('fri') || s.includes('thứ 6') || s === '6') return 6;
+    if (s.includes('sat') || s.includes('thứ 7') || s === '7') return 7;
+    if (s.includes('sun') || s.includes('chủ nhật') || s.includes('cn') || s === '8') return 8;
+    return 2;
+  };
+
+  const getDayName = (dayIdx) => {
+    const names = { 2: 'Thứ 2', 3: 'Thứ 3', 4: 'Thứ 4', 5: 'Thứ 5', 6: 'Thứ 6', 7: 'Thứ 7', 8: 'Chủ nhật' };
+    return names[dayIdx] || 'Thứ 2';
+  };
+
+  const defaultTimes = {
+    1: { time: '07h30 - 09h50', alertTime: '10:00' },
+    2: { time: '10h00 - 12h20', alertTime: '12:30' },
+    3: { time: '12h50 - 15h10', alertTime: '15:20' },
+    4: { time: '15h20 - 17h40', alertTime: '17:50' },
+    5: { time: '17h50 - 20h10', alertTime: '20:20' },
+    6: { time: '20h20 - 22h40', alertTime: '22:50' },
+    9: { time: '08h00 - 11h40', alertTime: '11:50' },
+  };
+
+  // 2. Kiểm tra nếu là dạng Table copy có Tab (\t) từ Desktop Chrome
+  const hasTabTable = lines.some((l) => l.includes('\t') && dayHeaderRegex.test(l));
+  if (hasTabTable) {
+    let colDays = [];
+    for (let r = 0; r < lines.length; r++) {
+      const row = lines[r];
+      const cells = row.split('\t').map((c) => c.trim());
+
+      if (colDays.length === 0 && cells.some((c) => dayHeaderRegex.test(c))) {
+        colDays = cells.map((cell) => {
+          const m = cell.match(dayHeaderRegex);
+          if (m) {
+            const rawDay = m[1] || m[3];
+            const dIdx = getDayIndex(rawDay);
+            const dDate = m[4] || '';
+            return { dayIndex: dIdx, date: dDate, dayName: getDayName(dIdx) };
+          }
+          return null;
+        });
+        continue;
+      }
+
+      const slotMatch = cells[0]?.match(/(?:Slot\s*|Ca\s*)?(\d+)/i);
+      if (slotMatch && colDays.length > 0) {
+        const slotNum = parseInt(slotMatch[1], 10);
+        const timeCfg = defaultTimes[slotNum] || defaultTimes[1];
+
+        for (let c = 1; c < cells.length; c++) {
+          const cellContent = cells[c];
+          if (!cellContent || cellContent === '-' || cellContent.length < 3) continue;
+
+          const dayInfo = colDays[c] || { dayIndex: c + 1, date: '', dayName: getDayName(c + 1) };
+          const subMatch = cellContent.match(/\b([A-Z]{3}\d{3}[A-Z0-9]?)\b/i);
+          if (!subMatch) continue;
+
+          const subCode = subMatch[1].toUpperCase();
+          const roomMatch = cellContent.match(/(?:at|phòng|room)\s+([A-Z0-9-]+)/i);
+          const room = roomMatch ? roomMatch[1] : 'DE-422';
+
+          const isPresent = /có mặt|present/i.test(cellContent);
+          const isAbsent = /vắng|absent/i.test(cellContent);
+          const status = isPresent ? 'Present' : isAbsent ? 'Absent' : 'Not yet';
+
+          slots.push({
+            id: `slot_table_${slotNum}_${dayInfo.dayIndex}_${subCode}_${slots.length}`,
+            slot: slotNum,
+            dayIndex: dayInfo.dayIndex,
+            dayName: dayInfo.date ? `${dayInfo.dayName} (${dayInfo.date})` : dayInfo.dayName,
+            date: dayInfo.date,
+            subjectCode: subCode,
+            subjectName: subCode,
+            room: room,
+            time: timeCfg.time,
+            alertTime: timeCfg.alertTime,
+            status: status,
+            lecturer: '',
+            notified: false,
+          });
+        }
+      }
     }
-
-    if (/^\d+$/.test(line) && i + 3 < lines.length) {
-      const slotNum = parseInt(line, 10);
-      const subLine = lines[i + 1];
-      const timeLine = lines[i + 2];
-      const roomLine = lines[i + 3];
-      const lecLine =
-        i + 4 < lines.length &&
-        !/^\d+$/.test(lines[i + 4]) &&
-        !/(Thứ\s*\d+|Chủ\s*nhật)/i.test(lines[i + 4])
-          ? lines[i + 4]
-          : '-';
-
-      const subMatch = subLine.match(/\b([A-Z]{3}\d{3}[A-Z0-9]?)\b/i);
-      const subCode = subMatch ? subMatch[1].toUpperCase() : subLine;
-
-      const meetMatch = timeLine.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i);
-      const meetLink = meetMatch ? meetMatch[0] : '';
-
-      const isPresent = timeLine.toLowerCase().includes('có mặt') || subLine.toLowerCase().includes('có mặt');
-      const isAbsent = timeLine.toLowerCase().includes('vắng') || subLine.toLowerCase().includes('vắng');
-
-      const cfg = FAP_TIMESLOTS.find((t) => t.slot === slotNum);
-      const cleanTime = timeLine.replace(/\s*-\s*(Offline|Online).*/i, '').replace(/\[.*\]/g, '').trim();
-
-      slots.push({
-        id: `slot_parsed_${slotNum}_${currentDayIndex}_${subCode}_${slots.length}`,
-        slot: slotNum,
-        dayIndex: currentDayIndex,
-        dayName: currentDay,
-        date: currentDate,
-        subjectCode: subCode,
-        subjectName: subLine,
-        time: cleanTime || (cfg ? cfg.time : '07h30 - 09h50'),
-        room: roomLine || 'DE-422',
-        lecturer: lecLine === '-' ? '' : lecLine,
-        meetLink,
-        status: isPresent ? 'Present' : isAbsent ? 'Absent' : 'Not yet',
-        alertTime: cfg ? cfg.alertTime : '10:00',
-        notified: false,
-      });
-
-      i += lecLine !== '-' ? 5 : 4;
-      continue;
-    }
-
-    i++;
+    if (slots.length > 0) return slots;
   }
 
-  if (slots.length > 0) return slots;
+  // 3. Fallback: Bóc tách tuần tự theo dòng (Desktop text copy hoặc Mobile WeekPartial)
+  let currentDay = 'Thứ 2';
+  let currentDate = '';
+  let currentDayIndex = 2;
+  let currentSlot = 1;
 
-  return [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    const dMatch = line.match(dayHeaderRegex);
+    if (dMatch) {
+      const rawDay = dMatch[1] || dMatch[3];
+      currentDayIndex = getDayIndex(rawDay);
+      currentDay = getDayName(currentDayIndex);
+      if (dMatch[4]) currentDate = dMatch[4];
+      continue;
+    }
+
+    const sMatch = line.match(/^(?:Slot\s*|Ca\s*)?(\d+)(?:\s*\(([\d:h\s\-–]+)\))?$/i);
+    if (sMatch) {
+      currentSlot = parseInt(sMatch[1], 10);
+      continue;
+    }
+
+    const subMatch = line.match(/\b([A-Z]{3}\d{3}[A-Z0-9]?)\b/i);
+    if (subMatch && !line.includes('fap.fpt.edu.vn') && !line.includes('HTTP')) {
+      const subCode = subMatch[1].toUpperCase();
+      let room = 'DE-422';
+      let status = 'Not yet';
+
+      for (let j = i; j <= Math.min(i + 4, lines.length - 1); j++) {
+        const nextLine = lines[j];
+        const rM = nextLine.match(/(?:at|phòng|room)\s+([A-Z0-9-]+)/i);
+        if (rM) room = rM[1];
+        if (/có mặt|present/i.test(nextLine)) status = 'Present';
+        if (/vắng|absent/i.test(nextLine)) status = 'Absent';
+      }
+
+      const timeCfg = defaultTimes[currentSlot] || defaultTimes[1];
+      slots.push({
+        id: `slot_seq_${currentSlot}_${currentDayIndex}_${subCode}_${slots.length}`,
+        slot: currentSlot,
+        dayIndex: currentDayIndex,
+        dayName: currentDate ? `${currentDay} (${currentDate})` : currentDay,
+        date: currentDate,
+        subjectCode: subCode,
+        subjectName: subCode,
+        room: room,
+        time: timeCfg.time,
+        alertTime: timeCfg.alertTime,
+        status: status,
+        lecturer: '',
+        notified: false,
+      });
+    }
+  }
+
+  return slots;
 }
 
 
