@@ -23,6 +23,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -51,40 +56,40 @@ jobs:
             exit 1
           fi
 
-      - name: Build & Package Unsigned iOS IPA
+      - name: Build Unsigned iOS Archive
         run: |
-          WORKSPACE=$(find ios -name "*.xcworkspace" | head -n 1)
-          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag{gsub(/^[ \t]+/, ""); print; exit}')
-          echo "Archiving workspace: $WORKSPACE with scheme: $SCHEME"
-          
-          mkdir -p build
-          ARCHIVE_PATH="$(pwd)/build/ToolKit.xcarchive"
-          
+          set -eo pipefail
+          # App project lives directly in ios/ (Pods.xcodeproj is inside ios/Pods/),
+          # so its name is the app scheme. Do NOT pick the first scheme from
+          # `xcodebuild -list`: that list includes Pod schemes (static libs, no .app).
+          XCODEPROJ=$(ls -d ios/*.xcodeproj | head -n 1)
+          APP_NAME=$(basename "$XCODEPROJ" .xcodeproj)
+          WORKSPACE="ios/${APP_NAME}.xcworkspace"
+          echo "Workspace: $WORKSPACE | Scheme: $APP_NAME"
+          xcodebuild -version
+          xcodebuild -workspace "$WORKSPACE" -list
+
           xcodebuild archive \
             -workspace "$WORKSPACE" \
-            -scheme "$SCHEME" \
+            -scheme "$APP_NAME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$ARCHIVE_PATH" \
+            -archivePath "$PWD/build/ToolKit.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
-          
-          echo "Locating compiled .app bundle..."
-          APP_PATH=$(find "$ARCHIVE_PATH" -type d -name "*.app" 2>/dev/null | head -n 1)
+
+      - name: Package into IPA format for Sideloadly / AltStore
+        run: |
+          set -eo pipefail
+          APPS_DIR="build/ToolKit.xcarchive/Products/Applications"
+          ls -la "$APPS_DIR"
+          APP_PATH=$(find "$APPS_DIR" -maxdepth 1 -type d -name "*.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find "$HOME/Library/Developer/Xcode/Archives" -type d -name "*.app" 2>/dev/null | head -n 1)
-          fi
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find . -type d -name "*.app" 2>/dev/null | grep -v "Pods" | head -n 1)
-          fi
-          
-          echo "Found application bundle: $APP_PATH"
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: Could not locate .app bundle anywhere"
+            echo "Error: No .app bundle found in $APPS_DIR"
             exit 1
           fi
-          
+          echo "Packaging: $APP_PATH"
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           zip -qr ToolKit.ipa Payload
