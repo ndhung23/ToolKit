@@ -56,8 +56,8 @@ export const TOOLS = [
     icon: 'logo-facebook',
     color: '#1877F2',
     route: 'FbMulti',
-    badge: 'VIP Pro',
-    tier: 'vip',
+    badge: 'Sẵn sàng',
+    tier: 'free',
   },
   {
     id: 'ai_reply',
