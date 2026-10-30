@@ -11,6 +11,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ndhung23.toolkit",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Cho phép ToolKit sử dụng máy ảnh để phục vụ các tiện ích trong ứng dụng.",
         "NSMicrophoneUsageDescription": "Cho phép ToolKit sử dụng microphone khi mở camera."
       }
