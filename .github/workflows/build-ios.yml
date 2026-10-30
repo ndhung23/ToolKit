@@ -15,7 +15,7 @@ on:
 jobs:
   build-ipa:
     name: Compile iOS IPA (No $99 Apple Account)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,27 +30,54 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Prebuild iOS Native Project
-        run: npx expo prebuild --platform ios --clean
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Verify iOS Project Structure
+        run: |
+          ls -la ios
+          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
+          echo "Found workspace: $WORKSPACE"
+          if [ -z "$WORKSPACE" ]; then
+            echo "Error: No .xcworkspace found in ios/"
+            exit 1
+          fi
 
       - name: Build iOS Application (Unsigned Release)
         run: |
-          xcodebuild -workspace ios/ToolKit.xcworkspace \
-            -scheme ToolKit \
+          WORKSPACE=$(find ios -name "*.xcworkspace" -maxdepth 1 | head -n 1)
+          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list | awk '/Schemes:/{flag=1;next}/^$/{flag=0}flag{gsub(/^[ \t]+/, ""); print; exit}')
+          echo "Building workspace: $WORKSPACE with scheme: $SCHEME"
+          xcodebuild -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
             -configuration Release \
-            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE="" \
+            CODE_SIGN_STYLE=Manual \
             clean build
 
       - name: Package into IPA format for Sideloadly / AltStore
         run: |
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -n 1)
+          echo "Found compiled app at: $APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: No .app found in build/Build/Products/Release-iphoneos"
+            exit 1
+          fi
           mkdir -p Payload
-          cp -r build/Build/Products/Release-iphoneos/ToolKit.app Payload/
+          cp -r "$APP_PATH" Payload/
           zip -qr ToolKit.ipa Payload
           rm -rf Payload
+          ls -lh ToolKit.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
