@@ -50,13 +50,13 @@ export const TOOLS = [
   },
   {
     id: 'fb_multi',
-    title: 'Quản lý nhiều tài khoản Facebook',
-    shortTitle: 'Đa nick FB',
-    desc: 'Lưu phiên đăng nhập và chuyển đổi nhanh giữa các nick Facebook',
-    icon: 'logo-facebook',
+    title: 'Đa tài khoản Facebook, Messenger & Zalo',
+    shortTitle: 'Đa tài khoản',
+    desc: 'Chuyển đổi 1 chạm tức thì giữa các nick Facebook, Messenger và Zalo Web',
+    icon: 'chatbubbles',
     color: '#1877F2',
     route: 'FbMulti',
-    badge: 'Sẵn sàng',
+    badge: 'Mới',
     tier: 'free',
   },
   {

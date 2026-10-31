@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 import {
   getStoredAccounts,
@@ -33,6 +32,9 @@ export default function FbMultiScreen({ navigation }) {
   const [activeAccountId, setActiveId] = useState(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
 
+  // Ref điều khiển WebView (reload, goBack)
+  const webViewRef = useRef(null);
+
   // Modal thêm tài khoản
   const [addModalVisible, setAddModalVisible] = useState(false);
 
@@ -41,38 +43,66 @@ export default function FbMultiScreen({ navigation }) {
   const [newNickname, setNewNickname] = useState('');
 
   // Nạp danh sách tài khoản đã lưu
-  const loadAccounts = useCallback(async () => {
+  const refreshAccounts = useCallback(async () => {
     try {
       const stored = await getStoredAccounts();
       const activeId = await getActiveAccountId();
       setAccounts(stored);
 
       if (stored.length > 0) {
-        if (activeId && stored.some((a) => a.id === activeId)) {
+        if (activeId && stored.some((a) => a.key === activeId || a.id === activeId)) {
           setActiveId(activeId);
         } else {
-          setActiveId(stored[0].id);
-          await setActiveAccountId(stored[0].id);
+          const firstKey = stored[0].key || stored[0].id;
+          setActiveId(firstKey);
+          await setActiveAccountId(firstKey);
         }
       } else {
         setActiveId(null);
       }
-    } catch (e) {
-      console.error('[FbMultiScreen] loadAccounts error:', e);
-    } finally {
-      setLoadingInitial(false);
+    } catch (_e) {
+      // ignore
     }
   }, []);
 
   useEffect(() => {
-    loadAccounts();
-  }, [loadAccounts]);
+    let isMounted = true;
+    (async () => {
+      try {
+        const stored = await getStoredAccounts();
+        const activeId = await getActiveAccountId();
+        if (!isMounted) return;
+        setAccounts(stored);
+
+        if (stored.length > 0) {
+          if (activeId && stored.some((a) => a.key === activeId || a.id === activeId)) {
+            setActiveId(activeId);
+          } else {
+            const firstKey = stored[0].key || stored[0].id;
+            setActiveId(firstKey);
+            await setActiveAccountId(firstKey);
+          }
+        } else {
+          setActiveId(null);
+        }
+      } catch (_e) {
+        // ignore
+      } finally {
+        if (isMounted) setLoadingInitial(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Xử lý chuyển đổi tài khoản 1 chạm
   const handleSwitchAccount = async (targetAccount) => {
-    if (!targetAccount || targetAccount.id === activeAccountId) return;
-    setActiveId(targetAccount.id);
-    await setActiveAccountId(targetAccount.id);
+    const key = targetAccount.key || targetAccount.id;
+    if (!targetAccount || key === activeAccountId) return;
+    setActiveId(key);
+    await setActiveAccountId(key);
   };
 
   // Thêm tài khoản thành công
@@ -80,16 +110,18 @@ export default function FbMultiScreen({ navigation }) {
     try {
       const updatedList = await saveOrUpdateAccount(newAccount);
       setAccounts(updatedList);
-      setActiveId(newAccount.id);
+      const newKey = newAccount.key || `${newAccount.platform || 'messenger'}_${newAccount.id}`;
+      setActiveId(newKey);
     } catch (error) {
       Alert.alert('Lỗi', error.message || 'Không thể lưu tài khoản.');
     }
   };
 
-  // Menu quản lý tài khoản khi nhấn giữ
+  // Menu quản lý tài khoản khi nhấn giữ avatar
   const handleLongPressAccount = (account) => {
+    const title = account.nickname || account.name || `Tài khoản ${account.id.slice(-4)}`;
     Alert.alert(
-      account.nickname || account.name || `UID ${account.id}`,
+      title,
       'Chọn thao tác bạn muốn thực hiện cho tài khoản này:',
       [
         {
@@ -111,9 +143,10 @@ export default function FbMultiScreen({ navigation }) {
 
   // Xác nhận đăng xuất/xóa tài khoản
   const confirmRemoveAccount = (account) => {
+    const name = account.nickname || account.name || account.id;
     Alert.alert(
       'Xác nhận đăng xuất',
-      `Bạn có chắc chắn muốn xóa phiên đăng nhập của "${account.nickname || account.name}" khỏi app?`,
+      `Bạn có chắc chắn muốn xóa phiên đăng nhập của "${name}" khỏi máy?`,
       [
         { text: 'Hủy', style: 'cancel' },
         {
@@ -121,10 +154,11 @@ export default function FbMultiScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { accounts: updatedList, newActiveId } = await removeAccount(account.id);
+              const targetKey = account.key || account.id;
+              const { accounts: updatedList, newActiveId } = await removeAccount(targetKey);
               setAccounts(updatedList);
               setActiveId(newActiveId);
-            } catch (err) {
+            } catch (_err) {
               Alert.alert('Lỗi', 'Không thể xóa tài khoản.');
             }
           },
@@ -137,19 +171,21 @@ export default function FbMultiScreen({ navigation }) {
   const handleSaveRename = async () => {
     if (!renameTargetAccount) return;
     try {
-      const updated = await updateAccountNickname(renameTargetAccount.id, newNickname);
+      const targetKey = renameTargetAccount.key || renameTargetAccount.id;
+      const updated = await updateAccountNickname(targetKey, newNickname);
       setAccounts(updated);
       setRenameTargetAccount(null);
-    } catch (e) {
+    } catch (_e) {
       Alert.alert('Lỗi', 'Không thể cập nhật tên gợi nhớ.');
     }
   };
 
-  const activeAccount = accounts.find((a) => a.id === activeAccountId) || null;
+  const activeAccount =
+    accounts.find((a) => a.key === activeAccountId || a.id === activeAccountId) || accounts[0] || null;
 
   if (loadingInitial) {
     return (
-      <View style={[styles.loadingCenter, { backgroundColor: colors.bg }]}>
+      <View style={[styles.loadingCenter, { backgroundColor: '#121214' }]}>
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.sub }]}>Đang nạp phiên đăng nhập...</Text>
       </View>
@@ -157,56 +193,51 @@ export default function FbMultiScreen({ navigation }) {
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]} edges={['top']}>
-      {/* Header thanh công cụ trên cùng */}
-      <ScreenHeader
-        title="Đa nick Messenger"
-        onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
-        rightAction={
-          accounts.length > 0 ? (
-            <Pressable
-              onPress={() => setAddModalVisible(true)}
-              style={styles.iconHeaderBtn}
-              hitSlop={8}
-            >
-              <Ionicons name="person-add" size={19} color={colors.primary} />
-            </Pressable>
-          ) : undefined
-        }
-      />
-
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       {accounts.length === 0 ? (
-        /* Màn hình giới thiệu khi chưa thêm tài khoản nào */
-        <View style={styles.introContainer}>
+        /* Màn hình giới thiệu khi chưa thêm nick */
+        <View style={[styles.introContainer, { backgroundColor: colors.bg }]}>
+          <View style={styles.introTopHeader}>
+            <Pressable
+              onPress={() => navigation?.canGoBack() && navigation.goBack()}
+              style={styles.backBtnIntro}
+              hitSlop={10}
+            >
+              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+            </Pressable>
+            <Text style={[styles.introTopTitle, { color: colors.text }]}>Đa tài khoản</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
           <View style={[styles.cardIntro, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={styles.iconCircle}>
-              <Ionicons name="logo-facebook" size={38} color="#1877F2" />
+              <Ionicons name="chatbubbles" size={38} color="#0084FF" />
             </View>
 
-            <Text style={[styles.introTitle, { color: colors.text }]}>Đa tài khoản Messenger 1 chạm</Text>
+            <Text style={[styles.introTitle, { color: colors.text }]}>Đa Tài Khoản 1 Chạm</Text>
             <Text style={[styles.introSub, { color: colors.sub }]}>
-              Nhắn tin và chuyển đổi tức thì giữa các nick Facebook cá nhân, page hoặc nick phụ chỉ với 1 chạm ở đỉnh màn hình.
+              Hỗ trợ Facebook, Messenger và Zalo Web. Chuyển đổi qua lại giữa các nick tức thì mà không cần đăng xuất.
             </Text>
 
             <View style={styles.featureList}>
               <View style={styles.featureRow}>
-                <Ionicons name="flash" size={18} color="#FFD000" />
+                <Ionicons name="flash" size={17} color="#FFD000" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Chuyển nick trong 0.1s không cần reload hoặc nhập lại OTP
+                  Chuyển nick 1 chạm ở đỉnh màn hình siêu nhanh
                 </Text>
               </View>
 
               <View style={styles.featureRow}>
-                <Ionicons name="shield-checkmark" size={18} color="#22C55E" />
+                <Ionicons name="apps" size={17} color="#0084FF" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Lưu trữ cookie mã hóa an toàn tuyệt đối trong SecureStore
+                  Hỗ trợ đầy đủ Facebook, Messenger và Zalo
                 </Text>
               </View>
 
               <View style={styles.featureRow}>
-                <Ionicons name="chatbubbles" size={18} color="#1877F2" />
+                <Ionicons name="shield-checkmark" size={17} color="#22C55E" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Giao diện Messenger Web tối ưu, ẩn sạch các menu rườm rà
+                  Môi trường đăng nhập cô lập, an toàn tuyệt đối
                 </Text>
               </View>
             </View>
@@ -216,37 +247,41 @@ export default function FbMultiScreen({ navigation }) {
               style={[styles.startBtn, { backgroundColor: colors.primary }]}
             >
               <Ionicons name="add-circle" size={20} color="#121214" />
-              <Text style={styles.startBtnText}>Thêm tài khoản Facebook đầu tiên</Text>
+              <Text style={styles.startBtnText}>Thêm tài khoản đầu tiên</Text>
             </Pressable>
           </View>
         </View>
       ) : (
-        /* Khi đã có tài khoản: Top Switcher Bar + Khung Chat Messenger */
-        <View style={styles.chatLayout}>
-          {/* Thanh chuyển đổi tài khoản 1 chạm nằm cố định trên đỉnh */}
+        /* GIAO DIỆN FULL MÀN HÌNH: Top Bar siêu mỏng + Khung WebView tràn viền */
+        <View style={styles.fullScreenContainer}>
+          {/* Thanh Switcher Bar siêu mỏng tích hợp nút Back, Avatar list và nút Thêm */}
           <FbAccountSwitcherBar
             accounts={accounts}
             activeAccountId={activeAccountId}
             onSwitchAccount={handleSwitchAccount}
             onAddAccount={() => setAddModalVisible(true)}
             onLongPressAccount={handleLongPressAccount}
+            onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
+            onReload={() => webViewRef.current?.reload()}
           />
 
-          {/* Khung chat WebView của tài khoản đang active */}
-          <View style={styles.webContainer}>
+          {/* Khung WebView tràn viền 100% diện tích còn lại */}
+          <View style={styles.webWrapper}>
             <FbMessengerWebView
+              ref={webViewRef}
               account={activeAccount}
-              onRefreshSession={loadAccounts}
+              onRefreshSession={refreshAccounts}
             />
           </View>
         </View>
       )}
 
-      {/* Modal Thêm tài khoản */}
+      {/* Modal Thêm tài khoản hỗ trợ 3 nền tảng */}
       <FbAddAccountModal
         visible={addModalVisible}
         onClose={() => setAddModalVisible(false)}
         onAccountAdded={handleAccountAdded}
+        existingAccounts={accounts}
       />
 
       {/* Modal Đổi tên gợi nhớ */}
@@ -263,7 +298,7 @@ export default function FbMultiScreen({ navigation }) {
           <View style={[styles.renameBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <Text style={[styles.renameTitle, { color: colors.text }]}>Đổi tên gợi nhớ</Text>
             <Text style={[styles.renameSub, { color: colors.sub }]}>
-              Đặt tên dễ nhớ (ví dụ: "Shop mỹ phẩm", "Nick chính", "Nick clone"):
+              Đặt tên dễ nhớ (ví dụ: "Shop online", "Nick cá nhân", "Nick clone"):
             </Text>
 
             <TextInput
@@ -305,6 +340,7 @@ export default function FbMultiScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    backgroundColor: '#18181C',
   },
   loadingCenter: {
     flex: 1,
@@ -316,32 +352,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  iconHeaderBtn: {
-    padding: 6,
-    borderRadius: 8,
-  },
   introContainer: {
     flex: 1,
-    padding: 20,
+    padding: 18,
     justifyContent: 'center',
   },
+  introTopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  backBtnIntro: {
+    padding: 4,
+  },
+  introTopTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
   cardIntro: {
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: 22,
+    padding: 22,
     borderWidth: 1,
     alignItems: 'center',
   },
   iconCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: 'rgba(24, 119, 242, 0.12)',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(0, 132, 255, 0.14)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   introTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
     textAlign: 'center',
     marginBottom: 8,
@@ -354,8 +399,8 @@ const styles = StyleSheet.create({
   },
   featureList: {
     width: '100%',
-    gap: 12,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 22,
   },
   featureRow: {
     flexDirection: 'row',
@@ -364,28 +409,30 @@ const styles = StyleSheet.create({
   },
   featureText: {
     flex: 1,
-    fontSize: 13,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 16,
   },
   startBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    height: 50,
+    height: 48,
     borderRadius: 14,
     gap: 8,
   },
   startBtnText: {
     color: '#121214',
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: '800',
   },
-  chatLayout: {
+  fullScreenContainer: {
     flex: 1,
+    backgroundColor: '#121214',
   },
-  webContainer: {
+  webWrapper: {
     flex: 1,
+    backgroundColor: '#121214',
   },
   modalBackdrop: {
     flex: 1,

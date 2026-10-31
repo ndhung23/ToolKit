@@ -1,14 +1,20 @@
 import * as SecureStore from 'expo-secure-store';
 
 const STORAGE_KEYS = {
-  ACCOUNTS_LIST: 'fb_multi_accounts_v1',
-  ACTIVE_ACCOUNT_ID: 'fb_multi_active_id_v1',
+  ACCOUNTS_LIST: 'fb_multi_accounts_v2',
+  ACTIVE_ACCOUNT_ID: 'fb_multi_active_id_v2',
+};
+
+export const PLATFORMS = {
+  FACEBOOK: 'facebook',
+  MESSENGER: 'messenger',
+  ZALO: 'zalo',
 };
 
 /**
- * Trích xuất các key-value từ chuỗi Cookie của Facebook
- * @param {string} cookieStr Chuỗi cookie (ví dụ: "c_user=100012345; xs=abc:def;...")
- * @returns {{ c_user?: string, xs?: string, datr?: string, sb?: string, [key: string]: string }}
+ * Trích xuất các key-value từ chuỗi Cookie
+ * @param {string} cookieStr
+ * @returns {Record<string, string>}
  */
 export function parseFacebookCookies(cookieStr) {
   if (!cookieStr || typeof cookieStr !== 'string') return {};
@@ -28,18 +34,25 @@ export function parseFacebookCookies(cookieStr) {
 }
 
 /**
- * Kiểm tra xem chuỗi cookie có hợp lệ và chứa c_user (Facebook UID) hay không
+ * Kiểm tra xem chuỗi cookie có hợp lệ hay không tùy theo nền tảng
  * @param {string} cookieStr
+ * @param {'facebook' | 'messenger' | 'zalo'} platform
  * @returns {boolean}
  */
-export function isFacebookCookieValid(cookieStr) {
+export function isAccountCookieValid(cookieStr, platform = PLATFORMS.MESSENGER) {
+  if (!cookieStr || typeof cookieStr !== 'string' || cookieStr.trim().length < 5) return false;
+  if (platform === PLATFORMS.ZALO) {
+    // Zalo cookie thường chứa zpw_sek hoặc zsession hoặc _ga
+    return cookieStr.includes('zpw_sek') || cookieStr.includes('zsession') || cookieStr.length > 20;
+  }
+  // Facebook & Messenger cần có c_user
   const parsed = parseFacebookCookies(cookieStr);
   return Boolean(parsed.c_user && parsed.c_user.length > 4);
 }
 
 /**
- * Lấy danh sách toàn bộ tài khoản Facebook đã lưu trong SecureStore
- * @returns {Promise<Array<{ id: string, name: string, nickname?: string, avatarUrl?: string, cookies: string, lastActive: number, createdAt: number }>>}
+ * Lấy danh sách toàn bộ tài khoản đã lưu trong SecureStore
+ * @returns {Promise<Array<{ id: string, platform: string, name: string, nickname?: string, avatarUrl?: string, cookies: string, lastActive: number, createdAt: number }>>}
  */
 export async function getStoredAccounts() {
   try {
@@ -96,23 +109,31 @@ export async function setActiveAccountId(id) {
 }
 
 /**
- * Thêm hoặc cập nhật một tài khoản Facebook
- * @param {{ id: string, name?: string, nickname?: string, avatarUrl?: string, cookies: string }} accountData
+ * Thêm hoặc cập nhật một tài khoản
+ * @param {{ id: string, platform?: string, name?: string, nickname?: string, avatarUrl?: string, cookies: string }} accountData
  * @returns {Promise<Array>} Danh sách tài khoản sau khi cập nhật
  */
 export async function saveOrUpdateAccount(accountData) {
   if (!accountData || !accountData.id || !accountData.cookies) {
-    throw new Error('Thiếu thông tin tài khoản hoặc cookie Facebook.');
+    throw new Error('Thiếu thông tin tài khoản hoặc cookie phiên đăng nhập.');
   }
 
   const existingAccounts = await getStoredAccounts();
-  const idStr = String(accountData.id).trim();
+  const platform = accountData.platform || PLATFORMS.MESSENGER;
+  const uniqueKey = `${platform}_${String(accountData.id).trim()}`;
   const now = Date.now();
 
-  const avatar = accountData.avatarUrl || `https://graph.facebook.com/${idStr}/picture?type=large`;
-  const name = accountData.name || `Người dùng ${idStr.slice(-4)}`;
+  let defaultAvatar = accountData.avatarUrl;
+  if (!defaultAvatar) {
+    if (platform === PLATFORMS.ZALO) {
+      defaultAvatar = '';
+    } else {
+      defaultAvatar = `https://graph.facebook.com/${accountData.id}/picture?type=large`;
+    }
+  }
 
-  const existingIndex = existingAccounts.findIndex((acc) => acc.id === idStr);
+  const defaultName = accountData.name || `${platform.toUpperCase()} ${String(accountData.id).slice(-4)}`;
+  const existingIndex = existingAccounts.findIndex((acc) => acc.key === uniqueKey || (acc.id === String(accountData.id) && acc.platform === platform));
 
   let updatedList;
   if (existingIndex >= 0) {
@@ -120,10 +141,12 @@ export async function saveOrUpdateAccount(accountData) {
     const updated = {
       ...old,
       ...accountData,
-      id: idStr,
+      key: uniqueKey,
+      id: String(accountData.id).trim(),
+      platform,
       name: accountData.name || old.name,
       nickname: accountData.nickname !== undefined ? accountData.nickname : old.nickname,
-      avatarUrl: avatar || old.avatarUrl,
+      avatarUrl: defaultAvatar || old.avatarUrl,
       cookies: accountData.cookies || old.cookies,
       lastActive: now,
     };
@@ -131,10 +154,12 @@ export async function saveOrUpdateAccount(accountData) {
     updatedList[existingIndex] = updated;
   } else {
     const newAccount = {
-      id: idStr,
-      name,
+      key: uniqueKey,
+      id: String(accountData.id).trim(),
+      platform,
+      name: defaultName,
       nickname: accountData.nickname || '',
-      avatarUrl: avatar,
+      avatarUrl: defaultAvatar,
       cookies: accountData.cookies,
       lastActive: now,
       createdAt: now,
@@ -143,19 +168,19 @@ export async function saveOrUpdateAccount(accountData) {
   }
 
   await saveAllAccounts(updatedList);
-  await setActiveAccountId(idStr);
+  await setActiveAccountId(uniqueKey);
   return updatedList;
 }
 
 /**
  * Cập nhật tên gợi nhớ (nickname) cho tài khoản
- * @param {string} id
+ * @param {string} keyOrId Khóa định danh của tài khoản
  * @param {string} nickname
  */
-export async function updateAccountNickname(id, nickname) {
+export async function updateAccountNickname(keyOrId, nickname) {
   const accounts = await getStoredAccounts();
-  const idStr = String(id).trim();
-  const index = accounts.findIndex((a) => a.id === idStr);
+  const target = String(keyOrId).trim();
+  const index = accounts.findIndex((a) => a.key === target || a.id === target);
   if (index >= 0) {
     accounts[index] = { ...accounts[index], nickname: nickname.trim() };
     await saveAllAccounts(accounts);
@@ -166,20 +191,20 @@ export async function updateAccountNickname(id, nickname) {
 
 /**
  * Xóa một tài khoản khỏi danh sách
- * @param {string} id
+ * @param {string} keyOrId
  * @returns {Promise<{ accounts: Array, newActiveId: string | null }>}
  */
-export async function removeAccount(id) {
+export async function removeAccount(keyOrId) {
   const accounts = await getStoredAccounts();
-  const idStr = String(id).trim();
-  const filtered = accounts.filter((a) => a.id !== idStr);
+  const target = String(keyOrId).trim();
+  const filtered = accounts.filter((a) => a.key !== target && a.id !== target);
   await saveAllAccounts(filtered);
 
   const activeId = await getActiveAccountId();
   let newActiveId = activeId;
 
-  if (activeId === idStr) {
-    newActiveId = filtered.length > 0 ? filtered[0].id : null;
+  if (activeId === target) {
+    newActiveId = filtered.length > 0 ? (filtered[0].key || filtered[0].id) : null;
     await setActiveAccountId(newActiveId);
   }
 

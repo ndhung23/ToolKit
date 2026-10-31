@@ -15,49 +15,103 @@ import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
-import { generateAutoDetectSessionScript } from './fbCookieManager';
-import { parseFacebookCookies, isFacebookCookieValid } from './fbAccountStorage';
+import { PLATFORMS, parseFacebookCookies, isAccountCookieValid } from './fbAccountStorage';
+import {
+  USER_AGENTS,
+  generateCleanCookiesBeforeLoginScript,
+  generateAutoDetectSessionScript,
+} from './fbCookieManager';
+
+const PLATFORM_OPTIONS = [
+  {
+    id: PLATFORMS.MESSENGER,
+    name: 'Messenger',
+    desc: 'Chuyên nhắn tin, quản lý hộp thư & chat khách hàng',
+    icon: 'chatbubble-ellipses',
+    color: '#0084FF',
+    loginUrl: 'https://www.messenger.com/login',
+  },
+  {
+    id: PLATFORMS.FACEBOOK,
+    name: 'Facebook',
+    desc: 'Lướt bảng tin, fanpage, trang cá nhân & hội nhóm',
+    icon: 'logo-facebook',
+    color: '#1877F2',
+    loginUrl: 'https://m.facebook.com/login/?next=https%3A%2F%2Fm.facebook.com%2F',
+  },
+  {
+    id: PLATFORMS.ZALO,
+    name: 'Zalo Web',
+    desc: 'Đăng nhập qua QR Code hoặc SĐT trên chat.zalo.me',
+    icon: 'chatbubbles',
+    color: '#0068FF',
+    loginUrl: 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F',
+  },
+];
 
 export default function FbAddAccountModal({
   visible,
   onClose,
   onAccountAdded,
+  existingAccounts = [],
 }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState('direct'); // 'direct' | 'cookie'
+  const webViewRef = useRef(null);
+
+  // Bước 1: Chọn nền tảng (null = đang chọn nền tảng; 'messenger' | 'facebook' | 'zalo')
+  const [selectedPlatform, setSelectedPlatform] = useState(null);
+
+  // Tab phương thức: 'direct' (Web) | 'cookie' (Dán cookie)
+  const [tab, setTab] = useState('direct');
   const [cookieInput, setCookieInput] = useState('');
   const [nicknameInput, setNicknameInput] = useState('');
   const [loadingWeb, setLoadingWeb] = useState(true);
-  const webViewRef = useRef(null);
 
-  const resetForm = () => {
+  const resetState = () => {
+    setSelectedPlatform(null);
+    setTab('direct');
     setCookieInput('');
     setNicknameInput('');
-    setTab('direct');
     setLoadingWeb(true);
   };
 
   const handleClose = () => {
-    resetForm();
+    resetState();
     onClose && onClose();
+  };
+
+  const handleSelectPlatform = (platformId) => {
+    setSelectedPlatform(platformId);
+    setLoadingWeb(true);
   };
 
   const handleWebViewMessage = (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'FB_SESSION_DETECTED' && data.uid && data.cookies) {
+
+      if (data.type === 'DUPLICATE_ACCOUNT') {
+        Alert.alert(
+          'Tài khoản đã tồn tại',
+          `Tài khoản (UID: ${data.uid}) đã có sẵn trong danh sách. Vui lòng đăng nhập một tài khoản khác.`
+        );
+        return;
+      }
+
+      if (data.type === 'SESSION_DETECTED' && data.uid && data.cookies) {
+        const platformObj = PLATFORM_OPTIONS.find((p) => p.id === data.platform) || PLATFORM_OPTIONS[0];
         const newAccount = {
           id: data.uid,
-          name: data.name || `Facebook ${data.uid.slice(-4)}`,
+          platform: data.platform || selectedPlatform || PLATFORMS.MESSENGER,
+          name: data.name || `${platformObj.name} ${data.uid.slice(-4)}`,
           nickname: nicknameInput.trim() || '',
-          avatarUrl: data.avatarUrl || `https://graph.facebook.com/${data.uid}/picture?type=large`,
+          avatarUrl: data.avatarUrl || '',
           cookies: data.cookies,
         };
 
         Alert.alert(
           'Đăng nhập thành công',
-          `Đã lưu phiên đăng nhập cho tài khoản: "${newAccount.name}".`,
+          `Đã thêm tài khoản ${platformObj.name}: "${newAccount.name}".`,
           [
             {
               text: 'OK',
@@ -69,33 +123,43 @@ export default function FbAddAccountModal({
           ]
         );
       }
-    } catch (e) {
-      // Bỏ qua các message không phải JSON
+    } catch (_e) {
+      // ignore
     }
   };
 
   const handleSaveCookie = () => {
     const raw = cookieInput.trim();
+    const plat = selectedPlatform || PLATFORMS.MESSENGER;
+
     if (!raw) {
-      Alert.alert('Thiếu thông tin', 'Vui lòng dán chuỗi Cookie Facebook vào ô bên dưới.');
+      Alert.alert('Thiếu thông tin', 'Vui lòng dán chuỗi Cookie vào ô bên dưới.');
       return;
     }
 
-    if (!isFacebookCookieValid(raw)) {
+    if (!isAccountCookieValid(raw, plat)) {
       Alert.alert(
         'Cookie không hợp lệ',
-        'Chuỗi Cookie phải chứa định danh "c_user=" (Facebook UID) và "xs=". Vui lòng kiểm tra lại.'
+        plat === PLATFORMS.ZALO
+          ? 'Cookie Zalo cần chứa thông tin phiên đăng nhập hợp lệ.'
+          : 'Chuỗi Cookie Facebook/Messenger phải chứa "c_user=" và "xs=".'
       );
       return;
     }
 
-    const parsed = parseFacebookCookies(raw);
-    const uid = parsed.c_user;
+    let uid = `user_${Date.now().toString().slice(-6)}`;
+    if (plat !== PLATFORMS.ZALO) {
+      const parsed = parseFacebookCookies(raw);
+      if (parsed.c_user) uid = parsed.c_user;
+    }
+
+    const platformObj = PLATFORM_OPTIONS.find((p) => p.id === plat) || PLATFORM_OPTIONS[0];
     const newAccount = {
       id: uid,
-      name: nicknameInput.trim() || `Facebook User ${uid.slice(-4)}`,
+      platform: plat,
+      name: nicknameInput.trim() || `${platformObj.name} User ${uid.slice(-4)}`,
       nickname: nicknameInput.trim() || '',
-      avatarUrl: `https://graph.facebook.com/${uid}/picture?type=large`,
+      avatarUrl: plat === PLATFORMS.ZALO ? '' : `https://graph.facebook.com/${uid}/picture?type=large`,
       cookies: raw,
     };
 
@@ -104,7 +168,7 @@ export default function FbAddAccountModal({
       `Đã thêm tài khoản: "${newAccount.name}".`,
       [
         {
-          text: 'Bắt đầu chat',
+          text: 'Bắt đầu sử dụng',
           onPress: () => {
             onAccountAdded && onAccountAdded(newAccount);
             handleClose();
@@ -113,6 +177,9 @@ export default function FbAddAccountModal({
       ]
     );
   };
+
+  const activePlatformConfig = PLATFORM_OPTIONS.find((p) => p.id === selectedPlatform);
+  const existingUids = existingAccounts.map((a) => a.id);
 
   return (
     <Modal
@@ -124,146 +191,168 @@ export default function FbAddAccountModal({
       <View style={[styles.modalRoot, { backgroundColor: colors.bg, paddingTop: insets.top }]}>
         {/* Header Modal */}
         <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Thêm tài khoản Facebook</Text>
+          {selectedPlatform ? (
+            <Pressable onPress={() => setSelectedPlatform(null)} style={styles.backBtn} hitSlop={10}>
+              <Ionicons name="arrow-back" size={22} color={colors.text} />
+            </Pressable>
+          ) : (
+            <View style={{ width: 22 }} />
+          )}
+
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            {selectedPlatform ? `Thêm tài khoản ${activePlatformConfig?.name}` : 'Chọn nền tảng muốn thêm'}
+          </Text>
+
           <Pressable onPress={handleClose} style={styles.closeBtn} hitSlop={10}>
             <Ionicons name="close-circle" size={26} color={colors.sub} />
           </Pressable>
         </View>
 
-        {/* Tab chuyển đổi phương thức thêm nick */}
-        <View style={[styles.tabBar, { backgroundColor: colors.card }]}>
-          <Pressable
-            onPress={() => setTab('direct')}
-            style={[
-              styles.tabItem,
-              tab === 'direct' && { backgroundColor: colors.primary },
-            ]}
-          >
-            <Ionicons
-              name="globe-outline"
-              size={16}
-              color={tab === 'direct' ? '#121214' : colors.sub}
-            />
-            <Text
-              style={[
-                styles.tabText,
-                { color: tab === 'direct' ? '#121214' : colors.sub },
-              ]}
-            >
-              Đăng nhập trực tiếp (Khuyên dùng)
+        {/* BƯỚC 1: Chọn nền tảng (Facebook, Messenger, Zalo) */}
+        {!selectedPlatform ? (
+          <View style={styles.platformSelectorContainer}>
+            <Text style={[styles.sectionHeading, { color: colors.sub }]}>
+              Chọn dịch vụ bạn muốn đăng nhập thêm nick:
             </Text>
-          </Pressable>
 
-          <Pressable
-            onPress={() => setTab('cookie')}
-            style={[
-              styles.tabItem,
-              tab === 'cookie' && { backgroundColor: colors.primary },
-            ]}
-          >
-            <Ionicons
-              name="code-slash-outline"
-              size={16}
-              color={tab === 'cookie' ? '#121214' : colors.sub}
-            />
-            <Text
-              style={[
-                styles.tabText,
-                { color: tab === 'cookie' ? '#121214' : colors.sub },
-              ]}
-            >
-              Dán Cookie
-            </Text>
-          </Pressable>
-        </View>
+            {PLATFORM_OPTIONS.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() => handleSelectPlatform(item.id)}
+                style={[
+                  styles.platformCard,
+                  { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                ]}
+              >
+                <View style={[styles.platformIconBox, { backgroundColor: item.color + '1A' }]}>
+                  <Ionicons name={item.icon} size={28} color={item.color} />
+                </View>
 
-        {/* Nội dung Tab */}
-        {tab === 'direct' ? (
-          <View style={styles.webContainer}>
-            <View style={[styles.guideBox, { backgroundColor: 'rgba(24, 119, 242, 0.1)', borderColor: 'rgba(24, 119, 242, 0.3)' }]}>
-              <Ionicons name="information-circle" size={18} color="#1877F2" />
-              <Text style={[styles.guideText, { color: colors.text }]}>
-                Đăng nhập tài khoản của bạn trên trang Facebook chính thức bên dưới. App sẽ tự động bắt phiên và lưu nick an toàn.
-              </Text>
-            </View>
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={[styles.platformName, { color: colors.text }]}>{item.name}</Text>
+                  <Text style={[styles.platformDesc, { color: colors.sub }]}>{item.desc}</Text>
+                </View>
 
-            {loadingWeb && (
-              <View style={styles.loadingOverlay}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={[styles.loadingText, { color: colors.sub }]}>Đang tải trang đăng nhập Facebook...</Text>
-              </View>
-            )}
-
-            <WebView
-              ref={webViewRef}
-              source={{ uri: 'https://m.facebook.com/login' }}
-              injectedJavaScript={generateAutoDetectSessionScript()}
-              onMessage={handleWebViewMessage}
-              onLoadEnd={() => setLoadingWeb(false)}
-              style={styles.webView}
-              javaScriptEnabled
-              domStorageEnabled
-              sharedCookiesEnabled
-              thirdPartyCookiesEnabled
-              userAgent={
-                Platform.OS === 'ios'
-                  ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
-                  : 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
-              }
-            />
+                <Ionicons name="chevron-forward" size={20} color={colors.sub} />
+              </Pressable>
+            ))}
           </View>
         ) : (
-          <KeyboardAvoidingView
-            style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={styles.cookieContainer}>
-              <View style={[styles.guideBox, { backgroundColor: 'rgba(255, 208, 0, 0.1)', borderColor: 'rgba(255, 208, 0, 0.3)' }]}>
-                <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
-                <Text style={[styles.guideText, { color: colors.text }]}>
-                  Dán chuỗi Cookie chứa "c_user=" và "xs=" lấy từ trình duyệt máy tính. Phiên đăng nhập được mã hóa an toàn trong máy bạn.
+          /* BƯỚC 2: Đăng nhập trực tiếp (Isolated Web) hoặc dán Cookie */
+          <View style={{ flex: 1 }}>
+            {/* Tab chuyển đổi */}
+            <View style={[styles.tabBar, { backgroundColor: colors.card }]}>
+              <Pressable
+                onPress={() => setTab('direct')}
+                style={[styles.tabItem, tab === 'direct' && { backgroundColor: colors.primary }]}
+              >
+                <Ionicons
+                  name="globe-outline"
+                  size={15}
+                  color={tab === 'direct' ? '#121214' : colors.sub}
+                />
+                <Text style={[styles.tabText, { color: tab === 'direct' ? '#121214' : colors.sub }]}>
+                  Đăng nhập Web
                 </Text>
-              </View>
-
-              <Text style={[styles.label, { color: colors.text }]}>Tên gợi nhớ (Không bắt buộc):</Text>
-              <TextInput
-                value={nicknameInput}
-                onChangeText={setNicknameInput}
-                placeholder="Ví dụ: Nick bán hàng, Nick phụ..."
-                placeholderTextColor={colors.sub}
-                style={[
-                  styles.textInput,
-                  { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text },
-                ]}
-                autoCapitalize="words"
-                returnKeyType="next"
-              />
-
-              <Text style={[styles.label, { color: colors.text }]}>Chuỗi Cookie Facebook:</Text>
-              <TextInput
-                value={cookieInput}
-                onChangeText={setCookieInput}
-                placeholder="c_user=1000...; xs=...; datr=...; sb=..."
-                placeholderTextColor={colors.sub}
-                multiline
-                numberOfLines={5}
-                style={[
-                  styles.cookieTextInput,
-                  { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text },
-                ]}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+              </Pressable>
 
               <Pressable
-                onPress={handleSaveCookie}
-                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setTab('cookie')}
+                style={[styles.tabItem, tab === 'cookie' && { backgroundColor: colors.primary }]}
               >
-                <Ionicons name="checkmark-circle" size={18} color="#121214" />
-                <Text style={styles.saveBtnText}>Lưu và Bắt đầu Chat</Text>
+                <Ionicons
+                  name="code-slash-outline"
+                  size={15}
+                  color={tab === 'cookie' ? '#121214' : colors.sub}
+                />
+                <Text style={[styles.tabText, { color: tab === 'cookie' ? '#121214' : colors.sub }]}>
+                  Dán Cookie
+                </Text>
               </Pressable>
             </View>
-          </KeyboardAvoidingView>
+
+            {tab === 'direct' ? (
+              <View style={styles.webContainer}>
+                {loadingWeb && (
+                  <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                    <Text style={[styles.loadingText, { color: colors.sub }]}>
+                      Đang mở trang đăng nhập {activePlatformConfig?.name}...
+                    </Text>
+                  </View>
+                )}
+
+                <WebView
+                  key={`login_${selectedPlatform}`}
+                  ref={webViewRef}
+                  source={{ uri: activePlatformConfig?.loginUrl || 'https://m.facebook.com/login' }}
+                  incognito={true}
+                  cacheEnabled={false}
+                  sharedCookiesEnabled={false}
+                  injectedJavaScriptBeforeContentLoaded={generateCleanCookiesBeforeLoginScript()}
+                  injectedJavaScript={generateAutoDetectSessionScript(selectedPlatform, existingUids)}
+                  onMessage={handleWebViewMessage}
+                  onLoadEnd={() => setLoadingWeb(false)}
+                  style={styles.webView}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  userAgent={
+                    selectedPlatform === PLATFORMS.ZALO
+                      ? USER_AGENTS.ZALO_WEB
+                      : selectedPlatform === PLATFORMS.MESSENGER
+                      ? USER_AGENTS.MESSENGER_DESKTOP
+                      : USER_AGENTS.FACEBOOK_MOBILE
+                  }
+                />
+              </View>
+            ) : (
+              <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              >
+                <View style={styles.cookieContainer}>
+                  <Text style={[styles.label, { color: colors.text }]}>Tên gợi nhớ (Không bắt buộc):</Text>
+                  <TextInput
+                    value={nicknameInput}
+                    onChangeText={setNicknameInput}
+                    placeholder="Ví dụ: Shop online, Nick cá nhân..."
+                    placeholderTextColor={colors.sub}
+                    style={[
+                      styles.textInput,
+                      { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text },
+                    ]}
+                    autoCapitalize="words"
+                  />
+
+                  <Text style={[styles.label, { color: colors.text }]}>
+                    Chuỗi Cookie {activePlatformConfig?.name}:
+                  </Text>
+                  <TextInput
+                    value={cookieInput}
+                    onChangeText={setCookieInput}
+                    placeholder="Dán chuỗi cookie vào đây..."
+                    placeholderTextColor={colors.sub}
+                    multiline
+                    numberOfLines={5}
+                    style={[
+                      styles.cookieTextInput,
+                      { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text },
+                    ]}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+
+                  <Pressable
+                    onPress={handleSaveCookie}
+                    style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                  >
+                    <Ionicons name="checkmark-circle" size={18} color="#121214" />
+                    <Text style={styles.saveBtnText}>Lưu và Bắt đầu Dùng</Text>
+                  </Pressable>
+                </View>
+              </KeyboardAvoidingView>
+            )}
+          </View>
         )}
       </View>
     </Modal>
@@ -279,22 +368,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
   },
+  backBtn: {
+    padding: 2,
+  },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
   },
   closeBtn: {
     padding: 2,
   },
+  platformSelectorContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  sectionHeading: {
+    fontSize: 13,
+    marginBottom: 16,
+    fontWeight: '600',
+  },
+  platformCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  platformIconBox: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  platformName: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  platformDesc: {
+    fontSize: 12.5,
+    lineHeight: 16,
+  },
   tabBar: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 8,
-    borderRadius: 12,
+    marginTop: 10,
+    marginBottom: 6,
+    borderRadius: 10,
     padding: 4,
     gap: 4,
   },
@@ -303,7 +428,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 7,
     paddingHorizontal: 6,
     borderRadius: 8,
     gap: 6,
@@ -315,21 +440,6 @@ const styles = StyleSheet.create({
   webContainer: {
     flex: 1,
     position: 'relative',
-  },
-  guideBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 8,
-  },
-  guideText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 16,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -354,7 +464,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: '700',
-    marginTop: 14,
+    marginTop: 12,
     marginBottom: 6,
   },
   textInput: {

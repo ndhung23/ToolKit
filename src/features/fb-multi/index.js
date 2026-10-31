@@ -1,5 +1,5 @@
 // src/features/fb-multi/index.js
-// Tính năng: Quản lý nhiều tài khoản Facebook & chuyển đổi phiên 1 chạm
+// Tính năng: Đa tài khoản Facebook, Messenger & Zalo 1 chạm
 
 export { default, default as FbMultiScreen } from './FbMultiScreen';
 export { default as FbAccountSwitcherBar } from './FbAccountSwitcherBar';
