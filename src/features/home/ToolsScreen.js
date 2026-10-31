@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, TextInput, FlatList, Text, StyleSheet, Pressable, Alert } from 'react-native';
+import { View, TextInput, FlatList, Text, StyleSheet, Pressable, Image } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ToolRow, ScreenHeader, VipUpgradeModal } from '../../components/ui';
 import { TOOLS, openTool } from '../../tools';
@@ -50,8 +50,12 @@ export default function ToolsScreen({ navigation }) {
         style={[styles.featuredCard, { backgroundColor: colors.card, borderColor: colors.primary }]}
       >
         <View style={styles.featuredLeft}>
-          <View style={[styles.featuredIcon, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
-            <Ionicons name="document-text" size={26} color={colors.primary} />
+          <View style={[styles.featuredIcon, { backgroundColor: 'transparent' }]}>
+            <Image
+              source={require('../../../assets/icon_pdf.png')}
+              style={{ width: '100%', height: '100%', borderRadius: 14 }}
+              resizeMode="cover"
+            />
           </View>
           <View style={{ flex: 1, marginLeft: 14 }}>
             <View style={styles.tagHot}>

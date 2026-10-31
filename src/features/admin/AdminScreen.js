@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { View, Text, FlatList, Pressable, Switch, StyleSheet, Alert, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, FlatList, Pressable, Switch, StyleSheet, Alert, ActivityIndicator, TextInput, Image } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader, RoleBadge } from '../../components/ui';
 import { useAuth } from '../auth';
@@ -12,7 +12,6 @@ import {
   updateUserRoleInFirestore,
   getFeatureTogglesFromFirestore,
   saveFeatureToggleToFirestore,
-  saveUserToFirestore,
 } from '../../services/firebase';
 
 const INITIAL_USERS = [];
@@ -337,8 +336,12 @@ export default function AdminScreen({ navigation }) {
                       },
                     ]}
                   >
-                    <View style={[styles.toolIconCircle, { backgroundColor: t.color + '22' }]}>
-                      <Ionicons name={t.icon} size={20} color={t.color} />
+                    <View style={[styles.toolIconCircle, { backgroundColor: t.imageIcon ? 'transparent' : t.color + '22' }]}>
+                      {t.imageIcon ? (
+                        <Image source={t.imageIcon} style={{ width: '100%', height: '100%', borderRadius: 10 }} resizeMode="cover" />
+                      ) : (
+                        <Ionicons name={t.icon} size={20} color={t.color} />
+                      )}
                     </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={[styles.toolToggleName, { color: colors.text }]}>{t.title}</Text>
@@ -385,8 +388,12 @@ export default function AdminScreen({ navigation }) {
                       },
                     ]}
                   >
-                    <View style={[styles.toolIconCircle, { backgroundColor: t.color + '22' }]}>
-                      <Ionicons name={t.icon} size={20} color={t.color} />
+                    <View style={[styles.toolIconCircle, { backgroundColor: t.imageIcon ? 'transparent' : t.color + '22' }]}>
+                      {t.imageIcon ? (
+                        <Image source={t.imageIcon} style={{ width: '100%', height: '100%', borderRadius: 10 }} resizeMode="cover" />
+                      ) : (
+                        <Ionicons name={t.icon} size={20} color={t.color} />
+                      )}
                     </View>
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={[styles.toolToggleName, { color: colors.text }]}>{t.title}</Text>

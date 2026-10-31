@@ -10,6 +10,7 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
+  Image,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -210,8 +211,12 @@ export default function FbMultiScreen({ navigation }) {
           </View>
 
           <View style={[styles.cardIntro, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="chatbubbles" size={38} color="#0068FF" />
+            <View style={[styles.iconCircle, { backgroundColor: 'transparent' }]}>
+              <Image
+                source={require('../../../assets/icon_multiweb.png')}
+                style={{ width: 68, height: 68, borderRadius: 18 }}
+                resizeMode="contain"
+              />
             </View>
 
             <Text style={[styles.introTitle, { color: colors.text }]}>Đa Tài Khoản Zalo 1 Chạm</Text>

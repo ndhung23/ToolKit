@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   StyleSheet,
   Pressable,
+  Image,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -43,7 +44,11 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
   if (!account || !account.cookies) {
     return (
       <View style={[styles.emptyContainer, { backgroundColor: colors.bg }]}>
-        <Ionicons name="chatbubbles-outline" size={48} color={colors.sub} />
+        <Image
+          source={require('../../../assets/icon_multiweb.png')}
+          style={{ width: 64, height: 64, borderRadius: 18, marginBottom: 16 }}
+          resizeMode="contain"
+        />
         <Text style={[styles.emptyText, { color: colors.sub }]}>
           Vui lòng bấm nút "+" trên thanh công cụ để thêm tài khoản Facebook, Messenger hoặc Zalo.
         </Text>
