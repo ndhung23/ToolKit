@@ -236,10 +236,18 @@ export function generateAutoDetectSessionScript(platform = PLATFORMS.ZALO, exist
           const cookieStr = document.cookie || '';
           const currentUrl = window.location.href || '';
 
-          // 1. XỬ LÝ ZALO: Đã vào chat.zalo.me hoặc có cookie zpw_sek sau khi quét QR
+          // 1. XỬ LÝ ZALO: Đã vào chat.zalo.me hoặc có cookie zpw_sek sau khi quét QR / nhập pass
           if ('${platform}' === '${PLATFORMS.ZALO}') {
-            const hasZaloAuth = currentUrl.includes('chat.zalo.me') || cookieStr.includes('zpw_sek=') || cookieStr.includes('zsession=');
-            if (hasZaloAuth) {
+            const host = window.location.hostname || '';
+            const isActualChatDomain = host === 'chat.zalo.me';
+            const hasAuthCookies = cookieStr.includes('zpw_sek=') || cookieStr.includes('zsession=');
+
+            // Nếu vẫn đang ở trang đăng nhập id.zalo.me và chưa có cookie xác thực -> Không được kích hoạt sớm!
+            if (host.includes('id.zalo.me') && !hasAuthCookies) {
+              return;
+            }
+
+            if (isActualChatDomain || hasAuthCookies) {
               // Tìm tên Zalo từ giao diện web
               let zaloName = '';
               const nameEl = document.querySelector('.user-profile-name, .nav__tabs__top__avatar, .name-container, div[data-translate-inner="STR_MY_PROFILE"]');
@@ -248,7 +256,7 @@ export function generateAutoDetectSessionScript(platform = PLATFORMS.ZALO, exist
               }
               if (!zaloName) {
                 const titleEl = document.querySelector('title');
-                if (titleEl && titleEl.innerText && !titleEl.innerText.includes('Zalo Web')) {
+                if (titleEl && titleEl.innerText && !titleEl.innerText.includes('Zalo Web') && !titleEl.innerText.includes('Đăng nhập')) {
                   zaloName = titleEl.innerText.trim();
                 }
               }

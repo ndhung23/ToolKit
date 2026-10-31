@@ -18,7 +18,6 @@ import { useTheme } from '../../theme';
 import { PLATFORMS, parseFacebookCookies, isAccountCookieValid } from './fbAccountStorage';
 import {
   USER_AGENTS,
-  generateCleanCookiesBeforeLoginScript,
   generateAutoDetectSessionScript,
 } from './fbCookieManager';
 
@@ -278,7 +277,7 @@ export default function FbAddAccountModal({
                   <View style={[styles.zaloTipBanner, { backgroundColor: 'rgba(0, 104, 255, 0.12)', borderColor: 'rgba(0, 104, 255, 0.3)' }]}>
                     <Ionicons name="qr-code-outline" size={20} color="#0068FF" />
                     <Text style={[styles.zaloTipText, { color: colors.text }]}>
-                      Mở app Zalo trên máy bạn → Chọn biểu tượng [Quét mã QR] ở góc trên → Quét mã bên dưới để đăng nhập tức thì.
+                      Quét mã QR bằng app Zalo trên máy khác HOẶC bấm biểu tượng [ ≡ ] bên cạnh để đăng nhập bằng SĐT & Mật khẩu.
                     </Text>
                   </View>
                 )}
@@ -295,11 +294,10 @@ export default function FbAddAccountModal({
                 <WebView
                   key={`login_${selectedPlatform}`}
                   ref={webViewRef}
-                  source={{ uri: activePlatformConfig?.loginUrl || 'https://m.facebook.com/login' }}
+                  source={{ uri: activePlatformConfig?.loginUrl || 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F' }}
                   incognito={true}
                   cacheEnabled={false}
                   sharedCookiesEnabled={false}
-                  injectedJavaScriptBeforeContentLoaded={generateCleanCookiesBeforeLoginScript()}
                   injectedJavaScript={generateAutoDetectSessionScript(selectedPlatform, existingUids)}
                   onMessage={handleWebViewMessage}
                   onLoadEnd={() => setLoadingWeb(false)}
