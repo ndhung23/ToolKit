@@ -13,11 +13,13 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
 import { PLATFORMS, parseFacebookCookies, isAccountCookieValid } from './fbAccountStorage';
 import {
   USER_AGENTS,
+  generateDesktopSpoofScript,
   generateAutoDetectSessionScript,
 } from './fbCookieManager';
 
@@ -86,6 +88,31 @@ export default function FbAddAccountModal({
     setLoadingWeb(true);
   };
 
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (text && text.trim()) {
+        setCookieInput(text.trim());
+      } else {
+        Alert.alert('Bộ nhớ tạm trống', 'Chưa có nội dung trong bộ nhớ tạm để dán.');
+      }
+    } catch (_e) {
+      Alert.alert('Lỗi', 'Không thể đọc bộ nhớ tạm.');
+    }
+  };
+
+  const handleCopyCommand = async () => {
+    try {
+      await Clipboard.setStringAsync('copy(document.cookie)');
+      Alert.alert(
+        'Đã sao chép',
+        'Đã copy câu lệnh "copy(document.cookie)". Bạn hãy dán vào Console (F12) trên trình duyệt máy tính và nhấn Enter.'
+      );
+    } catch (_e) {
+      // ignore
+    }
+  };
+
   const handleWebViewMessage = (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
@@ -148,9 +175,15 @@ export default function FbAddAccountModal({
     }
 
     let uid = `user_${Date.now().toString().slice(-6)}`;
+    const parsed = parseFacebookCookies(raw);
     if (plat !== PLATFORMS.ZALO) {
-      const parsed = parseFacebookCookies(raw);
       if (parsed.c_user) uid = parsed.c_user;
+    } else {
+      if (parsed.zalo_id) {
+        uid = parsed.zalo_id;
+      } else if (parsed.zpw_sek) {
+        uid = `zl_${parsed.zpw_sek.slice(0, 8)}`;
+      }
     }
 
     const platformObj = PLATFORM_OPTIONS.find((p) => p.id === plat) || PLATFORM_OPTIONS[0];
@@ -275,10 +308,23 @@ export default function FbAddAccountModal({
               <View style={styles.webContainer}>
                 {selectedPlatform === PLATFORMS.ZALO && (
                   <View style={[styles.zaloTipBanner, { backgroundColor: 'rgba(0, 104, 255, 0.12)', borderColor: 'rgba(0, 104, 255, 0.3)' }]}>
-                    <Ionicons name="qr-code-outline" size={20} color="#0068FF" />
-                    <Text style={[styles.zaloTipText, { color: colors.text }]}>
-                      Quét mã QR bằng app Zalo trên máy khác HOẶC bấm biểu tượng [ ≡ ] bên cạnh để đăng nhập bằng SĐT & Mật khẩu.
-                    </Text>
+                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="qr-code-outline" size={20} color="#0068FF" />
+                      <Text style={[styles.zaloTipText, { color: colors.text }]}>
+                        Quét mã QR bằng app Zalo máy khác HOẶC bấm [ ≡ ] để nhập SĐT & Mật khẩu.
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => {
+                        setLoadingWeb(true);
+                        webViewRef.current?.reload();
+                      }}
+                      style={[styles.reloadQrBtn, { backgroundColor: '#0068FF' }]}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="reload" size={13} color="#FFFFFF" />
+                      <Text style={styles.reloadQrText}>Làm mới QR</Text>
+                    </Pressable>
                   </View>
                 )}
 
@@ -295,9 +341,11 @@ export default function FbAddAccountModal({
                   key={`login_${selectedPlatform}`}
                   ref={webViewRef}
                   source={{ uri: activePlatformConfig?.loginUrl || 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F' }}
-                  incognito={true}
-                  cacheEnabled={false}
-                  sharedCookiesEnabled={false}
+                  incognito={false}
+                  cacheEnabled={true}
+                  sharedCookiesEnabled={true}
+                  thirdPartyCookiesEnabled={true}
+                  injectedJavaScriptBeforeContentLoaded={generateDesktopSpoofScript(selectedPlatform)}
                   injectedJavaScript={generateAutoDetectSessionScript(selectedPlatform, existingUids)}
                   onMessage={handleWebViewMessage}
                   onLoadEnd={() => setLoadingWeb(false)}
@@ -319,11 +367,44 @@ export default function FbAddAccountModal({
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
               >
                 <View style={styles.cookieContainer}>
+                  {selectedPlatform === PLATFORMS.ZALO && (
+                    <View style={[styles.guideBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                      <View style={styles.guideHeader}>
+                        <Ionicons name="laptop-outline" size={18} color="#0068FF" />
+                        <Text style={[styles.guideTitle, { color: colors.text }]}>
+                          Lấy Cookie từ máy tính (Thành công 100%)
+                        </Text>
+                      </View>
+                      <Text style={[styles.guideStep, { color: colors.sub }]}>
+                        1. Mở Zalo Web (chat.zalo.me) trên máy tính đã đăng nhập.
+                      </Text>
+                      <Text style={[styles.guideStep, { color: colors.sub }]}>
+                        2. Nhấn phím F12 (hoặc chuột phải chọn Inspect) ➔ chọn tab Console.
+                      </Text>
+                      <Text style={[styles.guideStep, { color: colors.sub }]}>
+                        3. Gõ lệnh: copy(document.cookie) rồi nhấn Enter.
+                      </Text>
+                      <Text style={[styles.guideStep, { color: colors.sub }]}>
+                        4. Gửi chuỗi đó sang điện thoại ➔ Bấm nút "Dán từ bộ nhớ tạm" bên dưới.
+                      </Text>
+
+                      <Pressable
+                        onPress={handleCopyCommand}
+                        style={[styles.copyCmdBtn, { backgroundColor: 'rgba(0, 104, 255, 0.15)', borderColor: '#0068FF' }]}
+                      >
+                        <Ionicons name="copy-outline" size={14} color="#0068FF" />
+                        <Text style={[styles.copyCmdText, { color: '#0068FF' }]}>
+                          Sao chép câu lệnh F12: copy(document.cookie)
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+
                   <Text style={[styles.label, { color: colors.text }]}>Tên gợi nhớ (Không bắt buộc):</Text>
                   <TextInput
                     value={nicknameInput}
                     onChangeText={setNicknameInput}
-                    placeholder="Ví dụ: Shop online, Nick cá nhân..."
+                    placeholder="Ví dụ: Zalo cá nhân, Zalo bán hàng..."
                     placeholderTextColor={colors.sub}
                     style={[
                       styles.textInput,
@@ -332,16 +413,26 @@ export default function FbAddAccountModal({
                     autoCapitalize="words"
                   />
 
-                  <Text style={[styles.label, { color: colors.text }]}>
-                    Chuỗi Cookie {activePlatformConfig?.name}:
-                  </Text>
+                  <View style={styles.labelRow}>
+                    <Text style={[styles.label, { color: colors.text, marginTop: 0 }]}>
+                      Chuỗi Cookie {activePlatformConfig?.name}:
+                    </Text>
+                    <Pressable
+                      onPress={handlePasteFromClipboard}
+                      style={[styles.pasteBtn, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}
+                      hitSlop={6}
+                    >
+                      <Ionicons name="clipboard-outline" size={13} color={colors.primary} />
+                      <Text style={[styles.pasteBtnText, { color: colors.primary }]}>Dán từ bộ nhớ tạm</Text>
+                    </Pressable>
+                  </View>
                   <TextInput
                     value={cookieInput}
                     onChangeText={setCookieInput}
                     placeholder="Dán chuỗi cookie vào đây..."
                     placeholderTextColor={colors.sub}
                     multiline
-                    numberOfLines={5}
+                    numberOfLines={4}
                     style={[
                       styles.cookieTextInput,
                       { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text },
@@ -519,5 +610,73 @@ const styles = StyleSheet.create({
     color: '#121214',
     fontSize: 15,
     fontWeight: '800',
+  },
+  reloadQrBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  reloadQrText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  guideBox: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+    gap: 4,
+  },
+  guideHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  guideTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  guideStep: {
+    fontSize: 11.5,
+    lineHeight: 16,
+  },
+  copyCmdBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 6,
+    gap: 6,
+  },
+  copyCmdText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  pasteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  pasteBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

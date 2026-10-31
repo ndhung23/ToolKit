@@ -1,16 +1,69 @@
 import { parseFacebookCookies, PLATFORMS } from './fbAccountStorage';
 
 export const USER_AGENTS = {
-  // User-Agent Desktop Chrome chuẩn để bypass 100% màn hình chặn Mobile của Zalo Web
+  // User-Agent Desktop Safari macOS chuẩn để tương thích 100% với WebKit engine của iOS
+  // Tránh triệt để việc bị Zalo WAF phát hiện mismatch giữa Chrome và iOS WebKit
   ZALO_DESKTOP:
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-  // User-Agent Desktop giúp bypass màn hình "Chuyển sang Messenger" của Facebook
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
+  // User-Agent Desktop giúp mở trực tiếp https://www.messenger.com/ không bị ép tải app
   MESSENGER_DESKTOP:
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-  // User-Agent Mobile cho lướt Facebook mượt mà
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
+  // User-Agent Mobile cho lướt Facebook
   FACEBOOK_MOBILE:
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 };
+
+/**
+ * Script spoofing toàn diện môi trường Desktop Safari trước khi tải trang (injectedJavaScriptBeforeContentLoaded)
+ * Giúp Zalo Web và Messenger nhận diện WebView hoàn toàn như trình duyệt Desktop thật:
+ * - navigator.platform = 'MacIntel'
+ * - navigator.vendor = 'Apple Computer, Inc.' (trùng khớp engine WebKit native của iOS)
+ * - navigator.maxTouchPoints = 0
+ * - screen.width / height = 1440 / 900
+ * @param {string} _platform
+ * @returns {string}
+ */
+export function generateDesktopSpoofScript(_platform = PLATFORMS.ZALO) {
+  return `
+    (function() {
+      try {
+        Object.defineProperty(navigator, 'platform', {
+          get: function() { return 'MacIntel'; },
+          configurable: true
+        });
+        Object.defineProperty(navigator, 'vendor', {
+          get: function() { return 'Apple Computer, Inc.'; },
+          configurable: true
+        });
+        Object.defineProperty(navigator, 'maxTouchPoints', {
+          get: function() { return 0; },
+          configurable: true
+        });
+        Object.defineProperty(screen, 'width', {
+          get: function() { return 1440; },
+          configurable: true
+        });
+        Object.defineProperty(screen, 'height', {
+          get: function() { return 900; },
+          configurable: true
+        });
+        Object.defineProperty(screen, 'availWidth', {
+          get: function() { return 1440; },
+          configurable: true
+        });
+        Object.defineProperty(screen, 'availHeight', {
+          get: function() { return 900; },
+          configurable: true
+        });
+        Object.defineProperty(navigator, 'webdriver', {
+          get: function() { return false; },
+          configurable: true
+        });
+      } catch(e) {}
+    })();
+    true;
+  `;
+}
 
 /**
  * Script inject cookie vào WebView trước khi load trang
@@ -22,9 +75,9 @@ export function generateCookieInjectionScript(cookieStr, platform = PLATFORMS.ZA
   if (!cookieStr) return '';
 
   const parsed = parseFacebookCookies(cookieStr);
-  let domainList = ['.zalo.me', 'chat.zalo.me', 'id.zalo.me'];
+  let domainList = ['.zalo.me', 'chat.zalo.me', 'id.zalo.me', 'zalo.me'];
   if (platform === PLATFORMS.FACEBOOK || platform === PLATFORMS.MESSENGER) {
-    domainList = ['.facebook.com', 'm.facebook.com', '.messenger.com'];
+    domainList = ['.facebook.com', 'm.facebook.com', '.messenger.com', 'messenger.com'];
   }
 
   const cookieAssignments = Object.entries(parsed)
@@ -34,18 +87,25 @@ export function generateCookieInjectionScript(cookieStr, platform = PLATFORMS.ZA
         domainList
           .map(
             (d) =>
-              `try { document.cookie = "${key}=${sanitizedVal}; path=/; domain=${d}; max-age=31536000; SameSite=Lax; Secure"; } catch(e) {}`
+              `try { document.cookie = "${key}=${sanitizedVal}; path=/; domain=${d}; max-age=31536000; Secure"; } catch(e) {}`
           )
           .join('\n') +
-        `\ntry { document.cookie = "${key}=${sanitizedVal}; path=/; max-age=31536000; SameSite=Lax; Secure"; } catch(e) {}`
+        `\ntry { document.cookie = "${key}=${sanitizedVal}; path=/; max-age=31536000; Secure"; } catch(e) {}`
       );
     })
     .join('\n');
+
+  // Thêm đồng bộ key zpw_sek vào localStorage nếu có
+  const zpwSekVal = parsed.zpw_sek ? String(parsed.zpw_sek).replace(/"/g, '\\"') : '';
+  const extraLocalStorage = zpwSekVal
+    ? `try { localStorage.setItem('zpw_sek', "${zpwSekVal}"); } catch(e) {}`
+    : '';
 
   return `
     (function() {
       try {
         ${cookieAssignments}
+        ${extraLocalStorage}
       } catch(err) {}
     })();
     true;
@@ -233,6 +293,12 @@ export function generateAutoDetectSessionScript(platform = PLATFORMS.ZALO, exist
       function checkSession() {
         if (detected) return;
         try {
+          // Tự động kích hoạt làm mới mã QR nếu phát hiện Zalo báo hết hạn
+          const refreshQrBtn = document.querySelector('.btn-refresh-qr, .qr-expired, a[data-translate-inner="STR_REFRESH_QR"]');
+          if (refreshQrBtn && typeof refreshQrBtn.click === 'function') {
+            refreshQrBtn.click();
+          }
+
           const cookieStr = document.cookie || '';
           const currentUrl = window.location.href || '';
 

@@ -12,6 +12,7 @@ import { useTheme } from '../../theme';
 import { PLATFORMS } from './fbAccountStorage';
 import {
   USER_AGENTS,
+  generateDesktopSpoofScript,
   generateCookieInjectionScript,
   generateMessengerCleanCssScript,
 } from './fbCookieManager';
@@ -76,10 +77,21 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
     ) {
       return false; // Chặn không mở app ngoài
     }
+
+    // Nếu trên Facebook mobile mà bấm vào tin nhắn -> điều hướng sang mbasic để đọc và nhắn tin mượt mà không bị ép tải app
+    if (platform === PLATFORMS.FACEBOOK && url.includes('facebook.com/messages')) {
+      if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(`window.location.href = 'https://mbasic.facebook.com/messages/'; true;`);
+        return false;
+      }
+    }
+
     return true;
   };
 
+  const desktopSpoofScript = generateDesktopSpoofScript(platform);
   const cookieInjectionScript = generateCookieInjectionScript(account.cookies, platform);
+  const beforeLoadScript = `${desktopSpoofScript}\n${cookieInjectionScript}`;
   const cleanCssScript = generateMessengerCleanCssScript(platform);
 
   return (
@@ -88,7 +100,7 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
         key={`${account.key || account.id}_${platform}`}
         ref={webViewRef}
         source={{ uri: targetUrl }}
-        injectedJavaScriptBeforeContentLoaded={cookieInjectionScript}
+        injectedJavaScriptBeforeContentLoaded={beforeLoadScript}
         injectedJavaScript={cleanCssScript}
         onShouldStartLoadWithRequest={handleShouldStartLoad}
         onLoadStart={() => setLoading(true)}
