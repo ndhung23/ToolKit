@@ -49,6 +49,24 @@ const PLATFORM_OPTIONS = [
     color: '#1877F2',
     loginUrl: 'https://m.facebook.com/login/?next=https%3A%2F%2Fm.facebook.com%2F',
   },
+  {
+    id: PLATFORMS.CUSTOM,
+    name: 'Khác',
+    desc: 'Thêm ứng dụng tùy ý (Telegram, TikTok, Instagram, Discord, Shopee...)',
+    icon: 'globe-outline',
+    color: '#10B981',
+    badge: 'Tùy biến',
+    loginUrl: '',
+  },
+];
+
+const CUSTOM_PRESETS = [
+  { name: 'Telegram', url: 'https://web.telegram.org' },
+  { name: 'TikTok', url: 'https://www.tiktok.com' },
+  { name: 'Instagram', url: 'https://www.instagram.com' },
+  { name: 'Discord', url: 'https://discord.com/app' },
+  { name: 'Twitter / X', url: 'https://x.com' },
+  { name: 'Shopee', url: 'https://shopee.vn' },
 ];
 
 export default function FbAddAccountModal({
@@ -61,8 +79,13 @@ export default function FbAddAccountModal({
   const insets = useSafeAreaInsets();
   const webViewRef = useRef(null);
 
-  // Bước 1: Chọn nền tảng (null = đang chọn nền tảng; 'messenger' | 'facebook' | 'zalo')
+  // Bước 1: Chọn nền tảng (null = đang chọn; 'zalo' | 'messenger' | 'facebook' | 'custom')
   const [selectedPlatform, setSelectedPlatform] = useState(null);
+
+  // State cho nền tảng "Khác"
+  const [customAppName, setCustomAppName] = useState('');
+  const [customAppUrl, setCustomAppUrl] = useState('');
+  const [customReady, setCustomReady] = useState(false);
 
   // Tab phương thức: 'direct' (Web) | 'cookie' (Dán cookie)
   const [tab, setTab] = useState('direct');
@@ -72,6 +95,9 @@ export default function FbAddAccountModal({
 
   const resetState = () => {
     setSelectedPlatform(null);
+    setCustomAppName('');
+    setCustomAppUrl('');
+    setCustomReady(false);
     setTab('direct');
     setCookieInput('');
     setNicknameInput('');
@@ -85,6 +111,32 @@ export default function FbAddAccountModal({
 
   const handleSelectPlatform = (platformId) => {
     setSelectedPlatform(platformId);
+    if (platformId === PLATFORMS.CUSTOM) {
+      setCustomReady(false);
+    } else {
+      setLoadingWeb(true);
+    }
+  };
+
+  const handleProceedCustom = () => {
+    const name = customAppName.trim();
+    let url = customAppUrl.trim();
+
+    if (!name) {
+      Alert.alert('Thiếu tên ứng dụng', 'Vui lòng nhập tên ứng dụng (ví dụ: Telegram, TikTok, Discord...).');
+      return;
+    }
+    if (!url) {
+      Alert.alert('Thiếu đường dẫn URL', 'Vui lòng nhập địa chỉ URL hoặc trang đăng nhập của ứng dụng.');
+      return;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+    }
+
+    setCustomAppUrl(url);
+    setCustomReady(true);
     setLoadingWeb(true);
   };
 
@@ -127,10 +179,17 @@ export default function FbAddAccountModal({
 
       if (data.type === 'SESSION_DETECTED' && data.uid && data.cookies) {
         const platformObj = PLATFORM_OPTIONS.find((p) => p.id === data.platform) || PLATFORM_OPTIONS[0];
+        const isCustom = data.platform === PLATFORMS.CUSTOM || selectedPlatform === PLATFORMS.CUSTOM;
+        const displayName = isCustom
+          ? (nicknameInput.trim() || customAppName.trim() || data.name)
+          : (data.name || `${platformObj.name} ${data.uid.slice(-4)}`);
+
         const newAccount = {
           id: data.uid,
           platform: data.platform || selectedPlatform || PLATFORMS.MESSENGER,
-          name: data.name || `${platformObj.name} ${data.uid.slice(-4)}`,
+          customName: isCustom ? customAppName.trim() : '',
+          customUrl: isCustom ? customAppUrl.trim() : '',
+          name: displayName,
           nickname: nicknameInput.trim() || '',
           avatarUrl: data.avatarUrl || '',
           cookies: data.cookies,
@@ -138,7 +197,7 @@ export default function FbAddAccountModal({
 
         Alert.alert(
           'Đăng nhập thành công',
-          `Đã thêm tài khoản ${platformObj.name}: "${newAccount.name}".`,
+          `Đã thêm tài khoản: "${newAccount.name}".`,
           [
             {
               text: 'OK',
@@ -169,30 +228,40 @@ export default function FbAddAccountModal({
         'Cookie không hợp lệ',
         plat === PLATFORMS.ZALO
           ? 'Cookie Zalo cần chứa thông tin phiên đăng nhập hợp lệ.'
+          : plat === PLATFORMS.CUSTOM
+          ? 'Chuỗi Cookie cần có độ dài hợp lệ.'
           : 'Chuỗi Cookie Facebook/Messenger phải chứa "c_user=" và "xs=".'
       );
       return;
     }
 
     let uid = `user_${Date.now().toString().slice(-6)}`;
+    const isCustom = plat === PLATFORMS.CUSTOM;
     const parsed = parseFacebookCookies(raw);
-    if (plat !== PLATFORMS.ZALO) {
-      if (parsed.c_user) uid = parsed.c_user;
-    } else {
+    if (plat === PLATFORMS.ZALO) {
       if (parsed.zalo_id) {
         uid = parsed.zalo_id;
       } else if (parsed.zpw_sek) {
         uid = `zl_${parsed.zpw_sek.slice(0, 8)}`;
       }
+    } else if (isCustom) {
+      uid = `custom_${Date.now().toString().slice(-6)}`;
+    } else {
+      if (parsed.c_user) uid = parsed.c_user;
     }
 
     const platformObj = PLATFORM_OPTIONS.find((p) => p.id === plat) || PLATFORM_OPTIONS[0];
+    const defaultCustomName = customAppName.trim() || 'Custom App';
     const newAccount = {
       id: uid,
       platform: plat,
-      name: nicknameInput.trim() || `${platformObj.name} User ${uid.slice(-4)}`,
+      customName: isCustom ? customAppName.trim() : '',
+      customUrl: isCustom ? customAppUrl.trim() : '',
+      name: isCustom
+        ? (nicknameInput.trim() || defaultCustomName)
+        : (nicknameInput.trim() || `${platformObj.name} User ${uid.slice(-4)}`),
       nickname: nicknameInput.trim() || '',
-      avatarUrl: plat === PLATFORMS.ZALO ? '' : `https://graph.facebook.com/${uid}/picture?type=large`,
+      avatarUrl: plat === PLATFORMS.ZALO || isCustom ? '' : `https://graph.facebook.com/${uid}/picture?type=large`,
       cookies: raw,
     };
 
@@ -225,7 +294,17 @@ export default function FbAddAccountModal({
         {/* Header Modal */}
         <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
           {selectedPlatform ? (
-            <Pressable onPress={() => setSelectedPlatform(null)} style={styles.backBtn} hitSlop={10}>
+            <Pressable
+              onPress={() => {
+                if (selectedPlatform === PLATFORMS.CUSTOM && customReady) {
+                  setCustomReady(false);
+                } else {
+                  setSelectedPlatform(null);
+                }
+              }}
+              style={styles.backBtn}
+              hitSlop={10}
+            >
               <Ionicons name="arrow-back" size={22} color={colors.text} />
             </Pressable>
           ) : (
@@ -233,7 +312,13 @@ export default function FbAddAccountModal({
           )}
 
           <Text style={[styles.headerTitle, { color: colors.text }]}>
-            {selectedPlatform ? `Thêm tài khoản ${activePlatformConfig?.name}` : 'Chọn nền tảng muốn thêm'}
+            {!selectedPlatform
+              ? 'Chọn nền tảng muốn thêm'
+              : selectedPlatform === PLATFORMS.CUSTOM
+              ? customReady
+                ? `Đăng nhập ${customAppName || 'Ứng dụng'}`
+                : 'Thêm ứng dụng tùy biến'
+              : `Thêm tài khoản ${activePlatformConfig?.name}`}
           </Text>
 
           <Pressable onPress={handleClose} style={styles.closeBtn} hitSlop={10}>
@@ -241,7 +326,7 @@ export default function FbAddAccountModal({
           </Pressable>
         </View>
 
-        {/* BƯỚC 1: Chọn nền tảng (Facebook, Messenger, Zalo) */}
+        {/* BƯỚC 1: Chọn nền tảng (Zalo, Messenger, Facebook, Khác) */}
         {!selectedPlatform ? (
           <View style={styles.platformSelectorContainer}>
             <Text style={[styles.sectionHeading, { color: colors.sub }]}>
@@ -270,8 +355,95 @@ export default function FbAddAccountModal({
               </Pressable>
             ))}
           </View>
+        ) : selectedPlatform === PLATFORMS.CUSTOM && !customReady ? (
+          /* BƯỚC 2A: Nhập Tên ứng dụng + URL (Dành cho nền tảng "Khác") */
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.customFormContainer}>
+              <Text style={[styles.sectionHeading, { color: colors.sub }]}>
+                Điền tên và địa chỉ web/ứng dụng bạn muốn sử dụng:
+              </Text>
+
+              <Text style={[styles.label, { color: colors.text }]}>Tên ứng dụng:</Text>
+              <TextInput
+                value={customAppName}
+                onChangeText={setCustomAppName}
+                placeholder="Ví dụ: Telegram, TikTok, Discord, Instagram..."
+                placeholderTextColor={colors.sub}
+                style={[
+                  styles.textInput,
+                  { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text },
+                ]}
+                autoCapitalize="words"
+              />
+
+              <Text style={[styles.label, { color: colors.text, marginTop: 14 }]}>
+                Địa chỉ URL trang web hoặc đăng nhập:
+              </Text>
+              <TextInput
+                value={customAppUrl}
+                onChangeText={setCustomAppUrl}
+                placeholder="Ví dụ: web.telegram.org hoặc https://..."
+                placeholderTextColor={colors.sub}
+                style={[
+                  styles.textInput,
+                  { backgroundColor: colors.card, borderColor: colors.cardBorder, color: colors.text },
+                ]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+
+              {/* Các nút gợi ý nhanh */}
+              <Text style={[styles.suggestionLabel, { color: colors.sub }]}>Gợi ý nhanh:</Text>
+              <View style={styles.presetChipsWrap}>
+                {CUSTOM_PRESETS.map((preset) => (
+                  <Pressable
+                    key={preset.name}
+                    onPress={() => {
+                      setCustomAppName(preset.name);
+                      setCustomAppUrl(preset.url);
+                    }}
+                    style={[
+                      styles.presetChip,
+                      {
+                        backgroundColor:
+                          customAppName === preset.name ? 'rgba(16, 185, 129, 0.2)' : colors.card,
+                        borderColor:
+                          customAppName === preset.name ? '#10B981' : colors.cardBorder,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="globe-outline"
+                      size={13}
+                      color={customAppName === preset.name ? '#10B981' : colors.sub}
+                    />
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        { color: customAppName === preset.name ? '#10B981' : colors.text },
+                      ]}
+                    >
+                      {preset.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Pressable
+                onPress={handleProceedCustom}
+                style={[styles.saveBtn, { backgroundColor: '#10B981', marginTop: 24 }]}
+              >
+                <Ionicons name="arrow-forward-circle" size={20} color="#FFFFFF" />
+                <Text style={[styles.saveBtnText, { color: '#FFFFFF' }]}>Tiếp tục đăng nhập</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
         ) : (
-          /* BƯỚC 2: Đăng nhập trực tiếp (Isolated Web) hoặc dán Cookie */
+          /* BƯỚC 2B: Đăng nhập trực tiếp (Isolated Web) hoặc dán Cookie */
           <View style={{ flex: 1 }}>
             {/* Tab chuyển đổi */}
             <View style={[styles.tabBar, { backgroundColor: colors.card }]}>
@@ -328,19 +500,60 @@ export default function FbAddAccountModal({
                   </View>
                 )}
 
+                {selectedPlatform === PLATFORMS.CUSTOM && (
+                  <View style={[styles.customWebBanner, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.customWebUrlText, { color: colors.text }]} numberOfLines={1}>
+                        🌐 {customAppName}: {customAppUrl}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <Pressable
+                        onPress={() => {
+                          setLoadingWeb(true);
+                          webViewRef.current?.reload();
+                        }}
+                        style={[styles.reloadQrBtn, { backgroundColor: colors.border }]}
+                        hitSlop={6}
+                      >
+                        <Ionicons name="reload" size={13} color={colors.text} />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          if (webViewRef.current) {
+                            webViewRef.current.injectJavaScript(
+                              `window.__tkSaveCurrentSession && window.__tkSaveCurrentSession("${customAppName.replace(/"/g, '\\"')}"); true;`
+                            );
+                          }
+                        }}
+                        style={[styles.saveSessionBtn, { backgroundColor: '#10B981' }]}
+                        hitSlop={6}
+                      >
+                        <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
+                        <Text style={styles.saveSessionText}>Lưu phiên</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+
                 {loadingWeb && (
                   <View style={styles.loadingOverlay}>
                     <ActivityIndicator size="large" color={colors.primary} />
                     <Text style={[styles.loadingText, { color: colors.sub }]}>
-                      Đang mở trang đăng nhập {activePlatformConfig?.name}...
+                      Đang mở trang {selectedPlatform === PLATFORMS.CUSTOM ? customAppName : activePlatformConfig?.name}...
                     </Text>
                   </View>
                 )}
 
                 <WebView
-                  key={`login_${selectedPlatform}`}
+                  key={`login_${selectedPlatform}_${customAppUrl}`}
                   ref={webViewRef}
-                  source={{ uri: activePlatformConfig?.loginUrl || 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F' }}
+                  source={{
+                    uri:
+                      selectedPlatform === PLATFORMS.CUSTOM
+                        ? customAppUrl
+                        : activePlatformConfig?.loginUrl || 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F',
+                  }}
                   incognito={false}
                   cacheEnabled={true}
                   sharedCookiesEnabled={true}
@@ -353,7 +566,7 @@ export default function FbAddAccountModal({
                   javaScriptEnabled
                   domStorageEnabled
                   userAgent={
-                    selectedPlatform === PLATFORMS.ZALO
+                    selectedPlatform === PLATFORMS.ZALO || selectedPlatform === PLATFORMS.CUSTOM
                       ? USER_AGENTS.ZALO_DESKTOP
                       : selectedPlatform === PLATFORMS.MESSENGER
                       ? USER_AGENTS.MESSENGER_DESKTOP
@@ -678,5 +891,59 @@ const styles = StyleSheet.create({
   pasteBtnText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  customFormContainer: {
+    flex: 1,
+    padding: 16,
+  },
+  suggestionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  presetChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  presetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  presetChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  customWebBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    gap: 8,
+  },
+  customWebUrlText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  saveSessionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  saveSessionText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
   },
 });

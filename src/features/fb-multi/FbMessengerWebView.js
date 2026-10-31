@@ -67,6 +67,9 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
   } else if (platform === PLATFORMS.FACEBOOK) {
     targetUrl = 'https://m.facebook.com/';
     userAgent = USER_AGENTS.FACEBOOK_MOBILE;
+  } else if (platform === PLATFORMS.CUSTOM) {
+    targetUrl = account.customUrl || 'https://google.com';
+    userAgent = USER_AGENTS.ZALO_DESKTOP;
   }
 
   // Chặn hoàn toàn việc ứng dụng tự nhảy ra app ngoài (App Store / Messenger Native)
@@ -95,7 +98,7 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
   };
 
   const desktopSpoofScript = generateDesktopSpoofScript(platform);
-  const cookieInjectionScript = generateCookieInjectionScript(account.cookies, platform);
+  const cookieInjectionScript = generateCookieInjectionScript(account.cookies, platform, account.customUrl);
   const beforeLoadScript = `${desktopSpoofScript}\n${cookieInjectionScript}`;
   const cleanCssScript = generateMessengerCleanCssScript(platform);
 

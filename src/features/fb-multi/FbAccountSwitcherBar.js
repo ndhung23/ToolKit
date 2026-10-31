@@ -33,6 +33,8 @@ export default function FbAccountSwitcherBar({
         return { name: 'logo-facebook', color: '#1877F2' };
       case PLATFORMS.ZALO:
         return { name: 'chatbubbles', color: '#0068FF' };
+      case PLATFORMS.CUSTOM:
+        return { name: 'globe-outline', color: '#10B981' };
       case PLATFORMS.MESSENGER:
       default:
         return { name: 'chatbubble-ellipses', color: '#0084FF' };
@@ -69,8 +71,25 @@ export default function FbAccountSwitcherBar({
             <View
               style={[
                 styles.avatarFallback,
-                { backgroundColor: item.platform === PLATFORMS.ZALO ? '#0068FF' : isAct ? colors.primary : '#2C2C34' },
-                isAct && { borderColor: item.platform === PLATFORMS.ZALO ? '#0068FF' : colors.primary, borderWidth: 2 },
+                {
+                  backgroundColor:
+                    item.platform === PLATFORMS.CUSTOM
+                      ? '#10B981'
+                      : item.platform === PLATFORMS.ZALO
+                      ? '#0068FF'
+                      : isAct
+                      ? colors.primary
+                      : '#2C2C34',
+                },
+                isAct && {
+                  borderColor:
+                    item.platform === PLATFORMS.CUSTOM
+                      ? '#10B981'
+                      : item.platform === PLATFORMS.ZALO
+                      ? '#0068FF'
+                      : colors.primary,
+                  borderWidth: 2,
+                },
               ]}
             >
               <Text style={[styles.avatarInitial, { color: isAct ? '#121214' : '#FFFFFF' }]}>

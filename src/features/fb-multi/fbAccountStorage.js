@@ -9,6 +9,7 @@ export const PLATFORMS = {
   ZALO: 'zalo',
   MESSENGER: 'messenger',
   FACEBOOK: 'facebook',
+  CUSTOM: 'custom',
 };
 
 /**
@@ -40,7 +41,10 @@ export function parseFacebookCookies(cookieStr) {
  * @returns {boolean}
  */
 export function isAccountCookieValid(cookieStr, platform = PLATFORMS.ZALO) {
-  if (!cookieStr || typeof cookieStr !== 'string' || cookieStr.trim().length < 5) return false;
+  if (!cookieStr || typeof cookieStr !== 'string' || cookieStr.trim().length < 3) return false;
+  if (platform === PLATFORMS.CUSTOM) {
+    return cookieStr.trim().length > 3;
+  }
   if (platform === PLATFORMS.ZALO) {
     // Zalo cookie thường chứa zpw_sek hoặc zsession hoặc _ga
     return cookieStr.includes('zpw_sek') || cookieStr.includes('zsession') || cookieStr.length > 20;
@@ -120,19 +124,29 @@ export async function saveOrUpdateAccount(accountData) {
 
   const existingAccounts = await getStoredAccounts();
   const platform = accountData.platform || PLATFORMS.ZALO;
-  const uniqueKey = `${platform}_${String(accountData.id).trim()}`;
+  let customDomain = '';
+  if (accountData.customUrl) {
+    const domainMatch = String(accountData.customUrl).match(/^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:/\n?]+)/i);
+    customDomain = domainMatch ? domainMatch[1] : '';
+  }
+
+  const uniqueKey = platform === PLATFORMS.CUSTOM
+    ? `custom_${encodeURIComponent(customDomain || accountData.customName || 'app')}_${String(accountData.id).trim()}`
+    : `${platform}_${String(accountData.id).trim()}`;
   const now = Date.now();
 
   let defaultAvatar = accountData.avatarUrl;
   if (!defaultAvatar) {
     if (platform === PLATFORMS.ZALO) {
       defaultAvatar = '';
+    } else if (platform === PLATFORMS.CUSTOM) {
+      defaultAvatar = customDomain ? `https://www.google.com/s2/favicons?domain=${customDomain}&sz=128` : '';
     } else {
       defaultAvatar = `https://graph.facebook.com/${accountData.id}/picture?type=large`;
     }
   }
 
-  const defaultName = accountData.name || `${platform.toUpperCase()} ${String(accountData.id).slice(-4)}`;
+  const defaultName = accountData.name || accountData.customName || `${platform.toUpperCase()} ${String(accountData.id).slice(-4)}`;
   const existingIndex = existingAccounts.findIndex((acc) => acc.key === uniqueKey || (acc.id === String(accountData.id) && acc.platform === platform));
 
   let updatedList;
@@ -144,6 +158,8 @@ export async function saveOrUpdateAccount(accountData) {
       key: uniqueKey,
       id: String(accountData.id).trim(),
       platform,
+      customName: accountData.customName || old.customName || '',
+      customUrl: accountData.customUrl || old.customUrl || '',
       name: accountData.name || old.name,
       nickname: accountData.nickname !== undefined ? accountData.nickname : old.nickname,
       avatarUrl: defaultAvatar || old.avatarUrl,
@@ -157,6 +173,8 @@ export async function saveOrUpdateAccount(accountData) {
       key: uniqueKey,
       id: String(accountData.id).trim(),
       platform,
+      customName: accountData.customName || '',
+      customUrl: accountData.customUrl || '',
       name: defaultName,
       nickname: accountData.nickname || '',
       avatarUrl: defaultAvatar,

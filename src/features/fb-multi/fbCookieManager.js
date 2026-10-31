@@ -71,13 +71,20 @@ export function generateDesktopSpoofScript(_platform = PLATFORMS.ZALO) {
  * @param {string} platform Nền tảng (zalo, messenger, facebook)
  * @returns {string}
  */
-export function generateCookieInjectionScript(cookieStr, platform = PLATFORMS.ZALO) {
+export function generateCookieInjectionScript(cookieStr, platform = PLATFORMS.ZALO, customUrl = '') {
   if (!cookieStr) return '';
 
   const parsed = parseFacebookCookies(cookieStr);
   let domainList = ['.zalo.me', 'chat.zalo.me', 'id.zalo.me', 'zalo.me'];
   if (platform === PLATFORMS.FACEBOOK || platform === PLATFORMS.MESSENGER) {
     domainList = ['.facebook.com', 'm.facebook.com', '.messenger.com', 'messenger.com'];
+  } else if (platform === PLATFORMS.CUSTOM && customUrl) {
+    try {
+      const match = customUrl.match(/^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:/\n?]+)/i);
+      if (match && match[1]) {
+        domainList = [match[1], `.${match[1]}`];
+      }
+    } catch (_e) {}
   }
 
   const cookieAssignments = Object.entries(parsed)
@@ -289,6 +296,24 @@ export function generateAutoDetectSessionScript(platform = PLATFORMS.ZALO, exist
     (function() {
       let detected = false;
       const existing = ${existingUidsJson};
+
+      window.__tkSaveCurrentSession = function(customName) {
+        try {
+          const c = document.cookie || '';
+          const title = document.title || customName || 'Tài khoản Web';
+          const uid = 'web_' + Date.now().toString().slice(-6);
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'SESSION_DETECTED',
+              platform: '${PLATFORMS.CUSTOM}',
+              uid: uid,
+              name: customName || title,
+              cookies: c,
+              avatarUrl: ''
+            }));
+          }
+        } catch(e) {}
+      };
 
       function checkSession() {
         if (detected) return;
