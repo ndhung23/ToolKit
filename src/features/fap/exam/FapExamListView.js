@@ -74,9 +74,9 @@ export default function FapExamListView({
                   </View>
                 </View>
 
-                <Text style={[styles.configSub, { color: colors.sub }]}>
+                {/* <Text style={[styles.configSub, { color: colors.sub }]}>
                   Chọn nhanh mốc thời gian hoặc tự nhập số phút bạn muốn hệ thống báo chuông trước khi vào phòng thi:
-                </Text>
+                </Text> */}
 
                 {/* Hàng nút chọn nhanh (Presets) */}
                 <View style={styles.presetRow}>

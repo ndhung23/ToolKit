@@ -50,17 +50,17 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
     );
   }
 
-  const platform = account.platform || PLATFORMS.MESSENGER;
+  const platform = account.platform || PLATFORMS.ZALO;
 
-  let targetUrl = 'https://www.messenger.com/';
-  let userAgent = USER_AGENTS.MESSENGER_DESKTOP;
+  let targetUrl = 'https://chat.zalo.me/';
+  let userAgent = USER_AGENTS.ZALO_DESKTOP;
 
-  if (platform === PLATFORMS.FACEBOOK) {
+  if (platform === PLATFORMS.MESSENGER) {
+    targetUrl = 'https://www.messenger.com/';
+    userAgent = USER_AGENTS.MESSENGER_DESKTOP;
+  } else if (platform === PLATFORMS.FACEBOOK) {
     targetUrl = 'https://m.facebook.com/';
     userAgent = USER_AGENTS.FACEBOOK_MOBILE;
-  } else if (platform === PLATFORMS.ZALO) {
-    targetUrl = 'https://chat.zalo.me/';
-    userAgent = USER_AGENTS.ZALO_WEB;
   }
 
   // Chặn hoàn toàn việc ứng dụng tự nhảy ra app ngoài (App Store / Messenger Native)

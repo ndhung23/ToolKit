@@ -708,7 +708,7 @@ export default function FapExamScreen({ navigation }) {
             </Pressable>
           </View>
 
-          <View style={styles.studentMetaBadgesRow}>
+          {/* <View style={styles.studentMetaBadgesRow}>
             <View style={styles.studentMetaChip}>
               <Text style={styles.studentMetaChipLabel}>Trạng thái</Text>
               <Text style={styles.studentMetaChipVal}>{fapUser.status || 'HD'}</Text>
@@ -721,7 +721,7 @@ export default function FapExamScreen({ navigation }) {
               <Text style={styles.studentMetaChipLabel}>Khóa</Text>
               <Text style={styles.studentMetaChipVal}>{fapUser.cohort || '19'}</Text>
             </View>
-          </View>
+          </View> */}
 
           <View style={styles.studentSyncActions}>
             <Pressable
@@ -734,7 +734,7 @@ export default function FapExamScreen({ navigation }) {
             >
               <Ionicons name="flash" size={15} color="#FFFFFF" />
               <Text style={[styles.syncFapBtnText, { color: '#FFFFFF', fontWeight: '800' }]}>
-                Cào Full 17 tuần cả kỳ
+                Lấy lịch
               </Text>
             </Pressable>
 

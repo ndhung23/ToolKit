@@ -24,6 +24,15 @@ import {
 
 const PLATFORM_OPTIONS = [
   {
+    id: PLATFORMS.ZALO,
+    name: 'Zalo Web (Khuyên dùng)',
+    desc: 'Quét mã QR bằng app Zalo để đăng nhập tức thì không sợ khóa nick',
+    icon: 'chatbubbles',
+    color: '#0068FF',
+    badge: 'Ưu tiên',
+    loginUrl: 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F',
+  },
+  {
     id: PLATFORMS.MESSENGER,
     name: 'Messenger',
     desc: 'Chuyên nhắn tin, quản lý hộp thư & chat khách hàng',
@@ -38,14 +47,6 @@ const PLATFORM_OPTIONS = [
     icon: 'logo-facebook',
     color: '#1877F2',
     loginUrl: 'https://m.facebook.com/login/?next=https%3A%2F%2Fm.facebook.com%2F',
-  },
-  {
-    id: PLATFORMS.ZALO,
-    name: 'Zalo Web',
-    desc: 'Đăng nhập qua QR Code hoặc SĐT trên chat.zalo.me',
-    icon: 'chatbubbles',
-    color: '#0068FF',
-    loginUrl: 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F',
   },
 ];
 
@@ -273,6 +274,15 @@ export default function FbAddAccountModal({
 
             {tab === 'direct' ? (
               <View style={styles.webContainer}>
+                {selectedPlatform === PLATFORMS.ZALO && (
+                  <View style={[styles.zaloTipBanner, { backgroundColor: 'rgba(0, 104, 255, 0.12)', borderColor: 'rgba(0, 104, 255, 0.3)' }]}>
+                    <Ionicons name="qr-code-outline" size={20} color="#0068FF" />
+                    <Text style={[styles.zaloTipText, { color: colors.text }]}>
+                      Mở app Zalo trên máy bạn → Chọn biểu tượng [Quét mã QR] ở góc trên → Quét mã bên dưới để đăng nhập tức thì.
+                    </Text>
+                  </View>
+                )}
+
                 {loadingWeb && (
                   <View style={styles.loadingOverlay}>
                     <ActivityIndicator size="large" color={colors.primary} />
@@ -298,7 +308,7 @@ export default function FbAddAccountModal({
                   domStorageEnabled
                   userAgent={
                     selectedPlatform === PLATFORMS.ZALO
-                      ? USER_AGENTS.ZALO_WEB
+                      ? USER_AGENTS.ZALO_DESKTOP
                       : selectedPlatform === PLATFORMS.MESSENGER
                       ? USER_AGENTS.MESSENGER_DESKTOP
                       : USER_AGENTS.FACEBOOK_MOBILE
@@ -440,6 +450,22 @@ const styles = StyleSheet.create({
   webContainer: {
     flex: 1,
     position: 'relative',
+  },
+  zaloTipBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    marginHorizontal: 12,
+    marginVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  zaloTipText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

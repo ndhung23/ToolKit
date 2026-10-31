@@ -6,9 +6,9 @@ const STORAGE_KEYS = {
 };
 
 export const PLATFORMS = {
-  FACEBOOK: 'facebook',
-  MESSENGER: 'messenger',
   ZALO: 'zalo',
+  MESSENGER: 'messenger',
+  FACEBOOK: 'facebook',
 };
 
 /**
@@ -39,7 +39,7 @@ export function parseFacebookCookies(cookieStr) {
  * @param {'facebook' | 'messenger' | 'zalo'} platform
  * @returns {boolean}
  */
-export function isAccountCookieValid(cookieStr, platform = PLATFORMS.MESSENGER) {
+export function isAccountCookieValid(cookieStr, platform = PLATFORMS.ZALO) {
   if (!cookieStr || typeof cookieStr !== 'string' || cookieStr.trim().length < 5) return false;
   if (platform === PLATFORMS.ZALO) {
     // Zalo cookie thường chứa zpw_sek hoặc zsession hoặc _ga
@@ -119,7 +119,7 @@ export async function saveOrUpdateAccount(accountData) {
   }
 
   const existingAccounts = await getStoredAccounts();
-  const platform = accountData.platform || PLATFORMS.MESSENGER;
+  const platform = accountData.platform || PLATFORMS.ZALO;
   const uniqueKey = `${platform}_${String(accountData.id).trim()}`;
   const now = Date.now();
 

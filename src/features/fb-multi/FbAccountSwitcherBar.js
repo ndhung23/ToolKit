@@ -69,8 +69,8 @@ export default function FbAccountSwitcherBar({
             <View
               style={[
                 styles.avatarFallback,
-                { backgroundColor: isAct ? colors.primary : '#2C2C34' },
-                isAct && { borderColor: colors.primary, borderWidth: 2 },
+                { backgroundColor: item.platform === PLATFORMS.ZALO ? '#0068FF' : isAct ? colors.primary : '#2C2C34' },
+                isAct && { borderColor: item.platform === PLATFORMS.ZALO ? '#0068FF' : colors.primary, borderWidth: 2 },
               ]}
             >
               <Text style={[styles.avatarInitial, { color: isAct ? '#121214' : '#FFFFFF' }]}>

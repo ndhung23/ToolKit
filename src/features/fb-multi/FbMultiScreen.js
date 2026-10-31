@@ -211,43 +211,43 @@ export default function FbMultiScreen({ navigation }) {
 
           <View style={[styles.cardIntro, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={styles.iconCircle}>
-              <Ionicons name="chatbubbles" size={38} color="#0084FF" />
+              <Ionicons name="chatbubbles" size={38} color="#0068FF" />
             </View>
 
-            <Text style={[styles.introTitle, { color: colors.text }]}>Đa Tài Khoản 1 Chạm</Text>
+            <Text style={[styles.introTitle, { color: colors.text }]}>Đa Tài Khoản Zalo 1 Chạm</Text>
             <Text style={[styles.introSub, { color: colors.sub }]}>
-              Hỗ trợ Facebook, Messenger và Zalo Web. Chuyển đổi qua lại giữa các nick tức thì mà không cần đăng xuất.
+              Quét mã QR đăng nhập tiện lợi, chuyển đổi 1 chạm tức thì giữa các nick Zalo cá nhân, Zalo bán hàng mà không cần đăng xuất.
             </Text>
 
             <View style={styles.featureList}>
               <View style={styles.featureRow}>
-                <Ionicons name="flash" size={17} color="#FFD000" />
+                <Ionicons name="qr-code" size={17} color="#0068FF" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Chuyển nick 1 chạm ở đỉnh màn hình siêu nhanh
+                  Đăng nhập cực nhanh bằng quét mã QR qua app Zalo
                 </Text>
               </View>
 
               <View style={styles.featureRow}>
-                <Ionicons name="apps" size={17} color="#0084FF" />
+                <Ionicons name="flash" size={17} color="#FFD000" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Hỗ trợ đầy đủ Facebook, Messenger và Zalo
+                  Chuyển nick Zalo trong 0.1s không cần quét lại mã
                 </Text>
               </View>
 
               <View style={styles.featureRow}>
                 <Ionicons name="shield-checkmark" size={17} color="#22C55E" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Môi trường đăng nhập cô lập, an toàn tuyệt đối
+                  Bypass chặn mobile, giao diện chat tràn viền mượt mà
                 </Text>
               </View>
             </View>
 
             <Pressable
               onPress={() => setAddModalVisible(true)}
-              style={[styles.startBtn, { backgroundColor: colors.primary }]}
+              style={[styles.startBtn, { backgroundColor: '#0068FF' }]}
             >
-              <Ionicons name="add-circle" size={20} color="#121214" />
-              <Text style={styles.startBtnText}>Thêm tài khoản đầu tiên</Text>
+              <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+              <Text style={[styles.startBtnText, { color: '#FFFFFF' }]}>Thêm tài khoản Zalo đầu tiên</Text>
             </Pressable>
           </View>
         </View>

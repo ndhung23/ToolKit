@@ -228,11 +228,11 @@ export default function FapAttendanceView({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Ionicons name="notifications" size={15} color={absentAlertEnabled ? '#10B981' : colors.sub} />
             <Text style={[styles.alertCompactTitle, { color: colors.text }]}>
-              Cảnh báo vắng (+10p sau ca)
+              Test
             </Text>
           </View>
           <Text style={[styles.alertCompactSub, { color: colors.sub }]}>
-            {absentAlertEnabled ? 'Tự động báo chuông nếu vắng' : 'Đang tắt chuông'}
+            {absentAlertEnabled ? '10p sau ca học' : 'Đang tắt chuông'}
           </Text>
         </View>
 
