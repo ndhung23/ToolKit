@@ -228,74 +228,140 @@ export function generateAutoDetectSessionScript(platform = PLATFORMS.ZALO, exist
         } catch(e) {}
       };
 
+      window.__tkForceSaveZaloSession = function() {
+        try {
+          const cookieStr = document.cookie || '';
+          const sekMatch = cookieStr.match(/zpw_sek=([^;]+)/);
+          const hasValidSek = Boolean(sekMatch && sekMatch[1] && sekMatch[1].trim().length >= 8);
+          const hasChatInterface = Boolean(
+            document.querySelector('.nav__tabs, #conversationList, .user-profile-name, div[data-translate-inner="STR_MY_PROFILE"]')
+          );
+
+          if (!hasValidSek && !hasChatInterface) {
+            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'ZALO_MANUAL_SAVE_ERROR',
+                message: 'Chưa phát hiện phiên đăng nhập. Vui lòng hoàn tất quét mã QR hoặc xác nhận qua SĐT trước.'
+              }));
+            }
+            return;
+          }
+
+          let zaloName = '';
+          const nameEl = document.querySelector('.user-profile-name, .nav__tabs__top__avatar, .name-container, div[data-translate-inner="STR_MY_PROFILE"]');
+          if (nameEl && nameEl.innerText) {
+            zaloName = nameEl.innerText.trim();
+          }
+          if (!zaloName) {
+            const titleEl = document.querySelector('title');
+            if (titleEl && titleEl.innerText && !titleEl.innerText.includes('Zalo Web') && !titleEl.innerText.includes('Đăng nhập')) {
+              zaloName = titleEl.innerText.trim();
+            }
+          }
+          if (!zaloName) {
+            zaloName = 'Zalo ' + (sekMatch ? sekMatch[1].slice(0, 6) : Date.now().toString().slice(-4));
+          }
+
+          let avatar = '';
+          const avatarEl = document.querySelector('.nav__tabs__top__avatar img, img[src*="avatar.zalo"], img[src*="zalo.me"]');
+          if (avatarEl && avatarEl.src) {
+            avatar = avatarEl.src;
+          }
+
+          let zaloId = '';
+          const uidMatch = cookieStr.match(/zalo_id=([0-9a-zA-Z_]+)/) || cookieStr.match(/zpw_sek=([0-9a-zA-Z_]+)/);
+          if (uidMatch && uidMatch[1]) {
+            zaloId = uidMatch[1].slice(0, 16);
+          } else {
+            zaloId = 'zl_' + Date.now().toString().slice(-8);
+          }
+
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'SESSION_DETECTED',
+              platform: '${PLATFORMS.ZALO}',
+              uid: zaloId,
+              name: zaloName,
+              cookies: cookieStr,
+              avatarUrl: avatar
+            }));
+          }
+        } catch(e) {}
+      };
+
       function checkSession() {
         if (detected) return;
         try {
           const cookieStr = document.cookie || '';
 
           if ('${platform}' === '${PLATFORMS.ZALO}') {
-            const host = window.location.hostname || '';
-            const isActualChatDomain = host === 'chat.zalo.me';
-            const hasAuthCookies = cookieStr.includes('zpw_sek=') || cookieStr.includes('zsession=');
+            const sekMatch = cookieStr.match(/zpw_sek=([^;]+)/);
+            const hasValidSek = Boolean(sekMatch && sekMatch[1] && sekMatch[1].trim().length >= 8);
+            const hasChatInterface = Boolean(
+              document.querySelector('.nav__tabs, #conversationList, .user-profile-name, div[data-translate-inner="STR_MY_PROFILE"]')
+            );
+            const hasLoginElements = Boolean(
+              document.querySelector('.qrcode-container, .login-container, .wrapper-page, .btn-confirm-login, input[type="password"]')
+            );
 
-            if (host.includes('id.zalo.me') && !hasAuthCookies) {
+            // TUYỆT ĐỐI CHỈ COI LÀ ĐÃ ĐĂNG NHẬP KHI: Đã có cookie auth hoặc đã hiện giao diện chat, VÀ KHÔNG CÒN GIAO DIỆN LOGIN
+            const isActuallyLoggedIn = (hasValidSek || hasChatInterface) && !hasLoginElements;
+            if (!isActuallyLoggedIn) {
+              return; // Đang ở màn hình đăng nhập -> Tiếp tục để người dùng quét QR / nhập SĐT
+            }
+
+            let zaloName = '';
+            const nameEl = document.querySelector('.user-profile-name, .nav__tabs__top__avatar, .name-container, div[data-translate-inner="STR_MY_PROFILE"]');
+            if (nameEl && nameEl.innerText) {
+              zaloName = nameEl.innerText.trim();
+            }
+            if (!zaloName) {
+              const titleEl = document.querySelector('title');
+              if (titleEl && titleEl.innerText && !titleEl.innerText.includes('Zalo Web') && !titleEl.innerText.includes('Đăng nhập')) {
+                zaloName = titleEl.innerText.trim();
+              }
+            }
+            if (!zaloName) {
+              zaloName = 'Zalo ' + (sekMatch ? sekMatch[1].slice(0, 6) : Date.now().toString().slice(-4));
+            }
+
+            let avatar = '';
+            const avatarEl = document.querySelector('.nav__tabs__top__avatar img, img[src*="avatar.zalo"], img[src*="zalo.me"]');
+            if (avatarEl && avatarEl.src) {
+              avatar = avatarEl.src;
+            }
+
+            let zaloId = '';
+            const uidMatch = cookieStr.match(/zalo_id=([0-9a-zA-Z_]+)/) || cookieStr.match(/zpw_sek=([0-9a-zA-Z_]+)/);
+            if (uidMatch && uidMatch[1]) {
+              zaloId = uidMatch[1].slice(0, 16);
+            } else {
+              zaloId = 'zl_' + Date.now().toString().slice(-8);
+            }
+
+            if (existing.includes(zaloId)) {
+              if (!window._alreadyReportedDuplicate) {
+                window._alreadyReportedDuplicate = true;
+                if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'DUPLICATE_ACCOUNT',
+                    uid: zaloId
+                  }));
+                }
+              }
               return;
             }
 
-            if (isActualChatDomain || hasAuthCookies) {
-              let zaloName = '';
-              const nameEl = document.querySelector('.user-profile-name, .nav__tabs__top__avatar, .name-container, div[data-translate-inner="STR_MY_PROFILE"]');
-              if (nameEl && nameEl.innerText) {
-                zaloName = nameEl.innerText.trim();
-              }
-              if (!zaloName) {
-                const titleEl = document.querySelector('title');
-                if (titleEl && titleEl.innerText && !titleEl.innerText.includes('Zalo Web') && !titleEl.innerText.includes('Đăng nhập')) {
-                  zaloName = titleEl.innerText.trim();
-                }
-              }
-              if (!zaloName) {
-                zaloName = 'Zalo ' + Date.now().toString().slice(-4);
-              }
-
-              let avatar = '';
-              const avatarEl = document.querySelector('.nav__tabs__top__avatar img, img[src*="avatar.zalo"], img[src*="zalo.me"]');
-              if (avatarEl && avatarEl.src) {
-                avatar = avatarEl.src;
-              }
-
-              let zaloId = '';
-              const uidMatch = cookieStr.match(/zalo_id=([0-9a-zA-Z_]+)/) || cookieStr.match(/zpw_sek=([0-9a-zA-Z_]+)/);
-              if (uidMatch && uidMatch[1]) {
-                zaloId = uidMatch[1].slice(0, 16);
-              } else {
-                zaloId = 'zl_' + Date.now().toString().slice(-8);
-              }
-
-              if (existing.includes(zaloId)) {
-                if (!window._alreadyReportedDuplicate) {
-                  window._alreadyReportedDuplicate = true;
-                  if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                      type: 'DUPLICATE_ACCOUNT',
-                      uid: zaloId
-                    }));
-                  }
-                }
-                return;
-              }
-
-              detected = true;
-              if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-                window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'SESSION_DETECTED',
-                  platform: '${PLATFORMS.ZALO}',
-                  uid: zaloId,
-                  name: zaloName,
-                  cookies: cookieStr,
-                  avatarUrl: avatar
-                }));
-              }
+            detected = true;
+            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'SESSION_DETECTED',
+                platform: '${PLATFORMS.ZALO}',
+                uid: zaloId,
+                name: zaloName,
+                cookies: cookieStr,
+                avatarUrl: avatar
+              }));
             }
           } else {
             // FACEBOOK / MESSENGER

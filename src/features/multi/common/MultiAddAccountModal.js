@@ -131,6 +131,11 @@ export default function MultiAddAccountModal({
         return;
       }
 
+      if (data.type === 'ZALO_MANUAL_SAVE_ERROR') {
+        Alert.alert('Chưa đăng nhập', data.message || 'Vui lòng hoàn tất đăng nhập trước.');
+        return;
+      }
+
       if (data.type === 'SESSION_DETECTED' && data.uid && data.cookies) {
         const platformObj = PLATFORM_OPTIONS.find((p) => p.id === data.platform) || PLATFORM_OPTIONS[0];
         const isCustom = data.platform === PLATFORMS.CUSTOM || selectedPlatform === PLATFORMS.CUSTOM;
@@ -435,22 +440,38 @@ export default function MultiAddAccountModal({
                 {selectedPlatform === PLATFORMS.ZALO && (
                   <View style={[styles.zaloTipBanner, { backgroundColor: 'rgba(0, 104, 255, 0.12)', borderColor: 'rgba(0, 104, 255, 0.3)' }]}>
                     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Ionicons name="shield-checkmark" size={20} color="#0068FF" />
+                      <Ionicons name="shield-checkmark" size={18} color="#0068FF" />
                       <Text style={[styles.zaloTipText, { color: colors.text }]}>
-                        Mẹo: Quét mã QR HOẶC chuyển sang "VỚI SỐ ĐIỆN THOẠI" ➔ "Gửi yêu cầu đăng nhập" để xác nhận 1 chạm trên app không cần mật khẩu.
+                        Quét QR hoặc chọn "VỚI SỐ ĐIỆN THOẠI" ➔ Gửi yêu cầu đăng nhập (xác nhận trên app không cần pass).
                       </Text>
                     </View>
-                    <Pressable
-                      onPress={() => {
-                        setLoadingWeb(true);
-                        webViewRef.current?.reload();
-                      }}
-                      style={[styles.reloadQrBtn, { backgroundColor: '#0068FF' }]}
-                      hitSlop={6}
-                    >
-                      <Ionicons name="reload" size={13} color="#FFFFFF" />
-                      <Text style={styles.reloadQrText}>Tải lại</Text>
-                    </Pressable>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <Pressable
+                        onPress={() => {
+                          setLoadingWeb(true);
+                          webViewRef.current?.reload();
+                        }}
+                        style={[styles.reloadQrBtn, { backgroundColor: colors.cardBorder }]}
+                        hitSlop={6}
+                      >
+                        <Ionicons name="reload" size={13} color={colors.text} />
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => {
+                          if (webViewRef.current) {
+                            webViewRef.current.injectJavaScript(
+                              `window.__tkForceSaveZaloSession && window.__tkForceSaveZaloSession(); true;`
+                            );
+                          }
+                        }}
+                        style={[styles.saveSessionBtn, { backgroundColor: '#0068FF' }]}
+                        hitSlop={6}
+                      >
+                        <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
+                        <Text style={styles.saveSessionText}>Lưu phiên</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 )}
 
