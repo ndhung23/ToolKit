@@ -1,7 +1,7 @@
 import { USER_AGENTS } from '../common/multiConstants';
 
 export const ZALO_CONSTANTS = {
-  LOGIN_URL: 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F',
+  LOGIN_URL: 'https://chat.zalo.me/',
   CHAT_URL: 'https://chat.zalo.me/',
   USER_AGENT: USER_AGENTS.ZALO_DESKTOP,
   DOMAINS: ['.zalo.me', 'chat.zalo.me', 'id.zalo.me', 'zalo.me'],
@@ -17,7 +17,8 @@ export const ZALO_CLEAN_CSS = `
   .popup-download-app, div[id*="download-app"], .banner-install-app,
   div[data-translate-inner="STR_DOWNLOAD_APP_PC"],
   .zl-modal__overlay:has(.zl-modal__dialog:has-text("Zalo PC")),
-  div[role="dialog"]:has(a[href*="zalo.me/pc"]) {
+  div[role="dialog"]:has(a[href*="zalo.me/pc"]),
+  .intro-download-pc, .download-banner {
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
@@ -34,6 +35,21 @@ export const ZALO_CLEAN_CSS = `
     overflow-x: hidden !important;
     width: 100% !important;
     height: 100% !important;
+  }
+
+  /* Tối ưu khung đăng nhập chat.zalo.me vừa vặn màn hình */
+  .body-container, .wrapper-page, .login-container {
+    padding: 10px 0 !important;
+    margin: 0 auto !important;
+    max-width: 100% !important;
+  }
+
+  /* Phóng to và căn giữa mã QR để camera điện thoại khác quét siêu nhạy */
+  .qrcode-container, .qr-container, .qr-code {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    margin: 8px auto !important;
   }
 
   /* Thanh điều hướng chính của Zalo */

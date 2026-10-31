@@ -7,11 +7,47 @@ import { MESSENGER_CLEAN_CSS, MESSENGER_CONSTANTS } from '../mesfb/messengerHelp
 export { USER_AGENTS };
 
 /**
- * Script spoofing môi trường Desktop Safari trước khi tải trang (injectedJavaScriptBeforeContentLoaded)
- * @param {string} _platform
+ * Script spoofing môi trường Desktop chuẩn trước khi tải trang (injectedJavaScriptBeforeContentLoaded)
+ * @param {string} platform
  * @returns {string}
  */
-export function generateDesktopSpoofScript(_platform = PLATFORMS.ZALO) {
+export function generateDesktopSpoofScript(platform = PLATFORMS.ZALO) {
+  if (platform === PLATFORMS.ZALO) {
+    return `
+      (function() {
+        try {
+          // Spoofing chuẩn Google Chrome trên Windows 11 (môi trường được Zalo Web tối ưu nhất)
+          Object.defineProperty(navigator, 'platform', {
+            get: function() { return 'Win32'; },
+            configurable: true
+          });
+          Object.defineProperty(navigator, 'vendor', {
+            get: function() { return 'Google Inc.'; },
+            configurable: true
+          });
+          // Hỗ trợ cảm ứng tự nhiên như màn hình cảm ứng Windows Touch / Surface
+          Object.defineProperty(navigator, 'maxTouchPoints', {
+            get: function() { return 10; },
+            configurable: true
+          });
+          Object.defineProperty(navigator, 'webdriver', {
+            get: function() { return false; },
+            configurable: true
+          });
+          if (!window.chrome) {
+            window.chrome = {
+              app: { isInstalled: false },
+              runtime: { id: undefined },
+              loadTimes: function() {},
+              csi: function() {}
+            };
+          }
+        } catch(e) {}
+      })();
+      true;
+    `;
+  }
+
   return `
     (function() {
       try {
@@ -25,22 +61,6 @@ export function generateDesktopSpoofScript(_platform = PLATFORMS.ZALO) {
         });
         Object.defineProperty(navigator, 'maxTouchPoints', {
           get: function() { return 0; },
-          configurable: true
-        });
-        Object.defineProperty(screen, 'width', {
-          get: function() { return 1440; },
-          configurable: true
-        });
-        Object.defineProperty(screen, 'height', {
-          get: function() { return 900; },
-          configurable: true
-        });
-        Object.defineProperty(screen, 'availWidth', {
-          get: function() { return 1440; },
-          configurable: true
-        });
-        Object.defineProperty(screen, 'availHeight', {
-          get: function() { return 900; },
           configurable: true
         });
         Object.defineProperty(navigator, 'webdriver', {
@@ -211,11 +231,6 @@ export function generateAutoDetectSessionScript(platform = PLATFORMS.ZALO, exist
       function checkSession() {
         if (detected) return;
         try {
-          const refreshQrBtn = document.querySelector('.btn-refresh-qr, .qr-expired, a[data-translate-inner="STR_REFRESH_QR"]');
-          if (refreshQrBtn && typeof refreshQrBtn.click === 'function') {
-            refreshQrBtn.click();
-          }
-
           const cookieStr = document.cookie || '';
 
           if ('${platform}' === '${PLATFORMS.ZALO}') {

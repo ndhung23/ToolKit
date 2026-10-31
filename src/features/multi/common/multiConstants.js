@@ -6,9 +6,9 @@ export const PLATFORMS = {
 };
 
 export const USER_AGENTS = {
-  // User-Agent Desktop Safari macOS chuẩn tương thích WebKit engine iOS (tránh bị Zalo chặn)
+  // User-Agent Chrome Windows 11 chuẩn tương thích 100% với Zalo Web (tránh bị Zalo chặn thiết bị lạ)
   ZALO_DESKTOP:
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   // User-Agent Desktop Safari giúp mở trực tiếp https://www.messenger.com/ không bị ép tải app
   MESSENGER_DESKTOP:
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
@@ -30,11 +30,11 @@ export const PLATFORM_OPTIONS = [
   {
     id: PLATFORMS.ZALO,
     name: 'Zalo Web (Khuyên dùng)',
-    desc: 'Quét mã QR bằng app Zalo để đăng nhập tức thì không sợ khóa nick',
+    desc: 'Quét QR hoặc xác nhận đăng nhập qua SĐT không cần mật khẩu',
     icon: 'chatbubbles',
     color: '#0068FF',
     badge: 'Ưu tiên',
-    loginUrl: 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F',
+    loginUrl: 'https://chat.zalo.me/',
   },
   {
     id: PLATFORMS.MESSENGER,

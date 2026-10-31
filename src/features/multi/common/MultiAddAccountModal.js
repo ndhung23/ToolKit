@@ -435,9 +435,9 @@ export default function MultiAddAccountModal({
                 {selectedPlatform === PLATFORMS.ZALO && (
                   <View style={[styles.zaloTipBanner, { backgroundColor: 'rgba(0, 104, 255, 0.12)', borderColor: 'rgba(0, 104, 255, 0.3)' }]}>
                     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Ionicons name="qr-code-outline" size={20} color="#0068FF" />
+                      <Ionicons name="shield-checkmark" size={20} color="#0068FF" />
                       <Text style={[styles.zaloTipText, { color: colors.text }]}>
-                        Quét mã QR bằng app Zalo máy khác HOẶC bấm [ ≡ ] để nhập SĐT & Mật khẩu.
+                        Mẹo: Quét mã QR HOẶC chuyển sang "VỚI SỐ ĐIỆN THOẠI" ➔ "Gửi yêu cầu đăng nhập" để xác nhận 1 chạm trên app không cần mật khẩu.
                       </Text>
                     </View>
                     <Pressable
@@ -449,7 +449,7 @@ export default function MultiAddAccountModal({
                       hitSlop={6}
                     >
                       <Ionicons name="reload" size={13} color="#FFFFFF" />
-                      <Text style={styles.reloadQrText}>Làm mới QR</Text>
+                      <Text style={styles.reloadQrText}>Tải lại</Text>
                     </Pressable>
                   </View>
                 )}
@@ -506,7 +506,7 @@ export default function MultiAddAccountModal({
                     uri:
                       selectedPlatform === PLATFORMS.CUSTOM
                         ? customAppUrl
-                        : activePlatformConfig?.loginUrl || 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F',
+                        : activePlatformConfig?.loginUrl || 'https://chat.zalo.me/',
                   }}
                   incognito={false}
                   cacheEnabled={true}
