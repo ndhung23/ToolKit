@@ -9,16 +9,16 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useTheme } from '../../theme';
-import { PLATFORMS } from './fbAccountStorage';
+import { useTheme } from '../../../theme';
+import { PLATFORMS, USER_AGENTS } from './multiConstants';
 import {
-  USER_AGENTS,
   generateDesktopSpoofScript,
   generateCookieInjectionScript,
-  generateMessengerCleanCssScript,
-} from './fbCookieManager';
+  generateCleanCssScript,
+} from './multiCookieManager';
+import { isFacebookMessagesUrl } from '../fb/fbHelper';
 
-const FbMessengerWebView = forwardRef(function FbMessengerWebView(
+const MultiWebView = forwardRef(function MultiWebView(
   { account, onRefreshSession },
   ref
 ) {
@@ -45,12 +45,12 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
     return (
       <View style={[styles.emptyContainer, { backgroundColor: colors.bg }]}>
         <Image
-          source={require('../../../assets/icon_multiweb.png')}
-          style={{ width: 64, height: 64, borderRadius: 18, marginBottom: 16 }}
+          source={require('../../../../assets/icon_multiweb.png')}
+          style={styles.emptyIcon}
           resizeMode="contain"
         />
         <Text style={[styles.emptyText, { color: colors.sub }]}>
-          Vui lòng bấm nút "+" trên thanh công cụ để thêm tài khoản Facebook, Messenger hoặc Zalo.
+          Vui lòng bấm nút "+" trên thanh công cụ để thêm tài khoản Zalo, Messenger, Facebook hoặc ứng dụng khác.
         </Text>
       </View>
     );
@@ -87,9 +87,11 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
     }
 
     // Nếu trên Facebook mobile mà bấm vào tin nhắn -> điều hướng sang mbasic để đọc và nhắn tin mượt mà không bị ép tải app
-    if (platform === PLATFORMS.FACEBOOK && url.includes('facebook.com/messages')) {
+    if (platform === PLATFORMS.FACEBOOK && isFacebookMessagesUrl(url)) {
       if (webViewRef.current) {
-        webViewRef.current.injectJavaScript(`window.location.href = 'https://mbasic.facebook.com/messages/'; true;`);
+        webViewRef.current.injectJavaScript(
+          `window.location.href = 'https://mbasic.facebook.com/messages/'; true;`
+        );
         return false;
       }
     }
@@ -98,9 +100,13 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
   };
 
   const desktopSpoofScript = generateDesktopSpoofScript(platform);
-  const cookieInjectionScript = generateCookieInjectionScript(account.cookies, platform, account.customUrl);
+  const cookieInjectionScript = generateCookieInjectionScript(
+    account.cookies,
+    platform,
+    account.customUrl
+  );
   const beforeLoadScript = `${desktopSpoofScript}\n${cookieInjectionScript}`;
-  const cleanCssScript = generateMessengerCleanCssScript(platform);
+  const cleanCssScript = generateCleanCssScript(platform);
 
   return (
     <View style={styles.container}>
@@ -162,7 +168,7 @@ const FbMessengerWebView = forwardRef(function FbMessengerWebView(
   );
 });
 
-export default FbMessengerWebView;
+export default MultiWebView;
 
 const styles = StyleSheet.create({
   container: {
@@ -197,6 +203,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     gap: 12,
+  },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+    marginBottom: 16,
   },
   emptyText: {
     fontSize: 13,

@@ -1,15 +1,9 @@
 import * as SecureStore from 'expo-secure-store';
+import { PLATFORMS } from './multiConstants';
 
 const STORAGE_KEYS = {
   ACCOUNTS_LIST: 'fb_multi_accounts_v2',
   ACTIVE_ACCOUNT_ID: 'fb_multi_active_id_v2',
-};
-
-export const PLATFORMS = {
-  ZALO: 'zalo',
-  MESSENGER: 'messenger',
-  FACEBOOK: 'facebook',
-  CUSTOM: 'custom',
 };
 
 /**
@@ -17,7 +11,7 @@ export const PLATFORMS = {
  * @param {string} cookieStr
  * @returns {Record<string, string>}
  */
-export function parseFacebookCookies(cookieStr) {
+export function parseAccountCookies(cookieStr) {
   if (!cookieStr || typeof cookieStr !== 'string') return {};
   const result = {};
   const parts = cookieStr.split(';');
@@ -34,10 +28,13 @@ export function parseFacebookCookies(cookieStr) {
   return result;
 }
 
+// Giữ lại alias để tương thích
+export const parseFacebookCookies = parseAccountCookies;
+
 /**
  * Kiểm tra xem chuỗi cookie có hợp lệ hay không tùy theo nền tảng
  * @param {string} cookieStr
- * @param {'facebook' | 'messenger' | 'zalo'} platform
+ * @param {string} platform
  * @returns {boolean}
  */
 export function isAccountCookieValid(cookieStr, platform = PLATFORMS.ZALO) {
@@ -46,17 +43,16 @@ export function isAccountCookieValid(cookieStr, platform = PLATFORMS.ZALO) {
     return cookieStr.trim().length > 3;
   }
   if (platform === PLATFORMS.ZALO) {
-    // Zalo cookie thường chứa zpw_sek hoặc zsession hoặc _ga
     return cookieStr.includes('zpw_sek') || cookieStr.includes('zsession') || cookieStr.length > 20;
   }
   // Facebook & Messenger cần có c_user
-  const parsed = parseFacebookCookies(cookieStr);
+  const parsed = parseAccountCookies(cookieStr);
   return Boolean(parsed.c_user && parsed.c_user.length > 4);
 }
 
 /**
  * Lấy danh sách toàn bộ tài khoản đã lưu trong SecureStore
- * @returns {Promise<Array<{ id: string, platform: string, name: string, nickname?: string, avatarUrl?: string, cookies: string, lastActive: number, createdAt: number }>>}
+ * @returns {Promise<Array>}
  */
 export async function getStoredAccounts() {
   try {
@@ -65,7 +61,7 @@ export async function getStoredAccounts() {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
-    console.error('[fbAccountStorage] getStoredAccounts error:', error);
+    console.error('[multiAccountStorage] getStoredAccounts error:', error);
     return [];
   }
 }
@@ -78,7 +74,7 @@ async function saveAllAccounts(accounts) {
   try {
     await SecureStore.setItemAsync(STORAGE_KEYS.ACCOUNTS_LIST, JSON.stringify(accounts));
   } catch (error) {
-    console.error('[fbAccountStorage] saveAllAccounts error:', error);
+    console.error('[multiAccountStorage] saveAllAccounts error:', error);
     throw error;
   }
 }
@@ -91,7 +87,7 @@ export async function getActiveAccountId() {
   try {
     return await SecureStore.getItemAsync(STORAGE_KEYS.ACTIVE_ACCOUNT_ID);
   } catch (error) {
-    console.error('[fbAccountStorage] getActiveAccountId error:', error);
+    console.error('[multiAccountStorage] getActiveAccountId error:', error);
     return null;
   }
 }
@@ -108,14 +104,14 @@ export async function setActiveAccountId(id) {
       await SecureStore.setItemAsync(STORAGE_KEYS.ACTIVE_ACCOUNT_ID, String(id));
     }
   } catch (error) {
-    console.error('[fbAccountStorage] setActiveAccountId error:', error);
+    console.error('[multiAccountStorage] setActiveAccountId error:', error);
   }
 }
 
 /**
  * Thêm hoặc cập nhật một tài khoản
- * @param {{ id: string, platform?: string, name?: string, nickname?: string, avatarUrl?: string, cookies: string }} accountData
- * @returns {Promise<Array>} Danh sách tài khoản sau khi cập nhật
+ * @param {Object} accountData
+ * @returns {Promise<Array>}
  */
 export async function saveOrUpdateAccount(accountData) {
   if (!accountData || !accountData.id || !accountData.cookies) {
@@ -124,6 +120,7 @@ export async function saveOrUpdateAccount(accountData) {
 
   const existingAccounts = await getStoredAccounts();
   const platform = accountData.platform || PLATFORMS.ZALO;
+
   let customDomain = '';
   if (accountData.customUrl) {
     const domainMatch = String(accountData.customUrl).match(/^(?:https?:\/\/)?(?:[^@\n]+@)?(?:www\.)?([^:/\n?]+)/i);
@@ -147,7 +144,9 @@ export async function saveOrUpdateAccount(accountData) {
   }
 
   const defaultName = accountData.name || accountData.customName || `${platform.toUpperCase()} ${String(accountData.id).slice(-4)}`;
-  const existingIndex = existingAccounts.findIndex((acc) => acc.key === uniqueKey || (acc.id === String(accountData.id) && acc.platform === platform));
+  const existingIndex = existingAccounts.findIndex(
+    (acc) => acc.key === uniqueKey || (acc.id === String(accountData.id) && acc.platform === platform)
+  );
 
   let updatedList;
   if (existingIndex >= 0) {

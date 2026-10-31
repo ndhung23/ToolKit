@@ -19,7 +19,7 @@ import { ScreenTimeScreen, StatsScreen } from '../features/screentime';
 import { FapExamScreen } from '../features/fap';
 import { ImageToPdfScreen } from '../features/image-to-pdf';
 import { CleanPhotosScreen } from '../features/clean-photos';
-import { FbMultiScreen } from '../features/fb-multi';
+import { FbMultiScreen } from '../features/multi';
 import { AiReplyScreen } from '../features/ai-reply';
 import { SettingsScreen } from '../features/settings';
 import { AdminScreen } from '../features/admin';

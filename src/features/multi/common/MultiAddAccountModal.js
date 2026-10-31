@@ -15,61 +15,15 @@ import { WebView } from 'react-native-webview';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../../theme';
-import { PLATFORMS, parseFacebookCookies, isAccountCookieValid } from './fbAccountStorage';
+import { useTheme } from '../../../theme';
+import { PLATFORMS, PLATFORM_OPTIONS, CUSTOM_PRESETS, USER_AGENTS } from './multiConstants';
+import { parseAccountCookies, isAccountCookieValid } from './multiAccountStorage';
 import {
-  USER_AGENTS,
   generateDesktopSpoofScript,
   generateAutoDetectSessionScript,
-} from './fbCookieManager';
+} from './multiCookieManager';
 
-const PLATFORM_OPTIONS = [
-  {
-    id: PLATFORMS.ZALO,
-    name: 'Zalo Web (Khuyên dùng)',
-    desc: 'Quét mã QR bằng app Zalo để đăng nhập tức thì không sợ khóa nick',
-    icon: 'chatbubbles',
-    color: '#0068FF',
-    badge: 'Ưu tiên',
-    loginUrl: 'https://id.zalo.me/account?continue=https%3A%2F%2Fchat.zalo.me%2F',
-  },
-  {
-    id: PLATFORMS.MESSENGER,
-    name: 'Messenger',
-    desc: 'Chuyên nhắn tin, quản lý hộp thư & chat khách hàng',
-    icon: 'chatbubble-ellipses',
-    color: '#0084FF',
-    loginUrl: 'https://www.messenger.com/login',
-  },
-  {
-    id: PLATFORMS.FACEBOOK,
-    name: 'Facebook',
-    desc: 'Lướt bảng tin, fanpage, trang cá nhân & hội nhóm',
-    icon: 'logo-facebook',
-    color: '#1877F2',
-    loginUrl: 'https://m.facebook.com/login/?next=https%3A%2F%2Fm.facebook.com%2F',
-  },
-  {
-    id: PLATFORMS.CUSTOM,
-    name: 'Khác',
-    desc: 'Thêm ứng dụng tùy ý (Telegram, TikTok, Instagram, Discord, Shopee...)',
-    icon: 'globe-outline',
-    color: '#10B981',
-    badge: 'Tùy biến',
-    loginUrl: '',
-  },
-];
-
-const CUSTOM_PRESETS = [
-  { name: 'Telegram', url: 'https://web.telegram.org' },
-  { name: 'TikTok', url: 'https://www.tiktok.com' },
-  { name: 'Instagram', url: 'https://www.instagram.com' },
-  { name: 'Discord', url: 'https://discord.com/app' },
-  { name: 'Twitter / X', url: 'https://x.com' },
-  { name: 'Shopee', url: 'https://shopee.vn' },
-];
-
-export default function FbAddAccountModal({
+export default function MultiAddAccountModal({
   visible,
   onClose,
   onAccountAdded,
@@ -237,7 +191,8 @@ export default function FbAddAccountModal({
 
     let uid = `user_${Date.now().toString().slice(-6)}`;
     const isCustom = plat === PLATFORMS.CUSTOM;
-    const parsed = parseFacebookCookies(raw);
+    const parsed = parseAccountCookies(raw);
+
     if (plat === PLATFORMS.ZALO) {
       if (parsed.zalo_id) {
         uid = parsed.zalo_id;
@@ -356,7 +311,7 @@ export default function FbAddAccountModal({
             ))}
           </View>
         ) : selectedPlatform === PLATFORMS.CUSTOM && !customReady ? (
-          /* BƯỚC 2A: Nhập Tên ứng dụng + URL (Dành cho nền tảng "Khác") */
+          /* BƯỚC 2A: Nhập Tên ứng dụng + URL (Khác) */
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -396,7 +351,6 @@ export default function FbAddAccountModal({
                 keyboardType="url"
               />
 
-              {/* Các nút gợi ý nhanh */}
               <Text style={[styles.suggestionLabel, { color: colors.sub }]}>Gợi ý nhanh:</Text>
               <View style={styles.presetChipsWrap}>
                 {CUSTOM_PRESETS.map((preset) => (
@@ -769,6 +723,19 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: '600',
   },
+  reloadQrBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    gap: 4,
+  },
+  reloadQrText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(18, 18, 20, 0.85)',
@@ -823,19 +790,6 @@ const styles = StyleSheet.create({
     color: '#121214',
     fontSize: 15,
     fontWeight: '800',
-  },
-  reloadQrBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-    gap: 4,
-  },
-  reloadQrText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
   },
   guideBox: {
     padding: 12,

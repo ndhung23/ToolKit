@@ -8,10 +8,10 @@ import {
   StyleSheet,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useTheme } from '../../theme';
-import { PLATFORMS } from './fbAccountStorage';
+import { useTheme } from '../../../theme';
+import { PLATFORMS } from './multiConstants';
 
-export default function FbAccountSwitcherBar({
+export default function MultiAccountSwitcherBar({
   accounts = [],
   activeAccountId,
   onSwitchAccount,
@@ -169,6 +169,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     borderBottomWidth: 1,
+    zIndex: 20,
   },
   backBtn: {
     width: 34,
@@ -180,30 +181,29 @@ const styles = StyleSheet.create({
   },
   listContent: {
     alignItems: 'center',
+    paddingRight: 8,
     gap: 8,
-    paddingHorizontal: 4,
   },
   itemWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
     paddingVertical: 4,
-    borderRadius: 20,
+    paddingHorizontal: 8,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: 'transparent',
-    maxWidth: 130,
-    gap: 6,
+    gap: 7,
   },
   avatarContainer: {
-    position: 'relative',
     width: 32,
     height: 32,
+    position: 'relative',
   },
   avatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#2C2C34',
+    backgroundColor: '#26262B',
   },
   avatarFallback: {
     width: 32,
@@ -227,9 +227,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   nameText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '600',
-    maxWidth: 76,
+    maxWidth: 95,
   },
   nameTextActive: {
     fontWeight: '800',
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginLeft: 6,
+    paddingLeft: 4,
   },
   actionBtn: {
     width: 32,

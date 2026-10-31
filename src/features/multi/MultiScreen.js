@@ -22,12 +22,12 @@ import {
   saveOrUpdateAccount,
   removeAccount,
   updateAccountNickname,
-} from './fbAccountStorage';
-import FbAccountSwitcherBar from './FbAccountSwitcherBar';
-import FbMessengerWebView from './FbMessengerWebView';
-import FbAddAccountModal from './FbAddAccountModal';
+} from './common/multiAccountStorage';
+import MultiAccountSwitcherBar from './common/MultiAccountSwitcherBar';
+import MultiWebView from './common/MultiWebView';
+import MultiAddAccountModal from './common/MultiAddAccountModal';
 
-export default function FbMultiScreen({ navigation }) {
+export default function MultiScreen({ navigation }) {
   const { colors } = useTheme();
   const [accounts, setAccounts] = useState([]);
   const [activeAccountId, setActiveId] = useState(null);
@@ -219,40 +219,40 @@ export default function FbMultiScreen({ navigation }) {
               />
             </View>
 
-            <Text style={[styles.introTitle, { color: colors.text }]}>Đa Tài Khoản Zalo 1 Chạm</Text>
+            <Text style={[styles.introTitle, { color: colors.text }]}>Đa Tài Khoản Mạng Xã Hội</Text>
             <Text style={[styles.introSub, { color: colors.sub }]}>
-              Quét mã QR đăng nhập tiện lợi, chuyển đổi 1 chạm tức thì giữa các nick Zalo cá nhân, Zalo bán hàng mà không cần đăng xuất.
+              Đăng nhập Zalo, Messenger, Facebook & các ứng dụng khác. Chuyển đổi 1 chạm tức thì không cần đăng xuất.
             </Text>
 
             <View style={styles.featureList}>
               <View style={styles.featureRow}>
-                <Ionicons name="qr-code" size={17} color="#0068FF" />
+                <Ionicons name="chatbubbles" size={17} color="#0068FF" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Đăng nhập cực nhanh bằng quét mã QR qua app Zalo
+                  Hỗ trợ Zalo Web, Messenger, Facebook và thêm ứng dụng bất kỳ
                 </Text>
               </View>
 
               <View style={styles.featureRow}>
                 <Ionicons name="flash" size={17} color="#FFD000" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Chuyển nick Zalo trong 0.1s không cần quét lại mã
+                  Chuyển nick nhanh chóng trong 0.1s lưu phiên an toàn
                 </Text>
               </View>
 
               <View style={styles.featureRow}>
                 <Ionicons name="shield-checkmark" size={17} color="#22C55E" />
                 <Text style={[styles.featureText, { color: colors.text }]}>
-                  Bypass chặn mobile, giao diện chat tràn viền mượt mà
+                  Giao diện tràn viền, tối ưu hóa thao tác chạm và nhắn tin
                 </Text>
               </View>
             </View>
 
             <Pressable
               onPress={() => setAddModalVisible(true)}
-              style={[styles.startBtn, { backgroundColor: '#0068FF' }]}
+              style={[styles.startBtn, { backgroundColor: colors.primary }]}
             >
-              <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-              <Text style={[styles.startBtnText, { color: '#FFFFFF' }]}>Thêm tài khoản Zalo đầu tiên</Text>
+              <Ionicons name="add-circle" size={20} color="#121214" />
+              <Text style={styles.startBtnText}>Thêm tài khoản đầu tiên</Text>
             </Pressable>
           </View>
         </View>
@@ -260,7 +260,7 @@ export default function FbMultiScreen({ navigation }) {
         /* GIAO DIỆN FULL MÀN HÌNH: Top Bar siêu mỏng + Khung WebView tràn viền */
         <View style={styles.fullScreenContainer}>
           {/* Thanh Switcher Bar siêu mỏng tích hợp nút Back, Avatar list và nút Thêm */}
-          <FbAccountSwitcherBar
+          <MultiAccountSwitcherBar
             accounts={accounts}
             activeAccountId={activeAccountId}
             onSwitchAccount={handleSwitchAccount}
@@ -272,7 +272,7 @@ export default function FbMultiScreen({ navigation }) {
 
           {/* Khung WebView tràn viền 100% diện tích còn lại */}
           <View style={styles.webWrapper}>
-            <FbMessengerWebView
+            <MultiWebView
               ref={webViewRef}
               account={activeAccount}
               onRefreshSession={refreshAccounts}
@@ -281,8 +281,8 @@ export default function FbMultiScreen({ navigation }) {
         </View>
       )}
 
-      {/* Modal Thêm tài khoản hỗ trợ 3 nền tảng */}
-      <FbAddAccountModal
+      {/* Modal Thêm tài khoản hỗ trợ các nền tảng */}
+      <MultiAddAccountModal
         visible={addModalVisible}
         onClose={() => setAddModalVisible(false)}
         onAccountAdded={handleAccountAdded}
