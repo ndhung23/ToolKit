@@ -26,7 +26,6 @@ import {
 import MultiAccountSwitcherBar from './common/MultiAccountSwitcherBar';
 import MultiWebView from './common/MultiWebView';
 import MultiAddAccountModal from './common/MultiAddAccountModal';
-import AiFloatingBot from '../../components/AiFloatingBot';
 
 export default function MultiScreen({ navigation }) {
   const { colors } = useTheme();
@@ -339,9 +338,6 @@ export default function MultiScreen({ navigation }) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-
-      {/* Trợ lý AI Bot nổi kéo thả thông minh (Gemini AI) */}
-      <AiFloatingBot />
     </SafeAreaView>
   );
 }

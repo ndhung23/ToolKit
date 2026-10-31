@@ -8,6 +8,7 @@ import { LanguageProvider } from './src/context/LanguageContext';
 import { ScreenTimeProvider } from './src/features/screentime/ScreenTimeContext';
 import { ThemeProvider, useTheme } from './src/theme';
 import RootNavigator from './src/navigation';
+import AiFloatingBot from './src/components/AiFloatingBot';
 
 // Polyfill Alert.alert cho React Native Web (tránh lỗi Alert rỗng không hoạt động trên trình duyệt)
 if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -55,6 +56,7 @@ function MainApp() {
     <NavigationContainer theme={navTheme}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <RootNavigator />
+      <AiFloatingBot />
     </NavigationContainer>
   );
 }
