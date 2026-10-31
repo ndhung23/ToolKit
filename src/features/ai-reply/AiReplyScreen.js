@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, TextInput, Alert, FlatList } from 'r
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { sendToGemini } from '../../services/geminiService';
 
 const SAMPLES = [
   'Báo cáo dự án hôm nay tiến độ đến đâu rồi em?',
@@ -35,16 +36,71 @@ export default function AiReplyScreen({ navigation }) {
     },
   ]);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!incomingMsg.trim()) {
       Alert.alert('Chưa có tin nhắn', 'Hãy nhập hoặc dán nội dung tin nhắn bạn vừa nhận được.');
       return;
     }
     setAnalyzing(true);
-    setTimeout(() => {
+    try {
+      const prompt = `Phân tích tin nhắn sau của người khác gửi cho tôi: "${incomingMsg.trim()}".
+Hãy tạo 3 câu gợi ý phản hồi hay nhất bằng tiếng Việt theo 3 phong cách:
+1. Lịch sự & Chuyên nghiệp
+2. Thân thiện & Tự nhiên
+3. Ngắn gọn & Nhanh
+Trả về định dạng JSON thuần túy (không bọc trong markdown code block) theo cấu trúc:
+[
+  {"tone": "Lịch sự & Chuyên nghiệp", "text": "..."},
+  {"tone": "Thân thiện & Tự nhiên", "text": "..."},
+  {"tone": "Ngắn gọn & Nhanh", "text": "..."}
+]`;
+
+      const aiResponse = await sendToGemini([], prompt);
+      let parsed = null;
+      try {
+        const cleanJson = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(cleanJson);
+      } catch (_err) {
+        // Fallback nếu AI trả về text thường
+      }
+
+      if (Array.isArray(parsed) && parsed.length >= 3) {
+        setReplies([
+          {
+            tone: parsed[0].tone || 'Lịch sự & Chuyên nghiệp',
+            icon: 'briefcase',
+            color: '#3B82F6',
+            text: parsed[0].text,
+          },
+          {
+            tone: parsed[1].tone || 'Thân thiện & Tự nhiên',
+            icon: 'happy',
+            color: '#10B981',
+            text: parsed[1].text,
+          },
+          {
+            tone: parsed[2].tone || 'Ngắn gọn & Nhanh',
+            icon: 'flash',
+            color: '#F59E0B',
+            text: parsed[2].text,
+          },
+        ]);
+      } else {
+        // Cập nhật câu trả lời từ AI
+        setReplies((prev) => [
+          {
+            ...prev[0],
+            text: aiResponse.slice(0, 150),
+          },
+          ...prev.slice(1),
+        ]);
+      }
+      Alert.alert('AI Phân tích xong! ✨', 'Đã dùng Gemini 1.5 Flash tạo các gợi ý phản hồi phù hợp nhất.');
+    } catch (err) {
+      Alert.alert('Lỗi kết nối Gemini', err.message || 'Không thể tạo câu trả lời.');
+    } finally {
       setAnalyzing(false);
-      Alert.alert('AI Phân tích xong! ✨', 'Đã đọc ngữ cảnh và tạo 3 gợi ý phản hồi phù hợp nhất.');
-    }, 800);
+    }
   };
 
   const copyReply = (text) => {
