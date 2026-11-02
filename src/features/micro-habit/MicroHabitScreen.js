@@ -45,7 +45,7 @@ import {
   reconcileHabitReminders,
 } from './NotificationService';
 import { requestOpenTask } from './TaskSheetStore';
-import { ensureHabitsLoaded, setHabits as saveSharedHabits, subscribeHabits } from './HabitStore';
+import { ensureHabitsLoaded, setHabits as saveSharedHabits, subscribeHabits, recordHabitCompletion, undoHabitCompletion } from './HabitStore';
 
 const FILTER_TABS = [
   { id: 'all', label: 'Tất cả' },
@@ -297,37 +297,14 @@ export default function MicroHabitScreen({ navigation, route }) {
 
   // 1. Reset chu kỳ: Vừa làm xong (cho Interval & Monthly)
   const handleCompleteHabit = useCallback(async (id) => {
-    const nowIso = new Date().toISOString();
-    const current = habits.find((item) => item.id === id);
-    if (!current) return;
-    const historyItem = { id: Date.now().toString(), timestamp: nowIso, note: 'Hoàn thành chu kỳ' };
-    const completed = {
-      ...current,
-      lastCompletedDate: nowIso,
-      completedCycleAt: nowIso,
-      history: [historyItem, ...(Array.isArray(current.history) ? current.history : [])].slice(0, 30),
-    };
-    completed.notificationId = await scheduleHabitReminder(completed);
-    await updateHabitsList(habits.map((item) => (item.id === id ? completed : item)));
-  }, [habits, updateHabitsList]);
+    await recordHabitCompletion(id);
+  }, []);
 
   // 2. Tăng/Giảm tiến độ trong ngày (cho Daily Counter)
-  const handleStepDaily = useCallback((id, delta) => {
-    const todayStr = getTodayDateString();
-    const updated = habits.map((item) => {
-      if (item.id === id) {
-        const current = item.lastDailyDate === todayStr ? (item.currentCount || 0) : 0;
-        const newCount = Math.max(0, current + delta);
-        return {
-          ...item,
-          currentCount: newCount,
-          lastDailyDate: todayStr,
-        };
-      }
-      return item;
-    });
-    updateHabitsList(updated);
-  }, [habits, updateHabitsList]);
+  const handleStepDaily = useCallback(async (id, delta) => {
+    if (delta > 0) await recordHabitCompletion(id);
+    else await undoHabitCompletion(id);
+  }, []);
 
   // 3. Xóa việc vặt
   const handleDeleteHabit = useCallback((id, title) => {

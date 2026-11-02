@@ -168,6 +168,51 @@ export function getTodayDateString(d = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+export function getDailyEventsForDate(item, now = new Date()) {
+  const day = getTodayDateString(now);
+  const events = Array.isArray(item.dailyCompletionEvents) ? item.dailyCompletionEvents : [];
+  return events.filter((event) => event.date === day && event.kind === 'daily-completion');
+}
+
+export function getDailyCompletionCount(item, now = new Date()) {
+  const events = getDailyEventsForDate(item, now);
+  // Legacy records did not retain timestamps; preserve their displayed count until first new event migrates it.
+  if (!events.length && !Array.isArray(item.dailyCompletionEvents)) {
+    return item.lastDailyDate === getTodayDateString(now) ? Math.max(0, item.currentCount || 0) : 0;
+  }
+  return events.length;
+}
+
+export function recordCompletion(item, now = new Date()) {
+  const timestamp = new Date(now).toISOString();
+  const historyItem = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, timestamp, note: item.type === HABIT_TYPES.DAILY ? 'Ghi nhận 1 lần' : 'Hoàn thành chu kỳ' };
+  if (item.type !== HABIT_TYPES.DAILY) {
+    return { ...item, lastCompletedDate: timestamp, completedCycleAt: item.type === HABIT_TYPES.INTERVAL ? timestamp : item.completedCycleAt, history: [historyItem, ...(item.history || [])].slice(0, 100) };
+  }
+  const day = getTodayDateString(now);
+  const previousEvents = Array.isArray(item.dailyCompletionEvents) ? item.dailyCompletionEvents : [];
+  const legacyCount = !Array.isArray(item.dailyCompletionEvents) && item.lastDailyDate === day ? Math.max(0, item.currentCount || 0) : 0;
+  const migrated = legacyCount ? Array.from({ length: legacyCount }, (_, index) => ({ id: `legacy-${item.id}-${day}-${index}`, date: day, timestamp, kind: 'daily-completion' })) : [];
+  const event = { id: historyItem.id, date: day, timestamp, kind: 'daily-completion' };
+  const events = [...previousEvents, ...migrated, event].slice(-500);
+  const count = getDailyEventsForDate({ dailyCompletionEvents: events }, now).length;
+  return { ...item, dailyCompletionEvents: events, currentCount: count, lastDailyDate: day, history: [historyItem, ...(item.history || [])].slice(0, 100) };
+}
+
+export function undoCompletion(item, now = new Date()) {
+  if (item.type !== HABIT_TYPES.DAILY) return item;
+  const day = getTodayDateString(now);
+  const events = Array.isArray(item.dailyCompletionEvents) ? item.dailyCompletionEvents : [];
+  const lastIndex = events.map((event, index) => ({ event, index })).filter(({ event }) => event.date === day && event.kind === 'daily-completion').at(-1)?.index;
+  if (lastIndex === undefined) {
+    const current = getDailyCompletionCount(item, now);
+    return { ...item, currentCount: Math.max(0, current - 1), lastDailyDate: day };
+  }
+  const nextEvents = events.filter((_, index) => index !== lastIndex);
+  const count = getDailyEventsForDate({ dailyCompletionEvents: nextEvents }, now).length;
+  return { ...item, dailyCompletionEvents: nextEvents, currentCount: count, lastDailyDate: day, history: (item.history || []).filter((event) => event.id !== events[lastIndex].id) };
+}
+
 // Tính khoảng cách ngày: (targetDate - baseDate)
 export function getDaysDiff(targetDate, baseDate = new Date()) {
   const t = getMidnight(targetDate).getTime();
@@ -508,7 +553,7 @@ export function calculateHabitStatus(item, now = new Date()) {
   if (item.type === HABIT_TYPES.DAILY) {
     const target = Math.max(1, parseInt(item.targetCount || 1, 10));
     // Tự động reset về 0 nếu đã qua 00:00 ngày mới
-    const current = item.lastDailyDate === todayStr ? (item.currentCount || 0) : 0;
+    const current = getDailyCompletionCount(item, now);
     const progress = Math.min(1, current / target);
     const isCompleted = current >= target;
 

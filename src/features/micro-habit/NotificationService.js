@@ -85,6 +85,12 @@ function contentFor(habit, key) {
 
 async function scheduleOne(habit) {
     if (!habit?.reminderEnabled || !habit.reminderTime) return null;
+    if (habit.type === HABIT_TYPES.DAILY && calculateHabitStatus(habit).isCompleted) {
+      const pending = await Notifications.getAllScheduledNotificationsAsync();
+      await Promise.all(pending.filter((item) => item.content?.data?.notificationKey === getReminderKey(habit)).map((item) => Notifications.cancelScheduledNotificationAsync(item.identifier)));
+      nowLog('cancelled-daily-complete', { taskId: habit.id });
+      return null;
+    }
     const trigger = getTrigger(habit);
     if (!trigger) { nowLog('skip-past-or-invalid', { taskId: habit.id }); return null; }
     if (!await permissionGranted()) { nowLog('permission-denied', { taskId: habit.id }); return null; }

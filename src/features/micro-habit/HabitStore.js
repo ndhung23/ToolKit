@@ -1,9 +1,11 @@
 // Single source of truth for list, TaskSheet and notification reconciliation.
-import { loadHabits, saveHabits } from './microHabitService';
+import { loadHabits, saveHabits, recordCompletion, undoCompletion } from './microHabitService';
+import { scheduleHabitReminder } from './NotificationService';
 
 let habits = [];
 let loaded = false;
 let loading = null;
+let writeQueue = Promise.resolve();
 const listeners = new Set();
 
 function emit() { listeners.forEach((listener) => listener(habits)); }
@@ -27,5 +29,28 @@ export async function setHabits(next) {
 
 export async function updateHabit(id, updater) {
   await ensureHabitsLoaded();
-  return setHabits(habits.map((item) => item.id === id ? updater(item) : item));
+  const work = writeQueue.then(async () => {
+    const current = habits.find((item) => item.id === id);
+    if (!current) return habits;
+    const next = await updater(current);
+    return setHabits(habits.map((item) => item.id === id ? next : item));
+  });
+  writeQueue = work.catch(() => {});
+  return work;
+}
+
+export async function recordHabitCompletion(id, now = new Date()) {
+  return updateHabit(id, async (habit) => {
+    const completed = recordCompletion(habit, now);
+    completed.notificationId = await scheduleHabitReminder(completed);
+    return completed;
+  });
+}
+
+export async function undoHabitCompletion(id, now = new Date()) {
+  return updateHabit(id, async (habit) => {
+    const updated = undoCompletion(habit, now);
+    updated.notificationId = await scheduleHabitReminder(updated);
+    return updated;
+  });
 }

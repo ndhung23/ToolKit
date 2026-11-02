@@ -27,7 +27,7 @@ vm.runInNewContext(transformed, {
   setTimeout,
 });
 
-const { HABIT_TYPES, calculateHabitStatus, normalizeHabitSearch, getHabitStats, filterHabits, validateCategoryName, validateHabitTitle, formatTaskNameForNotification, createHabitClone, getSeriesCompletionCount, getHabitStatusGroup } = module.exports;
+const { HABIT_TYPES, calculateHabitStatus, normalizeHabitSearch, getHabitStats, filterHabits, validateCategoryName, validateHabitTitle, formatTaskNameForNotification, createHabitClone, getSeriesCompletionCount, getHabitStatusGroup, recordCompletion, undoCompletion } = module.exports;
 const atLocalMidnight = (year, month, day) => new Date(year, month - 1, day, 0, 0, 0, 0);
 const cases = [
   ['hôm nay đến hạn', { type: HABIT_TYPES.MONTHLY, dayOfMonth: 31 }, atLocalMidnight(2026, 10, 31), 'Hôm nay đến hạn!', 0],
@@ -79,4 +79,25 @@ assert.equal(getSeriesCompletionCount(original, [original, clone]), 1);
 assert.equal(getHabitStatusGroup(calculateHabitStatus({ type: HABIT_TYPES.DAILY, targetCount: 2, currentCount: 2, lastDailyDate: '2026-10-31' }, atLocalMidnight(2026, 10, 31))), 'completed');
 assert.equal(getHabitStatusGroup(calculateHabitStatus({ type: HABIT_TYPES.MONTHLY, dayOfMonth: 31, lastCompletedDate: atLocalMidnight(2026, 10, 31).toISOString() }, atLocalMidnight(2026, 10, 31))), 'completed');
 assert.equal(getHabitStatusGroup(calculateHabitStatus({ type: HABIT_TYPES.INTERVAL, intervalDays: 30, completedCycleAt: atLocalMidnight(2026, 10, 31).toISOString(), lastCompletedDate: atLocalMidnight(2026, 10, 31).toISOString() }, atLocalMidnight(2026, 10, 31))), 'completed');
-console.log(`Kết quả: ${cases.length + 26}/${cases.length + 26} kiểm tra logic nguồn thực đã pass.`);
+const dailyNow = new Date(2026, 9, 31, 10, 0, 0);
+const daily = { id: 'daily', type: HABIT_TYPES.DAILY, targetCount: 2, unit: 'lần', currentCount: 0, lastDailyDate: '2026-10-31', history: [] };
+const fromCard = recordCompletion(daily, dailyNow);
+const fromSheet = recordCompletion(daily, dailyNow);
+assert.equal(calculateHabitStatus(fromCard, dailyNow).currentCount, calculateHabitStatus(fromSheet, dailyNow).currentCount, 'card and sheet use the same reducer result');
+assert.equal(calculateHabitStatus(fromCard, dailyNow).currentCount, 1);
+const twoDone = recordCompletion(fromCard, dailyNow);
+assert.equal(calculateHabitStatus(twoDone, dailyNow).isCompleted, true);
+const overTarget = recordCompletion(twoDone, dailyNow);
+assert.equal(calculateHabitStatus(overTarget, dailyNow).currentCount, 3, 'over-target activity remains recorded');
+const undone = undoCompletion(overTarget, dailyNow);
+assert.equal(calculateHabitStatus(undone, dailyNow).currentCount, 2);
+const nextDay = calculateHabitStatus(undone, new Date(2026, 10, 1, 0, 1, 0));
+assert.equal(nextDay.currentCount, 0, 'daily progress resets after midnight');
+let rapid = { ...daily };
+for (let index = 0; index < 5; index += 1) rapid = recordCompletion(rapid, dailyNow);
+assert.equal(calculateHabitStatus(rapid, dailyNow).currentCount, 5, 'five sequential clicks preserve all events');
+const interval = recordCompletion({ id: 'i', type: HABIT_TYPES.INTERVAL, intervalDays: 7, history: [] }, dailyNow);
+const monthly = recordCompletion({ id: 'm', type: HABIT_TYPES.MONTHLY, dayOfMonth: 5, history: [] }, dailyNow);
+assert.equal(interval.history.length, 1);
+assert.equal(monthly.history.length, 1);
+console.log(`Kết quả: ${cases.length + 36}/${cases.length + 36} kiểm tra logic nguồn thực đã pass.`);
