@@ -49,6 +49,19 @@ function findGeneratedFile(prefix) {
   return files[0] ? path.join(DEBUG_DIR, files[0].name) : null;
 }
 
+function buildOutputName(mode, platform, title) {
+  const extension = mode === 'audio' ? 'mp3' : 'mp4';
+  const cleanTitle = String(title || (mode === 'audio' ? 'Audio' : 'Video'))
+    .replace(/[Đđ]/g, (letter) => letter === 'Đ' ? 'D' : 'd').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72) || 'Media';
+  return `${cleanTitle}-${platform}.${extension}`;
+}
+
+function titleFromYtDlpOutput(stdout) {
+  const line = stdout.split(/\r?\n/).find((item) => item.startsWith('__SNAP_TITLE__:'));
+  return line ? line.slice('__SNAP_TITLE__:'.length).trim() : '';
+}
+
 function getYtDlpVersion() {
   try { return execFileSync(YTDLP_PATH, ['--version'], { encoding: 'utf8', timeout: 8000 }).trim(); } catch { return 'unavailable'; }
 }
@@ -156,6 +169,37 @@ async function verifyMediaFile(filePath, mode) {
   return { size: stat.size, sha256: hash.digest('hex'), duration: probe.duration, decodedDuration: actualDuration, codec: mode === 'audio' ? probe.audio.codec_name : probe.video.codec_name, resolution: probe.video ? `${probe.video.width}x${probe.video.height}` : null };
 }
 
+async function assertAudioOnlyMp3(filePath) {
+  const decode = await runFile(FFMPEG_PATH, ['-v', 'error', '-progress', 'pipe:1', '-nostats', '-i', filePath, '-f', 'null', '-']);
+  const probe = probeMediaFile(filePath);
+  const actualDuration = decodedDuration(decode.stdout);
+  const streams = probe.raw.streams || [];
+  const audio = streams[0];
+  const bitrate = Number(audio?.bit_rate || probe.format?.bit_rate || 0);
+  if (streams.length !== 1 || audio?.codec_type !== 'audio' || audio.codec_name !== 'mp3' || !String(probe.format?.format_name || '').split(',').includes('mp3')) {
+    throw { code: 'INVALID_AUDIO', message: 'Audio đầu ra không phải MP3 audio-only hợp lệ.' };
+  }
+  if (!probe.duration || !actualDuration || Math.abs(actualDuration - probe.duration) > 0.5 || Math.abs(bitrate - 128000) > 4000) {
+    throw { code: 'INVALID_AUDIO_DURATION', message: 'MP3 có duration hoặc bitrate CBR không hợp lệ.' };
+  }
+  const stat = fs.statSync(filePath);
+  const hash = crypto.createHash('sha256');
+  await new Promise((resolve, reject) => fs.createReadStream(filePath).on('data', (chunk) => hash.update(chunk)).on('end', resolve).on('error', reject));
+  return { size: stat.size, sha256: hash.digest('hex'), duration: probe.duration, decodedDuration: actualDuration, codec: 'mp3', resolution: null, ext: 'mp3', mime: 'audio/mpeg' };
+}
+
+async function normalizeAudioToMp3(inputPath, outputPath, platform, title) {
+  await runFile(FFMPEG_PATH, [
+    '-y', '-fflags', '+genpts', '-i', inputPath, '-map', '0:a:0', '-vn',
+    '-c:a', 'libmp3lame', '-b:a', '128k', '-ar', '44100', '-write_xing', '1',
+    '-id3v2_version', '3', '-metadata', `title=${title || 'Audio'}`, '-metadata', `artist=${platform}`,
+    outputPath,
+  ]);
+  const metadata = await assertAudioOnlyMp3(outputPath);
+  outputMetadata.set(path.basename(outputPath), metadata);
+  return metadata;
+}
+
 async function normalizeAndVerify(inputPath, mode, outputPath) {
   if (mode === 'video') {
     try {
@@ -206,9 +250,8 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
       const id = Date.now().toString();
       const rawPrefix = `raw_${id}`;
       const rawTemplate = path.join(DEBUG_DIR, `${rawPrefix}.%(ext)s`);
-      const filename = `${isYt ? 'youtube' : isIg ? 'instagram' : targetUrl.includes('facebook') || targetUrl.includes('fb.watch') ? 'facebook' : 'media'}_audio_${id}.m4a`;
-      const finalPath = path.join(DOWNLOADS_DIR, filename);
-      const audioArgs = [...youtubeRuntimeArgs, ...cookiesArgs, '-f', isYt ? '140/bestaudio' : 'bestaudio/best', '-o', rawTemplate, targetUrl];
+      const platformName = isYt ? 'youtube' : isIg ? 'instagram' : targetUrl.includes('facebook') || targetUrl.includes('fb.watch') ? 'facebook' : 'media';
+      const audioArgs = [...youtubeRuntimeArgs, ...cookiesArgs, '-f', isYt ? '140/bestaudio' : 'bestaudio/best', '--print', 'after_move:__SNAP_TITLE__:%(title)s', '-o', rawTemplate, targetUrl];
       console.log(`[SnapServer Audio] Downloading and normalizing ${isYt ? 'YouTube' : 'media'} audio`);
 
       execFile(YTDLP_PATH, audioArgs, { timeout: 25000 }, (error, stdout, stderr) => {
@@ -224,13 +267,16 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
 
         const rawPath = findGeneratedFile(rawPrefix);
         if (!rawPath) return reject({ code: 'FILE_NOT_FOUND', message: 'Tải audio hoàn tất nhưng không tạo được file nguồn.' });
-        normalizeAndVerify(rawPath, 'audio', finalPath).then((metadata) => {
+        const title = titleFromYtDlpOutput(stdout);
+        const filename = buildOutputName('audio', platformName, title);
+        const finalPath = path.join(DOWNLOADS_DIR, filename);
+        normalizeAudioToMp3(rawPath, finalPath, platformName, title).then((metadata) => {
           if (isYt) backendState.lastYoutubeSuccessAt = new Date().toISOString();
           console.log('[SnapServer Audio Success] normalized', { rawPath, finalPath, metadata });
-          resolve({ success: true, mode: 'audio', url: `http://${host}/download/${filename}`, filename, qualityInfo: `AAC 128kbps • ${(metadata.size / (1024 * 1024)).toFixed(2)}MB`, durationSec, metadata });
+          resolve({ success: true, mode: 'audio', url: `http://${host}/download/${encodeURIComponent(filename)}`, filename, qualityInfo: `MP3 128kbps • ${(metadata.size / (1024 * 1024)).toFixed(2)}MB`, durationSec, metadata });
         }).catch((normalizeError) => {
           console.error('[SnapServer Audio Normalize Error]', normalizeError.stderr || normalizeError.message || normalizeError);
-          reject(normalizeError.code ? normalizeError : { code: 'INVALID_AUDIO', message: 'Không thể chuẩn hóa audio thành M4A/AAC hợp lệ.' });
+          reject(normalizeError.code ? normalizeError : { code: 'INVALID_AUDIO', message: 'Không thể chuẩn hóa audio thành MP3 hợp lệ.' });
         });
       });
       return;
@@ -381,17 +427,19 @@ const server = http.createServer(async (req, res) => {
 
   // Phục vụ tải file trực tiếp từ temp_downloads
   if (req.method === 'GET' && parsedUrl.pathname.startsWith('/download/')) {
-    const filename = path.basename(parsedUrl.pathname);
+    const filename = path.basename(decodeURIComponent(parsedUrl.pathname));
     const filePath = path.join(DOWNLOADS_DIR, filename);
 
     if (fs.existsSync(filePath)) {
       const stat = fs.statSync(filePath);
-      const isAudio = filename.endsWith('.mp3') || filename.endsWith('.m4a');
+      const isAudio = filename.endsWith('.mp3');
       const metadata = outputMetadata.get(filename);
       const mediaHeaders = {
-        'Content-Type': filename.endsWith('.m4a') ? 'audio/mp4' : isAudio ? 'audio/mpeg' : 'video/mp4',
+        'Content-Type': isAudio ? 'audio/mpeg' : 'video/mp4',
         'Accept-Ranges': 'bytes',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': isAudio
+          ? `attachment; filename="download.mp3"; filename*=UTF-8''${encodeURIComponent(filename)}`
+          : `attachment; filename="${filename}"`,
         ...(metadata ? { 'X-Snap-Size': metadata.size, 'X-Snap-Sha256': metadata.sha256, 'X-Snap-Duration': metadata.duration } : {}),
       };
       const range = req.headers.range;

@@ -244,7 +244,7 @@ async function resolveYouTube(url, mode, quality = 'best', signal = null) {
       if (res.ok && data?.success && data?.url) {
         return {
           url: data.url,
-          filename: data.filename || `youtube_${videoId}.${mode === 'audio' ? 'm4a' : 'mp4'}`,
+          filename: data.filename || `youtube_${videoId}.${mode === 'audio' ? 'mp3' : 'mp4'}`,
           qualityInfo: data.qualityInfo || (mode === 'audio' ? 'Audio 128kbps' : quality),
           durationSec: data.durationSec,
         };
@@ -462,6 +462,11 @@ export async function fetchDownloadLink(rawUrl, mode = 'video', quality = 'best'
       new Promise((_, reject) => setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 25s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)),
     ]);
   }
+  if (mode === 'audio') {
+    const error = new Error('Audio MP3 cần máy chủ Snap Video để chuẩn hóa file.');
+    error.code = 'AUDIO_BACKEND_REQUIRED';
+    throw error;
+  }
 
   const timeoutPromise = new Promise((_, reject) =>
     setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 25s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)
@@ -495,14 +500,14 @@ export async function fetchDownloadLink(rawUrl, mode = 'video', quality = 'best'
  */
 export function startVideoDownload(downloadUrl, filename, onProgress, mode = 'video', expectedMetadata = null) {
   const isAudioMode = mode === 'audio';
-  const defaultExt = isAudioMode ? 'm4a' : 'mp4';
+  const defaultExt = isAudioMode ? 'mp3' : 'mp4';
   const defaultPrefix = isAudioMode ? 'audio_' : 'video_';
   const safeName = (filename || `${defaultPrefix}${Date.now()}.${defaultExt}`).replace(/[^a-zA-Z0-9._-]/g, '_');
   const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
   const fileUri = `${baseDir}${safeName}`;
 
   // Xác định loại file: audio nếu mode === 'audio' hoặc đuôi file audio
-  const isAudioFile = isAudioMode || /\.(mp3|m4a|aac|wav|ogg|opus)$/i.test(safeName);
+  const isAudioFile = isAudioMode || /\.mp3$/i.test(safeName);
 
   let cancelled = false;
 
@@ -584,6 +589,14 @@ export function startVideoDownload(downloadUrl, filename, onProgress, mode = 'vi
       await cleanupTempFile(result.uri);
       throw new Error(`Máy chủ trả về ${contentType}, không phải video hợp lệ.`);
     }
+    if (isAudioFile && contentType && contentType.split(';')[0].trim().toLowerCase() !== 'audio/mpeg') {
+      await cleanupTempFile(result.uri);
+      throw new Error(`Máy chủ trả về ${contentType}, không phải MP3 hợp lệ.`);
+    }
+    if (isAudioFile && !/\.mp3$/i.test(safeName)) {
+      await cleanupTempFile(result.uri);
+      throw new Error('Máy chủ không trả tên file MP3. File chưa được chia sẻ.');
+    }
 
     // Xử lý lưu file
     let savedToGallery = false;
@@ -617,9 +630,9 @@ export function startVideoDownload(downloadUrl, filename, onProgress, mode = 'vi
         throw new Error('Thiết bị không hỗ trợ Share Sheet; audio vẫn nằm trong vùng lưu trữ của ứng dụng.');
       }
       await Sharing.shareAsync(result.uri, {
-        mimeType: /\.m4a$/i.test(safeName) ? 'audio/mp4' : 'audio/mpeg',
+        mimeType: expectedMetadata?.mime || contentType || 'audio/mpeg',
         dialogTitle: 'Chọn “Lưu vào Tệp” để lưu audio',
-        UTI: 'public.audio',
+        UTI: 'public.mp3',
       });
       sharedViaSheet = true;
     } else {
@@ -696,9 +709,9 @@ export async function shareDownloadedFile(uri, mode = 'video') {
     throw new Error('Thiết bị không hỗ trợ Share Sheet.');
   }
   await Sharing.shareAsync(uri, {
-    mimeType: mode === 'audio' ? 'audio/*' : 'video/mp4',
+    mimeType: mode === 'audio' ? 'audio/mpeg' : 'video/mp4',
     dialogTitle: mode === 'audio' ? 'Chọn “Lưu vào Tệp” để lưu audio' : 'Lưu hoặc chia sẻ video',
-    UTI: mode === 'audio' ? 'public.audio' : 'public.movie',
+    UTI: mode === 'audio' ? 'public.mp3' : 'public.movie',
   });
 }
 

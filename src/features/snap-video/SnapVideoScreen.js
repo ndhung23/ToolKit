@@ -221,7 +221,7 @@ export default function SnapVideoScreen({ navigation }) {
         platform: detectedPlatform,
         mode: downloadMode,
         quality: selectedQuality,
-        qualityInfo: downloadInfo.qualityInfo || (downloadMode === 'audio' ? 'Audio M4A/MP3' : `${selectedQuality}`),
+        qualityInfo: downloadInfo.qualityInfo || (downloadMode === 'audio' ? 'Audio MP3' : `${selectedQuality}`),
         duration,
         savedToGallery: result.savedToGallery,
         sharedViaSheet: result.sharedViaSheet,

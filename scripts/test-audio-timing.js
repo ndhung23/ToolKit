@@ -33,7 +33,7 @@ async function measureAudio(platformName, url, extractFn) {
 
     // Giai đoạn (c) & (d): Tải file stream về
     const tDownloadStart = Date.now();
-    const tempFile = path.join(outputDir, `timing_${platformName}_${Date.now()}.m4a`);
+    const tempFile = path.join(outputDir, `timing_${platformName}_${Date.now()}.source`);
     const res = await fetch(audioUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
@@ -71,11 +71,11 @@ async function measureAudio(platformName, url, extractFn) {
 }
 
 async function run() {
-  // 1. YouTube: lấy format 140 (AAC audio m4a)
+  // 1. YouTube: lấy format 140 (AAC source, only for timing measurement)
   const ytExtract = async (url) => {
     const cmd = `"${ytdlp}" -f 140/bestaudio -g "${url}"`;
     const out = execSync(cmd, { encoding: 'utf8' }).trim().split('\n').filter(l => l.startsWith('http'));
-    return { url: out[0], filename: 'youtube.m4a' };
+    return { url: out[0], filename: 'youtube.source' };
   };
 
   // 2. TikTok: lấy direct audio qua TikWM
