@@ -54,3 +54,5 @@ ffmpeg.exe
 ffprobe.exe
 temp_downloads/
 temp_test_downloads/
+test-links.json
+SMOKE_BASELINE.md
