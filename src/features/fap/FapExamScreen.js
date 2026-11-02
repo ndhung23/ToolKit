@@ -16,6 +16,7 @@ import * as Notifications from 'expo-notifications';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 import * as SecureStore from '../../utils/storage';
 import {
   getExamTimeStatus,
@@ -58,6 +59,7 @@ const STORAGE_FAP_GRADES = 'toolkit_fap_grades_v1';
 
 export default function FapExamScreen({ navigation }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
 
   const [fapUser, setFapUser] = useState(null);
   const [exams, setExams] = useState([]);
@@ -611,7 +613,7 @@ export default function FapExamScreen({ navigation }) {
             { color: activeTab === 'attendance' ? '#121214' : colors.sub },
           ]}
         >
-          Điểm danh
+          {t('fap.tabAttendance') || 'Điểm danh'}
         </Text>
       </Pressable>
 
@@ -633,7 +635,7 @@ export default function FapExamScreen({ navigation }) {
             { color: activeTab === 'exam' ? '#121214' : colors.sub },
           ]}
         >
-          Lịch thi ({exams.length})
+          {t('fap.tabExam') || 'Lịch thi'} ({exams.length})
         </Text>
       </Pressable>
 
@@ -655,7 +657,7 @@ export default function FapExamScreen({ navigation }) {
             { color: activeTab === 'grade' ? '#121214' : colors.sub },
           ]}
         >
-          Bảng điểm ({grades.length})
+          {t('fap.tabGrade') || 'Bảng điểm'} ({grades.length})
         </Text>
       </Pressable>
     </View>

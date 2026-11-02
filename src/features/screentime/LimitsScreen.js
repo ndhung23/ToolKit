@@ -3,6 +3,7 @@ import { View, Text, FlatList, Pressable, Switch, StyleSheet, Alert } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 
 const INITIAL_APPS = [
   { id: 'momo', name: 'MoMo', iconBg: '#A50064', used: 5, limit: 30, enabled: true },
@@ -14,6 +15,7 @@ const INITIAL_APPS = [
 
 export default function LimitsScreen({ navigation }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   const [apps, setApps] = useState(INITIAL_APPS);
   const [strictMode, setStrictMode] = useState(true);
 

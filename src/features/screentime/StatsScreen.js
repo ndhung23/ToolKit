@@ -4,6 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../auth';
 import { Row, ScreenHeader, RoleBadge } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../context/LanguageContext';
 
 const FAVICON_ICON = require('../../../assets/favicon1.png');
 
@@ -20,18 +21,21 @@ const WEEK_DATA = [
 export default function StatsScreen({ navigation }) {
   const { colors } = useTheme();
   const { user, signOut } = useAuth();
+  const { t, isVietnamese } = useLanguage();
 
   const confirmLogout = () =>
-    Alert.alert('Đăng xuất', 'Bạn muốn đăng xuất khỏi tài khoản?', [
-      { text: 'Hủy', style: 'cancel' },
-      { text: 'Đăng xuất', style: 'destructive', onPress: signOut },
+    Alert.alert(t('settings.logoutConfirmTitle'), t('settings.logoutConfirmMsg'), [
+      { text: t('settings.cancel'), style: 'cancel' },
+      { text: t('settings.logout'), style: 'destructive', onPress: signOut },
     ]);
+
+  const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Header né tai thỏ */}
       <ScreenHeader
-        title="Thống kê"
+        title={t('statsScreen.title')}
         rightAction={
           <Pressable
             onPress={() => navigation.navigate('Settings')}
@@ -55,7 +59,7 @@ export default function StatsScreen({ navigation }) {
           </View>
           <View style={{ flex: 1, marginLeft: 14 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={styles.userName}>{user?.name || 'Người dùng'}</Text>
+              <Text style={styles.userName}>{user?.name || t('statsScreen.userFallback')}</Text>
               <RoleBadge role={user?.role} />
             </View>
             <Text style={[styles.userEmail, { color: colors.sub }]}>{user?.email || 'user@example.com'}</Text>
@@ -67,12 +71,12 @@ export default function StatsScreen({ navigation }) {
         <View style={[styles.chartCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <View style={styles.chartHeader}>
             <View>
-              <Text style={styles.chartTitle}>Thời gian tập trung</Text>
-              <Text style={[styles.chartSub, { color: colors.sub }]}>Tuần này • Trung bình 3h 15p / ngày</Text>
+              <Text style={styles.chartTitle}>{t('statsScreen.focusTitle')}</Text>
+              <Text style={[styles.chartSub, { color: colors.sub }]}>{t('statsScreen.focusSub')}</Text>
             </View>
             <View style={[styles.badgeTrend, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
               <Ionicons name="trending-up" size={14} color="#10B981" />
-              <Text style={styles.badgeTrendText}>+18%</Text>
+              <Text style={styles.badgeTrendText}>{t('statsScreen.trend')}</Text>
             </View>
           </View>
 
@@ -97,7 +101,7 @@ export default function StatsScreen({ navigation }) {
                     { color: item.active ? colors.primary : colors.sub },
                   ]}
                 >
-                  {item.day}
+                  {t(`statsScreen.days.${dayKeys[idx]}`) || item.day}
                 </Text>
               </View>
             ))}
@@ -108,22 +112,22 @@ export default function StatsScreen({ navigation }) {
         <View style={styles.statsGrid}>
           <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <Text style={[styles.statNum, { color: colors.primary }]}>100</Text>
-            <Text style={[styles.statLabel, { color: colors.sub }]}>Điểm sức khỏe</Text>
+            <Text style={[styles.statLabel, { color: colors.sub }]}>{t('statsScreen.healthScore')}</Text>
           </View>
 
           <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <Text style={[styles.statNum, { color: colors.primary }]}>22.5h</Text>
-            <Text style={[styles.statLabel, { color: colors.sub }]}>Tập trung tuần</Text>
+            <Text style={[styles.statLabel, { color: colors.sub }]}>{t('statsScreen.weeklyFocus')}</Text>
           </View>
 
           <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.statNum, { color: '#F59E0B' }]}>5 ngày 🔥</Text>
-            <Text style={[styles.statLabel, { color: colors.sub }]}>Chuỗi liên tục</Text>
+            <Text style={[styles.statNum, { color: '#F59E0B' }]}>{t('statsScreen.streakDays', { count: 5 })}</Text>
+            <Text style={[styles.statLabel, { color: colors.sub }]}>{t('statsScreen.streak')}</Text>
           </View>
 
           <View style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <Text style={[styles.statNum, { color: '#10B981' }]}>100%</Text>
-            <Text style={[styles.statLabel, { color: colors.sub }]}>Đạt mục tiêu</Text>
+            <Text style={[styles.statLabel, { color: colors.sub }]}>{t('statsScreen.goalAchieved')}</Text>
           </View>
         </View>
 
@@ -136,17 +140,17 @@ export default function StatsScreen({ navigation }) {
         >
           <Row
             icon="settings-outline"
-            label="Cài đặt hệ thống"
+            label={t('statsScreen.systemSettings')}
             onPress={() => navigation.navigate('Settings')}
           />
           <Row
             icon="document-text-outline"
-            label="Tiện ích Ảnh → PDF"
+            label={t('statsScreen.imageToPdf')}
             onPress={() => navigation.navigate('ImageToPdf')}
           />
           <Row
             icon="log-out-outline"
-            label="Đăng xuất"
+            label={t('statsScreen.logout')}
             onPress={confirmLogout}
             danger
           />

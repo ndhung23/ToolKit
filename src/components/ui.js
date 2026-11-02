@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { radius, useTheme } from '../theme';
 import { ROLE_CONFIG } from '../constants/roles';
 import { useAuth } from '../features/auth/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 
 const FAVICON_ICON = require('../../assets/favicon1.png');
 
@@ -36,6 +37,7 @@ export function RoleBadge({ role }) {
 // 1. Header chuẩn Derot (Logo favicon1.png bo tròn + chữ vàng + crown vàng + settings + Role badge)
 export function DerotHeader({ title = 'ToolKit', userRole, onCrownPress, onSettingsPress, onLoginPress }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   const safeTop = useSafeTop();
 
   return (
@@ -68,7 +70,9 @@ export function DerotHeader({ title = 'ToolKit', userRole, onCrownPress, onSetti
               hitSlop={6}
             >
               <Ionicons name="log-in-outline" size={11} color="#FFD000" style={{ marginRight: 3 }} />
-              <Text style={{ color: '#FFD000', fontSize: 10, fontWeight: '800' }}>ĐĂNG NHẬP</Text>
+              <Text style={{ color: '#FFD000', fontSize: 10, fontWeight: '800' }}>
+                {t('ui.loginBtn', {}, 'ĐĂNG NHẬP')}
+              </Text>
             </Pressable>
           )}
         </View>
@@ -228,6 +232,7 @@ export function AchievementCard({
 // 5. Thẻ tính năng dạng lưới (Grid Card)
 export function ToolCard({ tool, onPress }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   return (
     <Pressable
       onPress={onPress}
@@ -255,11 +260,13 @@ export function ToolCard({ tool, onPress }) {
         )}
       </View>
       <Text style={[styles.toolCardTitle, { color: colors.text }]} numberOfLines={2}>
-        {tool.title}
+        {t(`tools.${tool.id}.shortTitle`, {}, tool.shortTitle || tool.title)}
       </Text>
       {tool.badge && (
         <View style={[styles.badgePill, { backgroundColor: 'rgba(255, 208, 0, 0.12)' }]}>
-          <Text style={[styles.badgePillText, { color: colors.primary }]}>{tool.badge}</Text>
+          <Text style={[styles.badgePillText, { color: colors.primary }]}>
+            {t(`tools.${tool.id}.badge`, {}, tool.badge)}
+          </Text>
         </View>
       )}
     </Pressable>
@@ -269,6 +276,7 @@ export function ToolCard({ tool, onPress }) {
 // 6. Dòng tiện ích dạng danh sách (List Row) kèm trạng thái Locked
 export function ToolRow({ tool, locked = false, onPress }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   return (
     <Pressable
       onPress={onPress}
@@ -296,10 +304,12 @@ export function ToolRow({ tool, locked = false, onPress }) {
       </View>
       <View style={{ flex: 1, marginLeft: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={[styles.toolRowTitle, { color: colors.text }]}>{tool.title}</Text>
+          <Text style={[styles.toolRowTitle, { color: colors.text }]}>
+            {t(`tools.${tool.id}.title`, {}, tool.title)}
+          </Text>
         </View>
         <Text style={[styles.toolRowDesc, { color: colors.sub }]} numberOfLines={2}>
-          {tool.desc}
+          {t(`tools.${tool.id}.desc`, {}, tool.desc)}
         </Text>
       </View>
       {locked ? (
@@ -318,9 +328,11 @@ export function ToolRow({ tool, locked = false, onPress }) {
 export function VipUpgradeModal({ visible, tool, onClose, onLoginPress }) {
   const { colors } = useTheme();
   const { user } = useAuth();
+  const { t } = useLanguage();
   if (!visible) return null;
 
   const isGuest = !user;
+  const toolTitle = tool ? t(`tools.${tool.id}.title`, {}, tool.title) : '';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -335,14 +347,14 @@ export function VipUpgradeModal({ visible, tool, onClose, onLoginPress }) {
             <MaterialCommunityIcons name="crown" size={34} color="#121214" />
           </View>
           <Text style={[styles.modalTitle, { color: colors.text }]}>
-            {isGuest ? 'Yêu cầu đăng nhập' : (tool ? 'Tính năng VIP' : 'Đặc quyền VIP')}
+            {isGuest ? t('ui.vipModalTitleGuest') : (tool ? t('ui.vipModalTitleVip') : t('ui.vipModalTitlePrivilege'))}
           </Text>
           <Text style={[styles.modalDesc, { color: colors.sub }]}>
             {isGuest
-              ? `Tiện ích "${tool?.title || 'này'}" yêu cầu đăng nhập tài khoản để sử dụng. Vui lòng đăng nhập hoặc tạo tài khoản mới để trải nghiệm.`
+              ? t('ui.vipModalDescGuest', { title: toolTitle || t('ui.standardAssistantTitle') })
               : (tool
-                  ? `Tiện ích "${tool.title}" là tính năng độc quyền dành cho thành viên VIP. Quyền truy cập do Quản trị viên (Admin) chỉ định và phân quyền trong hệ thống.`
-                  : 'Để sử dụng không giới hạn các tính năng VIP, vui lòng liên hệ Quản trị viên (Admin) để được cấp quyền tài khoản.')}
+                  ? t('ui.vipModalDescVip', { title: toolTitle })
+                  : t('ui.vipModalDescGeneral'))}
           </Text>
 
           {isGuest && onLoginPress ? (
@@ -354,13 +366,13 @@ export function VipUpgradeModal({ visible, tool, onClose, onLoginPress }) {
                 }}
                 style={[styles.modalBtn, { backgroundColor: colors.primary }]}
               >
-                <Text style={styles.modalBtnText}>Đăng nhập / Đăng ký</Text>
+                <Text style={styles.modalBtnText}>{t('ui.vipModalLoginAction')}</Text>
               </Pressable>
               <Pressable
                 onPress={onClose}
                 style={[styles.modalBtnSecondary, { borderColor: colors.border }]}
               >
-                <Text style={[styles.modalBtnSecondaryText, { color: colors.sub }]}>Khám phá tiện ích khác</Text>
+                <Text style={[styles.modalBtnSecondaryText, { color: colors.sub }]}>{t('ui.vipModalExploreAction')}</Text>
               </Pressable>
             </View>
           ) : (
@@ -368,7 +380,7 @@ export function VipUpgradeModal({ visible, tool, onClose, onLoginPress }) {
               onPress={onClose}
               style={[styles.modalBtn, { backgroundColor: colors.primary }]}
             >
-              <Text style={styles.modalBtnText}>Đã hiểu</Text>
+              <Text style={styles.modalBtnText}>{t('ui.vipModalUnderstood')}</Text>
             </Pressable>
           )}
         </View>
@@ -379,6 +391,7 @@ export function VipUpgradeModal({ visible, tool, onClose, onLoginPress }) {
 
 // 7. Banner Chia sẻ ToolKit
 export function ShareBanner({ onPress }) {
+  const { t } = useLanguage();
   return (
     <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}>
       <LinearGradient
@@ -390,7 +403,7 @@ export function ShareBanner({ onPress }) {
         <View style={styles.shareIconCircle}>
           <Ionicons name="sparkles" size={18} color="#FFD000" />
         </View>
-        <Text style={styles.shareTitle}>Chia sẻ ToolKit cho bạn bè</Text>
+        <Text style={styles.shareTitle}>{t('ui.shareBannerText')}</Text>
         <Ionicons name="chevron-forward" size={20} color="#121214" />
       </LinearGradient>
     </Pressable>

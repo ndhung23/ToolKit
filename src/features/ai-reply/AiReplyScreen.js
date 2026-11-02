@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, TextInput, Alert, FlatList } from 'r
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../context/LanguageContext';
 import { sendToGemini } from '../../services/geminiService';
 
 const SAMPLES = [
@@ -13,6 +14,7 @@ const SAMPLES = [
 
 export default function AiReplyScreen({ navigation }) {
   const { colors } = useTheme();
+  const { isVietnamese } = useLanguage();
   const [incomingMsg, setIncomingMsg] = useState(SAMPLES[0]);
   const [analyzing, setAnalyzing] = useState(false);
   const [replies, setReplies] = useState([
@@ -110,7 +112,7 @@ Trả về định dạng JSON thuần túy (không bọc trong markdown code bl
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScreenHeader
-        title="AI Gợi ý trả lời"
+        title={isVietnamese ? 'AI Gợi ý trả lời' : 'AI Reply Assistant'}
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
       <FlatList
@@ -122,19 +124,19 @@ Trả về định dạng JSON thuần túy (không bọc trong markdown code bl
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.cardHeaderRow}>
           <Ionicons name="chatbubbles" size={20} color={colors.primary} />
-          <Text style={styles.cardTitle}>Tin nhắn bạn nhận được</Text>
+          <Text style={styles.cardTitle}>{isVietnamese ? 'Tin nhắn bạn nhận được' : 'Incoming Message'}</Text>
         </View>
 
         <TextInput
           value={incomingMsg}
           onChangeText={setIncomingMsg}
           multiline
-          placeholder="Dán hoặc gõ tin nhắn nhận được vào đây..."
+          placeholder={isVietnamese ? 'Dán hoặc gõ tin nhắn nhận được vào đây...' : 'Paste or type message here...'}
           placeholderTextColor={colors.sub}
           style={[styles.msgInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.bg }]}
         />
 
-        <Text style={[styles.sampleLabel, { color: colors.sub }]}>Gợi ý tin nhắn mẫu:</Text>
+        <Text style={[styles.sampleLabel, { color: colors.sub }]}>{isVietnamese ? 'Gợi ý tin nhắn mẫu:' : 'Sample messages:'}</Text>
         <View style={styles.samplesRow}>
           {SAMPLES.map((s, idx) => (
             <Pressable
@@ -156,13 +158,15 @@ Trả về định dạng JSON thuần túy (không bọc trong markdown code bl
         >
           <Ionicons name="sparkles" size={18} color="#121214" />
           <Text style={styles.analyzeBtnText}>
-            {analyzing ? 'AI đang phân tích ngữ cảnh...' : 'AI phân tích & gợi ý trả lời'}
+            {analyzing
+              ? (isVietnamese ? 'AI đang phân tích ngữ cảnh...' : 'AI analyzing context...')
+              : (isVietnamese ? 'AI phân tích & gợi ý trả lời' : 'Analyze & Suggest Replies')}
           </Text>
         </Pressable>
       </View>
 
       {/* Danh sách 3 gợi ý trả lời từ AI */}
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Gợi ý phản hồi thông minh</Text>
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>{isVietnamese ? 'Gợi ý phản hồi thông minh' : 'Smart Reply Suggestions'}</Text>
 
       {replies.map((reply, idx) => (
         <View
@@ -180,7 +184,7 @@ Trả về định dạng JSON thuần túy (không bọc trong markdown code bl
               style={[styles.copyBtn, { backgroundColor: 'rgba(255, 208, 0, 0.12)' }]}
             >
               <Ionicons name="copy-outline" size={14} color={colors.primary} />
-              <Text style={[styles.copyText, { color: colors.primary }]}>Sao chép</Text>
+              <Text style={[styles.copyText, { color: colors.primary }]}>{isVietnamese ? 'Sao chép' : 'Copy'}</Text>
             </Pressable>
           </View>
 

@@ -16,6 +16,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from './AuthContext';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../context/LanguageContext';
 import { useSafeTop } from '../../components/ui';
 
 const FAVICON_ICON = require('../../../assets/favicon1.png');
@@ -23,6 +24,7 @@ const FAVICON_ICON = require('../../../assets/favicon1.png');
 export default function LoginScreen({ navigation }) {
   const { colors } = useTheme();
   const { signIn, signInWithGoogle, sendPasswordReset } = useAuth();
+  const { t, isVietnamese } = useLanguage();
   const safeTop = useSafeTop();
 
   const [email, setEmail] = useState('');
@@ -153,7 +155,7 @@ export default function LoginScreen({ navigation }) {
               hitSlop={10}
             >
               <Ionicons name="chevron-back" size={20} color={colors.primary} />
-              <Text style={[styles.backBtnText, { color: colors.primary }]}>Quay lại</Text>
+              <Text style={[styles.backBtnText, { color: colors.primary }]}>{t('auth.back')}</Text>
             </Pressable>
           </View>
         )}
@@ -166,7 +168,7 @@ export default function LoginScreen({ navigation }) {
             ToolKit <Text style={{ fontSize: 24 }}>✨</Text>
           </Text>
           <Text style={[styles.appTagline, { color: colors.sub }]}>
-            Hệ thống tiện ích thông minh cho thiết bị của bạn
+            {t('auth.loginSubtitle')}
           </Text>
         </View>
 
@@ -177,14 +179,14 @@ export default function LoginScreen({ navigation }) {
             { backgroundColor: colors.card, borderColor: colors.cardBorder },
           ]}
         >
-          <Text style={[styles.formTitle, { color: colors.text }]}>Đăng nhập</Text>
+          <Text style={[styles.formTitle, { color: colors.text }]}>{t('auth.loginTitle')}</Text>
 
           <View style={[styles.inputBox, { borderColor: colors.border, backgroundColor: colors.bg }]}>
             <Ionicons name="person-outline" size={20} color={colors.sub} />
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="Tên đăng nhập hoặc Email"
+              placeholder={t('auth.usernameOrEmail')}
               placeholderTextColor={colors.sub}
               autoCapitalize="none"
               style={[styles.inputField, { color: colors.text }]}
@@ -196,7 +198,7 @@ export default function LoginScreen({ navigation }) {
             <TextInput
               value={pw}
               onChangeText={setPw}
-              placeholder="Mật khẩu"
+              placeholder={t('auth.password')}
               placeholderTextColor={colors.sub}
               secureTextEntry={!show}
               style={[styles.inputField, { color: colors.text }]}
@@ -209,7 +211,7 @@ export default function LoginScreen({ navigation }) {
           {/* Nút Quên mật khẩu */}
           <View style={styles.forgotPassRow}>
             <Pressable onPress={handleOpenForgot} hitSlop={8}>
-              <Text style={[styles.forgotPassText, { color: colors.primary }]}>Quên mật khẩu?</Text>
+              <Text style={[styles.forgotPassText, { color: colors.primary }]}>{t('auth.forgotPassword')}</Text>
             </Pressable>
           </View>
 
@@ -230,14 +232,14 @@ export default function LoginScreen({ navigation }) {
             {busy ? (
               <ActivityIndicator color="#121214" />
             ) : (
-              <Text style={styles.submitBtnText}>Đăng nhập ngay</Text>
+              <Text style={styles.submitBtnText}>{t('auth.loginNow')}</Text>
             )}
           </Pressable>
 
           {/* Đường phân cách */}
           <View style={styles.dividerRow}>
             <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.sub }]}>HOẶC</Text>
+            <Text style={[styles.dividerText, { color: colors.sub }]}>{t('auth.orDivider')}</Text>
             <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
           </View>
 
@@ -258,16 +260,16 @@ export default function LoginScreen({ navigation }) {
             ) : (
               <View style={styles.googleBtnContent}>
                 <Ionicons name="logo-google" size={19} color="#EA4335" />
-                <Text style={styles.googleBtnText}>Đăng nhập với Google</Text>
+                <Text style={styles.googleBtnText}>{t('auth.loginWithGoogle')}</Text>
               </View>
             )}
           </Pressable>
 
           {/* Chuyển sang màn hình Đăng ký */}
           <View style={styles.bottomSwitchRow}>
-            <Text style={{ color: colors.sub, fontSize: 14 }}>Chưa có tài khoản? </Text>
+            <Text style={{ color: colors.sub, fontSize: 14 }}>{t('auth.dontHaveAccount')} </Text>
             <Pressable onPress={() => navigation?.navigate('Register')} hitSlop={8}>
-              <Text style={[styles.switchLink, { color: colors.primary }]}>Đăng ký ngay</Text>
+              <Text style={[styles.switchLink, { color: colors.primary }]}>{t('auth.registerNow')}</Text>
             </Pressable>
           </View>
         </View>

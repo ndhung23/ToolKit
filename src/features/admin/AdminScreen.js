@@ -4,6 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader, RoleBadge } from '../../components/ui';
 import { useAuth } from '../auth';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 import { ROLES } from '../../constants/roles';
 import { TOOLS } from '../../tools';
 import {
@@ -19,6 +20,7 @@ const ITEMS_PER_PAGE = 10;
 
 export default function AdminScreen({ navigation }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   const { user, toolTiers, updateToolTier, refreshToolTiers } = useAuth();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('tools'); // 'tools' | 'users'
@@ -153,7 +155,7 @@ export default function AdminScreen({ navigation }) {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
         <ScreenHeader
-          title="Quản trị hệ thống"
+          title={t('settings.admin') || 'Quản trị hệ thống'}
           onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
         />
         <View style={styles.unauthorizedBox}>
@@ -180,7 +182,7 @@ export default function AdminScreen({ navigation }) {
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
       <ScreenHeader
-        title="Quản trị hệ thống (Admin)"
+        title={t('settings.admin') ? `${t('settings.admin')} (Admin)` : 'Quản trị hệ thống (Admin)'}
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
 

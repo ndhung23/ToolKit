@@ -15,6 +15,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 import {
   getStoredAccounts,
   getActiveAccountId,
@@ -29,6 +30,7 @@ import MultiAddAccountModal from './common/MultiAddAccountModal';
 
 export default function MultiScreen({ navigation }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   const [accounts, setAccounts] = useState([]);
   const [activeAccountId, setActiveId] = useState(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
@@ -188,7 +190,7 @@ export default function MultiScreen({ navigation }) {
     return (
       <View style={[styles.loadingCenter, { backgroundColor: '#121214' }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.sub }]}>Đang nạp phiên đăng nhập...</Text>
+        <Text style={[styles.loadingText, { color: colors.sub }]}>{t('multiAccount.loading') || 'Đang nạp phiên đăng nhập...'}</Text>
       </View>
     );
   }
@@ -206,7 +208,7 @@ export default function MultiScreen({ navigation }) {
             >
               <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
             </Pressable>
-            <Text style={[styles.introTopTitle, { color: colors.text }]}>Đa tài khoản</Text>
+            <Text style={[styles.introTopTitle, { color: colors.text }]}>{t('multiAccount.title') || 'Đa tài khoản'}</Text>
             <View style={{ width: 24 }} />
           </View>
 
@@ -219,9 +221,9 @@ export default function MultiScreen({ navigation }) {
               />
             </View>
 
-            <Text style={[styles.introTitle, { color: colors.text }]}>Đa Tài Khoản Mạng Xã Hội</Text>
+            <Text style={[styles.introTitle, { color: colors.text }]}>{t('multiAccount.introTitle') || 'Đa Tài Khoản Mạng Xã Hội'}</Text>
             <Text style={[styles.introSub, { color: colors.sub }]}>
-              Đăng nhập Zalo, Messenger, Facebook & các ứng dụng khác. Chuyển đổi 1 chạm tức thì không cần đăng xuất.
+              {t('multiAccount.introDesc') || 'Đăng nhập Zalo, Messenger, Facebook & các ứng dụng khác. Chuyển đổi 1 chạm tức thì không cần đăng xuất.'}
             </Text>
 
             <View style={styles.featureList}>
@@ -252,7 +254,7 @@ export default function MultiScreen({ navigation }) {
               style={[styles.startBtn, { backgroundColor: colors.primary }]}
             >
               <Ionicons name="add-circle" size={20} color="#121214" />
-              <Text style={styles.startBtnText}>Thêm tài khoản đầu tiên</Text>
+              <Text style={styles.startBtnText}>{t('multiAccount.firstAccount') || 'Thêm tài khoản đầu tiên'}</Text>
             </Pressable>
           </View>
         </View>
@@ -301,15 +303,15 @@ export default function MultiScreen({ navigation }) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={[styles.renameBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.renameTitle, { color: colors.text }]}>Đổi tên gợi nhớ</Text>
+            <Text style={[styles.renameTitle, { color: colors.text }]}>{t('multiAccount.renameTitle') || 'Đổi tên gợi nhớ'}</Text>
             <Text style={[styles.renameSub, { color: colors.sub }]}>
-              Đặt tên dễ nhớ (ví dụ: "Shop online", "Nick cá nhân", "Nick clone"):
+              {t('multiAccount.renameSub') || 'Đặt tên dễ nhớ (ví dụ: "Shop online", "Nick cá nhân", "Nick clone"): '}
             </Text>
 
             <TextInput
               value={newNickname}
               onChangeText={setNewNickname}
-              placeholder="Nhập tên gợi nhớ..."
+              placeholder={t('multiAccount.renameTitle') || 'Nhập tên gợi nhớ...'}
               placeholderTextColor={colors.sub}
               style={[
                 styles.renameInput,
@@ -325,14 +327,14 @@ export default function MultiScreen({ navigation }) {
                 onPress={() => setRenameTargetAccount(null)}
                 style={[styles.renameBtn, { backgroundColor: colors.bg, borderColor: colors.cardBorder }]}
               >
-                <Text style={{ color: colors.sub, fontWeight: '700' }}>Hủy</Text>
+                <Text style={{ color: colors.sub, fontWeight: '700' }}>{t('common.cancel') || 'Hủy'}</Text>
               </Pressable>
 
               <Pressable
                 onPress={handleSaveRename}
                 style={[styles.renameBtn, { backgroundColor: colors.primary }]}
               >
-                <Text style={{ color: '#121214', fontWeight: '800' }}>Lưu tên</Text>
+                <Text style={{ color: '#121214', fontWeight: '800' }}>{t('multiAccount.saveName') || 'Lưu tên'}</Text>
               </Pressable>
             </View>
           </View>

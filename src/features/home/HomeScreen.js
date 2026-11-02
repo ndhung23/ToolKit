@@ -108,8 +108,9 @@ export default function HomeScreen({ navigation }) {
   const handleShare = async () => {
     try {
       await Share.share({
-        message:
-          'Trải nghiệm trọn bộ tiện ích thông minh trên ToolKit: Ghép ảnh PDF, Thời gian dùng, Dọn ảnh rác, Đa nick Facebook, AI trả lời tin nhắn...',
+        message: isVietnamese
+          ? 'Trải nghiệm trọn bộ tiện ích thông minh trên ToolKit: Ghép ảnh PDF, Thời gian dùng, Dọn ảnh rác, Đa nick Facebook, AI trả lời tin nhắn...'
+          : 'Experience the smart utilities suite on ToolKit: Image to PDF, Screen Time, Clean Photos, Multi-Account FB, AI Reply Assistant...',
       });
     } catch (e) {
       // ignore
@@ -119,17 +120,21 @@ export default function HomeScreen({ navigation }) {
   const handleStatusPress = () => {
     if (vipActive) {
       Alert.alert(
-        'Hệ thống ToolKit VIP',
-        `Tất cả ${TOOLS.length} tiện ích đã sẵn sàng hoạt động tối ưu trên thiết bị của bạn với tư cách VIP.`,
-        [{ text: 'Đồng ý' }]
+        isVietnamese ? 'Hệ thống ToolKit VIP' : 'ToolKit VIP System',
+        isVietnamese
+          ? `Tất cả ${TOOLS.length} tiện ích đã sẵn sàng hoạt động tối ưu trên thiết bị của bạn với tư cách VIP.`
+          : `All ${TOOLS.length} utilities are fully operational on your device as VIP.`,
+        [{ text: isVietnamese ? 'Đồng ý' : 'OK' }]
       );
     } else {
       Alert.alert(
-        'Tài khoản Free',
-        `Bạn đang sử dụng ${accessibleCount}/${TOOLS.length} tiện ích cơ bản. Quyền nâng cấp VIP do Quản trị viên hệ thống chỉ định.`,
+        isVietnamese ? 'Tài khoản Free' : 'Free Account',
+        isVietnamese
+          ? `Bạn đang sử dụng ${accessibleCount}/${TOOLS.length} tiện ích cơ bản. Quyền nâng cấp VIP do Quản trị viên hệ thống chỉ định.`
+          : `You are accessing ${accessibleCount}/${TOOLS.length} standard utilities. VIP upgrades are granted by system administrators.`,
         [
-          { text: 'Đóng', style: 'cancel' },
-          { text: 'Xem đặc quyền VIP', onPress: () => setCrownModalVisible(true) },
+          { text: isVietnamese ? 'Đóng' : 'Close', style: 'cancel' },
+          { text: isVietnamese ? 'Xem đặc quyền VIP' : 'View VIP Privileges', onPress: () => setCrownModalVisible(true) },
         ]
       );
     }

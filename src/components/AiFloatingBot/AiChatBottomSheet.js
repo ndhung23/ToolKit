@@ -17,6 +17,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../context/LanguageContext';
 import {
   sendToGemini,
   getSavedChatHistory,
@@ -37,12 +38,40 @@ const PROMPT_SUGGESTIONS = [
 
 export default function AiChatBottomSheet({ visible, onClose }) {
   const { colors } = useTheme();
+  const { t, isVietnamese } = useLanguage();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef(null);
 
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const promptSuggestions = [
+    {
+      label: t('aiBot.suggestionPolite'),
+      prompt: isVietnamese
+        ? 'Hãy giúp tôi viết lại tin nhắn sau một cách chuyên nghiệp, lịch sự và nhã nhặn: '
+        : 'Please rewrite the following message in a professional, polite, and courteous tone: ',
+    },
+    {
+      label: t('aiBot.suggestionTranslate'),
+      prompt: isVietnamese
+        ? 'Hãy dịch đoạn văn bản sau sang tiếng Anh tự nhiên, chuẩn văn phong giao tiếp: '
+        : 'Please translate the following text into natural, fluent English: ',
+    },
+    {
+      label: t('aiBot.suggestionReply'),
+      prompt: isVietnamese
+        ? 'Khách hàng nhắn tin hỏi như sau, hãy gợi ý cho tôi 3 cách trả lời khéo léo và thuyết phục: '
+        : 'A customer asked the following, please suggest 3 persuasive and tactful responses: ',
+    },
+    {
+      label: t('aiBot.suggestionSummary'),
+      prompt: isVietnamese
+        ? 'Hãy tóm tắt ngắn gọn các ý chính của đoạn văn bản sau trong 3 gạch đầu dòng: '
+        : 'Please summarize the main points of the following text in 3 bullet points: ',
+    },
+  ];
 
   // Modal cài đặt API Key cá nhân
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -62,14 +91,14 @@ export default function AiChatBottomSheet({ visible, onClose }) {
             {
               id: 'welcome_1',
               role: 'model',
-              text: 'Xin chào! Tôi là Trợ lý AI Gemini. Tôi có thể giúp bạn trả lời câu hỏi, soạn thảo tin nhắn lịch sự, dịch thuật hoặc gợi ý phản hồi cho khách hàng. Bạn cần tôi hỗ trợ gì?',
+              text: t('aiBot.welcomeMessage'),
               timestamp: Date.now(),
             },
           ]);
         }
       })();
     }
-  }, [visible]);
+  }, [visible, isVietnamese]);
 
   // Nạp Custom Key khi mở cài đặt
   const handleOpenSettings = async () => {
@@ -82,21 +111,21 @@ export default function AiChatBottomSheet({ visible, onClose }) {
     try {
       await setCustomGeminiKey(customKeyInput.trim());
       setSettingsVisible(false);
-      Alert.alert('Thành công', 'Đã lưu cấu hình Gemini API Key.');
+      Alert.alert(isVietnamese ? 'Thành công' : 'Success', t('aiBot.savedSuccess'));
     } catch (_e) {
-      Alert.alert('Lỗi', 'Không thể lưu API Key.');
+      Alert.alert(isVietnamese ? 'Lỗi' : 'Error', isVietnamese ? 'Không thể lưu API Key.' : 'Could not save API Key.');
     }
   };
 
   // Xóa lịch sử chat
   const handleClearHistory = () => {
     Alert.alert(
-      'Xóa lịch sử chat',
-      'Bạn có chắc chắn muốn xóa toàn bộ cuộc trò chuyện này để bắt đầu lại không?',
+      t('aiBot.clearHistory'),
+      t('aiBot.clearConfirm'),
       [
-        { text: 'Hủy', style: 'cancel' },
+        { text: t('settings.cancel'), style: 'cancel' },
         {
-          text: 'Xóa',
+          text: t('aiBot.clearBtn'),
           style: 'destructive',
           onPress: async () => {
             await clearChatHistory();
@@ -104,7 +133,9 @@ export default function AiChatBottomSheet({ visible, onClose }) {
               {
                 id: `welcome_${Date.now()}`,
                 role: 'model',
-                text: 'Cuộc trò chuyện mới đã bắt đầu. Hãy gửi câu hỏi hoặc chọn một gợi ý bên dưới!',
+                text: isVietnamese
+                  ? 'Cuộc trò chuyện mới đã bắt đầu. Hãy gửi câu hỏi hoặc chọn một gợi ý bên dưới!'
+                  : 'New chat started. Send a question or choose a prompt suggestion below!',
                 timestamp: Date.now(),
               },
             ]);
@@ -233,7 +264,7 @@ export default function AiChatBottomSheet({ visible, onClose }) {
                     { color: isCopied ? '#10B981' : colors.sub },
                   ]}
                 >
-                  {isCopied ? 'Đã sao chép' : 'Sao chép để dán'}
+                  {isCopied ? (isVietnamese ? 'Đã sao chép' : 'Copied') : (isVietnamese ? 'Sao chép để dán' : 'Copy response')}
                 </Text>
               </Pressable>
             </View>
@@ -275,9 +306,9 @@ export default function AiChatBottomSheet({ visible, onClose }) {
                 <Ionicons name="sparkles" size={16} color="#FFFFFF" />
               </View>
               <View>
-                <Text style={[styles.headerTitle, { color: colors.text }]}>Trợ lý AI Gemini</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>{t('aiBot.botName')}</Text>
                 <Text style={[styles.headerSub, { color: '#10B981' }]}>
-                  ● Gemini 1.5 Flash Sẵn sàng
+                  {isVietnamese ? '● Gemini 1.5 Flash Sẵn sàng' : '● Gemini 1.5 Flash Ready'}
                 </Text>
               </View>
             </View>
@@ -314,7 +345,7 @@ export default function AiChatBottomSheet({ visible, onClose }) {
             <FlatList
               horizontal
               showsHorizontalScrollIndicator={false}
-              data={PROMPT_SUGGESTIONS}
+              data={promptSuggestions}
               keyExtractor={(item) => item.label}
               contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}
               renderItem={({ item }) => (
@@ -353,7 +384,7 @@ export default function AiChatBottomSheet({ visible, onClose }) {
                   <View style={[styles.typingBubble, { backgroundColor: colors.card }]}>
                     <ActivityIndicator size="small" color="#6366F1" />
                     <Text style={[styles.typingText, { color: colors.sub }]}>
-                      Gemini đang suy nghĩ...
+                      {isVietnamese ? 'Gemini đang suy nghĩ...' : 'Gemini is thinking...'}
                     </Text>
                   </View>
                 </View>
@@ -366,7 +397,7 @@ export default function AiChatBottomSheet({ visible, onClose }) {
             <TextInput
               value={inputText}
               onChangeText={setInputText}
-              placeholder="Nhắn tin với AI (hỏi đáp, dịch, soạn tin)..."
+              placeholder={t('aiBot.inputPlaceholder')}
               placeholderTextColor={colors.sub}
               style={[
                 styles.textInput,
@@ -412,17 +443,17 @@ export default function AiChatBottomSheet({ visible, onClose }) {
           <View style={[styles.settingsBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={styles.settingsHeader}>
               <Ionicons name="key-outline" size={20} color="#6366F1" />
-              <Text style={[styles.settingsTitle, { color: colors.text }]}>Cài đặt Gemini API Key</Text>
+              <Text style={[styles.settingsTitle, { color: colors.text }]}>{t('aiBot.apiKeySettings')}</Text>
             </View>
 
             <Text style={[styles.settingsSub, { color: colors.sub }]}>
-              Mặc định ứng dụng đã có sẵn API Key. Nếu muốn dùng hạn ngạch riêng của bạn, hãy nhập API Key Google Gemini vào bên dưới:
+              {t('aiBot.apiKeyDesc')}
             </Text>
 
             <TextInput
               value={customKeyInput}
               onChangeText={setCustomKeyInput}
-              placeholder="Nhập API Key cá nhân (AIzaSy...)"
+              placeholder={t('aiBot.apiKeyPlaceholder')}
               placeholderTextColor={colors.sub}
               style={[
                 styles.settingsInput,
@@ -437,14 +468,14 @@ export default function AiChatBottomSheet({ visible, onClose }) {
                 onPress={() => setSettingsVisible(false)}
                 style={[styles.settingsBtn, { backgroundColor: colors.bg }]}
               >
-                <Text style={{ color: colors.sub, fontWeight: '700' }}>Hủy</Text>
+                <Text style={{ color: colors.sub, fontWeight: '700' }}>{t('settings.cancel')}</Text>
               </Pressable>
 
               <Pressable
                 onPress={handleSaveCustomKey}
                 style={[styles.settingsBtn, { backgroundColor: '#6366F1' }]}
               >
-                <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>Lưu Key</Text>
+                <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>{t('aiBot.saveKey')}</Text>
               </Pressable>
             </View>
           </View>
