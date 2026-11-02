@@ -2,7 +2,7 @@
 // Màn hình tải video từ 4 mạng xã hội: TikTok, YouTube, Facebook, Instagram
 // Tương tự tính năng Snap Video trên phimtat.vn
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   FlatList,
   Platform,
+  Linking,
   Animated,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -25,16 +26,60 @@ import {
   isValidUrl,
   fetchDownloadLink,
   startVideoDownload,
+  shareDownloadedFile,
   cleanupTempFile,
 } from './videoDownloadService';
 
 // Lịch sử tải gần đây (trong phiên)
 const MAX_HISTORY = 20;
 
+const QUALITY_OPTIONS = [
+  { id: 'best', label: 'Tốt nhất ⭐' },
+  { id: '1080p', label: '1080p FHD' },
+  { id: '720p', label: '720p HD' },
+  { id: '480p', label: '480p SD' },
+  { id: '360p', label: '360p' },
+];
+
+/**
+ * Gom toàn bộ chuỗi văn bản UI theo chế độ tải (video / audio)
+ * Đảm bảo không bị hardcode lẫn lộn giữa Video và Audio
+ */
+export function getDownloadLabels(mode, platform = Platform.OS) {
+  const isAudio = mode === 'audio';
+  const mediaType = isAudio ? 'audio' : 'video';
+  const MediaType = isAudio ? 'Audio' : 'Video';
+
+  return {
+    isAudio,
+    mediaType,
+    MediaType,
+    buttonIdle: `Tải ${MediaType}`,
+    buttonLoading: `Đang tải ${mediaType}...`,
+    analyzing: `Đang phân tích link ${mediaType}...`,
+    downloading: `Đang tải ${mediaType}...`,
+    cancelBtn: 'Hủy tải',
+    cancelledError: `Đã hủy tải ${mediaType}.`,
+    successTitle: `Tải ${mediaType} thành công! 🎉`,
+    successGallery: isAudio
+      ? 'Audio đã được lưu vào thư viện Android.'
+      : platform === 'android' ? 'Video đã được lưu vào thư viện Android.' : 'Video đã được lưu vào thư viện ảnh của bạn.',
+    successSheet: `${MediaType} đã được tải về thành công. Bạn có thể lưu vào ${platform === 'android' ? 'Tải xuống hoặc ứng dụng khác' : 'Tệp'} qua menu vừa mở.`,
+    notSavedYetTitle: 'Tải xong nhưng chưa lưu',
+    notSavedYetMsg: isAudio
+      ? platform === 'android' ? 'Audio đã tải xong nhưng chưa lưu được vào thư viện. Hãy chọn Tải xuống trong menu chia sẻ.' : 'Audio đã tải xong. Vui lòng mở Tệp để quản lý.'
+      : platform === 'android' ? 'File đã tải về nhưng không thể lưu vào thư viện Android. Vui lòng kiểm tra quyền trong Cài đặt.' : 'File đã tải về thiết bị nhưng không thể lưu vào thư viện ảnh. Vui lòng kiểm tra quyền truy cập trong Cài đặt.',
+    failTitle: `Tải ${mediaType} thất bại`,
+    emptyHistory: `Chưa có ${mediaType} nào được tải trong phiên này`,
+  };
+}
+
 export default function SnapVideoScreen({ navigation }) {
   const { colors } = useTheme();
   const [url, setUrl] = useState('');
   const [downloadMode, setDownloadMode] = useState('video'); // 'video' | 'audio'
+  const [selectedQuality, setSelectedQuality] = useState('best'); // 'best' | '1080p' | '720p' | '480p' | '360p'
+  const labels = useMemo(() => getDownloadLabels(downloadMode), [downloadMode]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
@@ -130,14 +175,16 @@ export default function SnapVideoScreen({ navigation }) {
     setLoading(true);
     setProgress(0);
     progressAnim.setValue(0);
-    setStatusText('Đang phân tích link...');
+    setStatusText(labels.analyzing);
+
+    const tStart = Date.now();
 
     try {
-      // Bước 1: Lấy link tải từ API (có hỗ trợ hủy)
-      const downloadInfo = await fetchDownloadLink(trimmedUrl, downloadMode, abortCtrl.signal);
+      // Bước 1: Lấy link tải từ API với chất lượng đã chọn (có hỗ trợ hủy)
+      const downloadInfo = await fetchDownloadLink(trimmedUrl, downloadMode, selectedQuality, abortCtrl.signal);
 
       if (!isMountedRef.current || abortCtrl.signal.aborted) return;
-      setStatusText('Đang tải video...');
+      setStatusText(labels.downloading);
 
       // Bước 2: Tải và lưu file (với throttle progress chống giật lag UI & hỗ trợ hủy)
       let lastP = 0;
@@ -154,7 +201,9 @@ export default function SnapVideoScreen({ navigation }) {
             setProgress(p);
             progressAnim.setValue(p);
           }
-        }
+        },
+        downloadMode,
+        downloadInfo.metadata || null
       );
 
       currentDownloadHandleRef.current = downloadHandle;
@@ -162,19 +211,26 @@ export default function SnapVideoScreen({ navigation }) {
 
       if (!isMountedRef.current || abortCtrl.signal.aborted) return;
 
-      // Bước 3: Thêm vào lịch sử
+      const tEnd = Date.now();
+      const duration = `${((tEnd - tStart) / 1000).toFixed(1)}s`;
+
+      // Bước 3: Thêm vào lịch sử kèm thông tin chất lượng & thời gian tải (VIỆC 3 & 4)
       const historyItem = {
         id: Date.now().toString(),
         url: trimmedUrl,
         platform: detectedPlatform,
         mode: downloadMode,
+        quality: selectedQuality,
+        qualityInfo: downloadInfo.qualityInfo || (downloadMode === 'audio' ? 'Audio M4A/MP3' : `${selectedQuality}`),
+        duration,
         savedToGallery: result.savedToGallery,
+        sharedViaSheet: result.sharedViaSheet,
         timestamp: new Date().toLocaleTimeString('vi-VN'),
       };
 
       setHistory((prev) => [historyItem, ...prev].slice(0, MAX_HISTORY));
 
-      // Bước 4: Dọn file tạm
+      // Bước 4: Dọn file tạm (chỉ nếu đã lưu thành công)
       if (result.savedToGallery) {
         await cleanupTempFile(result.uri);
       }
@@ -185,20 +241,51 @@ export default function SnapVideoScreen({ navigation }) {
       setProgress(0);
       progressAnim.setValue(0);
 
-      Alert.alert(
-        'Tải thành công! 🎉',
-        result.savedToGallery
-          ? `${downloadMode === 'audio' ? 'Audio' : 'Video'} đã được lưu vào thư viện ảnh của bạn.`
-          : `${downloadMode === 'audio' ? 'Audio' : 'Video'} đã tải xong nhưng không thể lưu vào thư viện ảnh. Kiểm tra quyền truy cập.`
-      );
+      // Hiển thị kết quả chính xác theo mode (video / audio)
+      if (result.savedToGallery) {
+        Alert.alert(labels.successTitle, `${labels.successGallery}\n\n📊 ${historyItem.qualityInfo} (xong trong ${duration})`);
+      } else if (result.sharedViaSheet) {
+        Alert.alert(labels.successTitle, `${labels.successSheet}\n\n📊 ${historyItem.qualityInfo} (xong trong ${duration})`);
+      } else {
+        Alert.alert(labels.notSavedYetTitle, labels.notSavedYetMsg);
+      }
     } catch (err) {
       if (!isMountedRef.current || abortCtrl.signal.aborted) return;
       setStatusText('');
       setProgress(0);
       progressAnim.setValue(0);
-      if (err.message !== 'Đã hủy tải video.' && err.message !== 'Đã hủy thao tác.') {
+      if (err.message !== labels.cancelledError && err.message !== 'Đã hủy tải video.' && err.message !== 'Đã hủy tải audio.' && err.message !== 'Đã hủy thao tác.') {
+        if (['SERVER_UNREACHABLE', 'SERVER_UNHEALTHY', 'SERVER_TIMEOUT', 'SERVER_NOT_CONFIGURED'].includes(err.code)) {
+          Alert.alert(labels.failTitle, 'Không kết nối được máy chủ, kiểm tra mạng hoặc thử lại sau.', [
+            { text: 'Thử lại', onPress: handleDownload },
+            { text: 'Đóng', style: 'cancel' },
+          ]);
+          return;
+        }
+        if (err.code === 'PHOTOS_PERMISSION_DENIED') {
+          Alert.alert(labels.failTitle, err.message, [
+            { text: 'Chia sẻ thủ công', onPress: () => shareDownloadedFile(err.manualShareUri, 'video').catch((shareError) => Alert.alert('Không thể chia sẻ', shareError.message)) },
+            { text: 'Mở Cài đặt', onPress: () => Linking.openSettings() },
+            { text: 'Đóng', style: 'cancel' },
+          ]);
+          return;
+        }
+        if (detectedPlatform?.id === 'youtube') {
+          Alert.alert(labels.failTitle, err.message || 'Không thể tải YouTube.', [
+            { text: 'Thử chất lượng thấp hơn', onPress: () => { setSelectedQuality('360p'); setStatusText('Đã chọn 360p. Nhấn Tải video để thử lại.'); } },
+            { text: 'Đóng', style: 'cancel' },
+          ]);
+          return;
+        }
+        if (err.code) {
+          Alert.alert(labels.failTitle, err.message || 'Không thể tải nội dung.', [
+            { text: 'Sao chép chi tiết', onPress: () => Clipboard.setStringAsync(`Nền tảng: ${detectedPlatform?.name || 'Không rõ'}\nMã lỗi: ${err.code}\n${err.message || ''}`) },
+            { text: 'Đóng', style: 'cancel' },
+          ]);
+          return;
+        }
         Alert.alert(
-          'Tải thất bại',
+          labels.failTitle,
           err.message || 'Đã xảy ra lỗi. Vui lòng kiểm tra link và thử lại.'
         );
       }
@@ -209,7 +296,7 @@ export default function SnapVideoScreen({ navigation }) {
         setLoading(false);
       }
     }
-  }, [url, downloadMode, detectedPlatform, progressAnim]);
+  }, [url, downloadMode, selectedQuality, detectedPlatform, progressAnim, labels]);
 
   // Render platform chip
   const renderPlatformChip = useCallback(({ item }) => (
@@ -219,7 +306,7 @@ export default function SnapVideoScreen({ navigation }) {
     </View>
   ), [colors]);
 
-  // Render lịch sử tải
+  // Render lịch sử tải (Hiển thị chi tiết chất lượng, dung lượng và thời gian tải thật)
   const renderHistoryItem = useCallback(({ item }) => (
     <View style={[styles.historyItem, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
       <View style={[styles.historyIconCircle, { backgroundColor: item.platform?.color || colors.primary + '20' }]}>
@@ -230,20 +317,30 @@ export default function SnapVideoScreen({ navigation }) {
         />
       </View>
       <View style={styles.historyInfo}>
-        <Text style={[styles.historyPlatform, { color: colors.text }]} numberOfLines={1}>
-          {item.platform?.name || 'Video'} • {item.mode === 'audio' ? '🎵 Audio' : '🎬 Video'}
-        </Text>
+        <View style={styles.historyTitleRow}>
+          <Text style={[styles.historyPlatform, { color: colors.text }]} numberOfLines={1}>
+            {item.platform?.name || 'Media'} • {item.mode === 'audio' ? '🎵 Audio' : '🎬 Video'}
+          </Text>
+          <Ionicons
+            name={item.savedToGallery || item.sharedViaSheet ? 'checkmark-circle' : 'alert-circle'}
+            size={16}
+            color={item.savedToGallery || item.sharedViaSheet ? colors.success : colors.danger}
+          />
+        </View>
         <Text style={[styles.historyUrl, { color: colors.sub }]} numberOfLines={1}>
           {item.url}
         </Text>
-      </View>
-      <View style={styles.historyMeta}>
-        <Ionicons
-          name={item.savedToGallery ? 'checkmark-circle' : 'alert-circle'}
-          size={16}
-          color={item.savedToGallery ? colors.success : colors.danger}
-        />
-        <Text style={[styles.historyTime, { color: colors.sub }]}>{item.timestamp}</Text>
+        <View style={styles.historyDetailsRow}>
+          {item.qualityInfo ? (
+            <View style={[styles.historyQualityBadge, { backgroundColor: colors.cardElevated }]}>
+              <Text style={[styles.historyQualityBadgeText, { color: colors.sub }]} numberOfLines={1}>
+                {item.qualityInfo}
+              </Text>
+            </View>
+          ) : null}
+          {item.duration ? <Text style={[styles.historyDuration, { color: colors.sub }]}>⏱ {item.duration}</Text> : null}
+          <Text style={[styles.historyTime, { color: colors.sub }]}>{item.timestamp}</Text>
+        </View>
       </View>
     </View>
   ), [colors]);
@@ -391,6 +488,36 @@ export default function SnapVideoScreen({ navigation }) {
                   </Text>
                 </Pressable>
               </View>
+
+              {/* Bộ chọn chất lượng video (Tốt nhất / 1080p / 720p / 480p / 360p) - VIỆC 3 */}
+              {downloadMode === 'video' && (
+                <View style={styles.qualitySection}>
+                  <Text style={[styles.qualityLabel, { color: colors.sub }]}>Chất lượng video:</Text>
+                  <View style={styles.qualityChipsRow}>
+                    {QUALITY_OPTIONS.map((opt) => {
+                      const isSel = selectedQuality === opt.id;
+                      return (
+                        <Pressable
+                          key={opt.id}
+                          onPress={() => setSelectedQuality(opt.id)}
+                          disabled={loading}
+                          style={[
+                            styles.qualityChip,
+                            {
+                              backgroundColor: isSel ? '#FF2D55' : colors.cardElevated,
+                              borderColor: isSel ? '#FF2D55' : colors.cardBorder,
+                            },
+                          ]}
+                        >
+                          <Text style={[styles.qualityChipText, { color: isSel ? '#FFFFFF' : colors.sub }]}>
+                            {opt.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* Thanh tiến trình */}
@@ -416,13 +543,13 @@ export default function SnapVideoScreen({ navigation }) {
               </View>
             )}
 
-            {/* Nút Tải Video / Hủy Tải */}
+            {/* Nút Tải / Hủy Tải */}
             {loading ? (
               <View style={styles.loadingActionRow}>
                 <View style={[styles.downloadBtnLoading, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}>
                   <ActivityIndicator size="small" color="#FF2D55" />
                   <Text style={[styles.downloadBtnLoadingText, { color: colors.text }]} numberOfLines={1}>
-                    {statusText || 'Đang xử lý...'}
+                    {statusText || labels.buttonLoading}
                   </Text>
                 </View>
 
@@ -431,7 +558,7 @@ export default function SnapVideoScreen({ navigation }) {
                   style={styles.cancelDownloadBtn}
                 >
                   <Ionicons name="close-circle" size={18} color="#FFFFFF" />
-                  <Text style={styles.cancelDownloadBtnText}>Hủy tải</Text>
+                  <Text style={styles.cancelDownloadBtnText}>{labels.cancelBtn}</Text>
                 </Pressable>
               </View>
             ) : (
@@ -448,7 +575,7 @@ export default function SnapVideoScreen({ navigation }) {
               >
                 <Ionicons name="download" size={22} color="#FFFFFF" />
                 <Text style={styles.downloadBtnText}>
-                  {downloadMode === 'audio' ? 'Tải Audio' : 'Tải Video'}
+                  {labels.buttonIdle}
                 </Text>
               </Pressable>
             )}
@@ -470,9 +597,9 @@ export default function SnapVideoScreen({ navigation }) {
         ListEmptyComponent={
           !loading ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="film-outline" size={48} color={colors.sub} />
+              <Ionicons name={labels.isAudio ? 'musical-notes-outline' : 'film-outline'} size={48} color={colors.sub} />
               <Text style={[styles.emptyText, { color: colors.sub }]}>
-                Chưa có video nào được tải trong phiên này
+                {labels.emptyHistory}
               </Text>
             </View>
           ) : null
@@ -611,6 +738,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  // Quality Selector (VIỆC 3)
+  qualitySection: {
+    marginTop: 12,
+  },
+  qualityLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  qualityChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  qualityChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  qualityChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
   // Progress
   progressCard: {
     borderRadius: 16,
@@ -713,7 +865,7 @@ const styles = StyleSheet.create({
   },
   historyItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
@@ -729,23 +881,48 @@ const styles = StyleSheet.create({
   },
   historyInfo: {
     flex: 1,
+    minWidth: 0,
+  },
+  historyTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   historyPlatform: {
+    flex: 1,
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 2,
+  },
+  historyQualityBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    maxWidth: '100%',
+  },
+  historyQualityBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   historyUrl: {
     fontSize: 12,
     fontWeight: '500',
   },
-  historyMeta: {
+  historyDetailsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    marginTop: 4,
   },
   historyTime: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  historyDuration: {
+    fontSize: 10,
+    fontWeight: '700',
   },
 
   // Empty state

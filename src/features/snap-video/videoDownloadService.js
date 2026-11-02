@@ -3,9 +3,67 @@
 // Tích hợp multi-source resolver và hỗ trợ hủy tải video bất kỳ lúc nào
 
 import * as FileSystem from 'expo-file-system/legacy';
+import { File } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library/legacy';
+import * as Sharing from 'expo-sharing';
+import * as Crypto from 'expo-crypto';
+import { Platform } from 'react-native';
 
-const REQUEST_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 25000;
+const SNAP_SERVER_URL = process.env.EXPO_PUBLIC_SNAP_SERVER_URL?.replace(/\/$/, '');
+
+function bytesToHex(bytes) {
+  return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+async function verifyDownloadedHash(uri, expectedHash) {
+  if (!expectedHash) return null;
+  const bytes = await new File(uri).arrayBuffer();
+  const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
+  const actualHash = bytesToHex(digest);
+  if (actualHash.toLowerCase() !== expectedHash.toLowerCase()) {
+    throw new Error('SHA-256 của file tải về không khớp máy chủ. File có thể bị hỏng; vui lòng tải lại.');
+  }
+  return actualHash;
+}
+
+function getSnapServerEndpoints() {
+  return SNAP_SERVER_URL ? [`${SNAP_SERVER_URL}/api/resolve`] : [];
+}
+
+export async function getSnapServerHealth() {
+  if (!SNAP_SERVER_URL) return { ok: false, code: 'SERVER_NOT_CONFIGURED' };
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(`${SNAP_SERVER_URL}/health`, { signal: controller.signal });
+    clearTimeout(timer);
+    const data = await response.json().catch(() => null);
+    return response.ok && data?.status === 'ok' ? { ok: true, ...data } : { ok: false, code: 'SERVER_UNHEALTHY' };
+  } catch {
+    return { ok: false, code: 'SERVER_UNREACHABLE' };
+  }
+}
+
+async function resolveWithSnapBackend(url, mode, quality, signal) {
+  const endpoint = getSnapServerEndpoints()[0];
+  if (!endpoint) return null;
+  const health = await getSnapServerHealth();
+  if (!health.ok) {
+    const error = new Error('Không kết nối được máy chủ tải. Kiểm tra mạng hoặc thử lại sau.');
+    error.code = health.code;
+    throw error;
+  }
+  const response = await fetch(endpoint, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, mode, quality }), signal,
+  });
+  const data = await response.json().catch(() => null);
+  if (response.ok && data?.success && data?.url) return data;
+  const error = new Error(data?.message || 'Máy chủ không thể tạo file tải hợp lệ.');
+  error.code = data?.code || 'SERVER_ERROR';
+  throw error;
+}
 
 // 4 Nền tảng được hỗ trợ theo yêu cầu
 export const SUPPORTED_PLATFORMS = [
@@ -150,83 +208,59 @@ async function resolveTikTok(url, mode, signal) {
 // ============================================================
 // 2. YOUTUBE PARALLEL MULTI-INSTANCE RESOLVER (Tốc độ cao & Xử lý song song)
 // ============================================================
-async function resolveYouTube(url, mode, signal) {
+async function resolveYouTube(url, mode, quality = 'best', signal = null) {
   const videoId = extractYouTubeId(url);
   if (!videoId) {
     throw new Error('Không nhận dạng được ID video YouTube từ liên kết này.');
   }
 
-  // Danh sách các máy chủ phân giải Piped đang hoạt động (chạy song song để có kết quả ngay trong 1-3s)
-  const servers = [
-    'https://api.piped.private.coffee',
-    'https://pipedapi.ducks.party',
-  ];
+  // 1. Thử qua Snap Resolver Server nội bộ (chạy yt-dlp trên residential IP của máy tính để vượt Botguard)
+  const devEndpoints = getSnapServerEndpoints();
 
-  let botBlocked = false;
+  if (devEndpoints.length === 0) {
+    const error = new Error('Máy chủ tải Snap Video chưa được cấu hình. Cần đặt EXPO_PUBLIC_SNAP_SERVER_URL tới backend yt-dlp rồi tạo lại development build.');
+    error.code = 'SERVER_NOT_CONFIGURED';
+    throw error;
+  }
+  const health = await getSnapServerHealth();
+  if (!health.ok) {
+    const error = new Error('Không kết nối được máy chủ Snap Video. Kiểm tra máy chủ đang chạy, URL cấu hình và mạng Wi‑Fi.');
+    error.code = health.code;
+    throw error;
+  }
 
-  const tryServer = async (serverUrl) => {
-    if (signal?.aborted) throw new Error('Đã hủy thao tác.');
-    const c = new AbortController();
-    const timeout = setTimeout(() => c.abort(), 4000);
-    const combinedSignal = signal || c.signal;
-
+  for (const endpoint of devEndpoints) {
     try {
-      const res = await fetch(`${serverUrl}/streams/${videoId}`, {
-        headers: { 'Accept': 'application/json' },
-        signal: combinedSignal,
+      const c = new AbortController();
+      const timeout = setTimeout(() => c.abort(), 12000);
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, mode, quality }),
+        signal: signal || c.signal,
       });
       clearTimeout(timeout);
-
-      if (!res.ok) {
-        if (res.status === 500) {
-          const errText = await res.text().catch(() => '');
-          if (errText.includes('bot') || errText.includes('LOGIN_REQUIRED')) {
-            botBlocked = true;
-          }
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-
-      const data = await res.json();
-      if (!data) throw new Error('Empty data');
-
-      if (mode === 'audio') {
-        const audio = data.audioStreams?.find((a) => a.url);
-        if (audio?.url) {
-          return {
-            url: audio.url,
-            filename: `youtube_${videoId}.m4a`,
-          };
-        }
-      }
-
-      // Ưu tiên MP4 có tiếng + hình
-      const mp4Stream = data.videoStreams?.find((st) => (st.format === 'MPEG_4' || st.mimeType?.includes('mp4')) && st.url);
-      const anyStream = data.videoStreams?.find((st) => st.url);
-      const chosen = mp4Stream || anyStream;
-
-      if (chosen?.url) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success && data?.url) {
         return {
-          url: chosen.url,
-          filename: `youtube_${videoId}.mp4`,
+          url: data.url,
+          filename: data.filename || `youtube_${videoId}.${mode === 'audio' ? 'm4a' : 'mp4'}`,
+          qualityInfo: data.qualityInfo || (mode === 'audio' ? 'Audio 128kbps' : quality),
+          durationSec: data.durationSec,
         };
       }
-
-      throw new Error('No stream found');
+      if (data?.message) {
+        const error = new Error(data.message);
+        error.code = data.code || 'SERVER_ERROR';
+        throw error;
+      }
     } catch (err) {
-      clearTimeout(timeout);
-      throw err;
+      if (err.code && err.code !== 'ABORT_ERR') throw err;
     }
-  };
-
-  try {
-    return await Promise.any(servers.map((s) => tryServer(s)));
-  } catch {
-    if (botBlocked) {
-      throw new Error('Video YouTube này đang bị YouTube áp dụng cơ chế xác minh chống bot (Botguard). Vui lòng thử video YouTube khác hoặc dùng video từ TikTok, Facebook, Instagram.');
-    }
-    throw new Error('Không thể phân tích video YouTube này. Vui lòng kiểm tra lại link hoặc thử video khác.');
   }
+  const error = new Error('Máy chủ Snap Video không phản hồi khi xử lý YouTube. Kiểm tra log backend để phân biệt timeout, Botguard hoặc lỗi ghép file.');
+  error.code = 'SERVER_TIMEOUT';
+  throw error;
 }
 
 // ============================================================
@@ -234,8 +268,30 @@ async function resolveYouTube(url, mode, signal) {
 // ============================================================
 async function resolveFacebook(url, mode, signal) {
   const expanded = await expandShortUrl(url, signal);
+  const endpoints = getSnapServerEndpoints();
+  if (endpoints.length) {
+    const health = await getSnapServerHealth();
+    if (!health.ok) {
+      const error = new Error('Không kết nối được máy chủ tải Facebook.');
+      error.code = health.code;
+      throw error;
+    }
+    for (const endpoint of endpoints) {
+      const response = await fetch(endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: expanded, mode, quality: 'best' }), signal,
+      });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.success && data?.url) return data;
+      if (data?.message) {
+        const error = new Error(`${data.message}\nMã lỗi: ${data.code || 'FACEBOOK_ERROR'}`);
+        error.code = data.code || 'FACEBOOK_ERROR';
+        throw error;
+      }
+    }
+  }
 
-  // Máy chủ 1: FDown API
+  // Fallback only when no backend is configured; these public scrapers are inherently unstable.
   try {
     const response = await fetch('https://fdown.co.in/ajax', {
       method: 'POST',
@@ -291,96 +347,120 @@ async function resolveFacebook(url, mode, signal) {
     // ignore
   }
 
-  throw new Error('Không thể lấy video Facebook. Video có thể ở chế độ riêng tư hoặc nhóm kín.');
+  const error = new Error('Không thể lấy video Facebook từ nguồn dự phòng. Mã lỗi: FACEBOOK_RESOLVER_UNAVAILABLE');
+  error.code = 'FACEBOOK_RESOLVER_UNAVAILABLE';
+  throw error;
 }
 
 // ============================================================
-// 4. INSTAGRAM RESOLVER (Instagram Embed Scraper + Fallback)
+// 4. INSTAGRAM RESOLVER (Snap Resolver Server + Embed Scraper)
 // ============================================================
-async function resolveInstagram(url, mode, signal) {
+async function resolveInstagram(url, mode, quality = 'best', signal = null) {
   const shortcode = extractInstagramShortcode(url);
-  if (!shortcode) {
-    throw new Error('Không tìm thấy mã bài viết Instagram (Reel/Post).');
+  const cleanUrl = (url || '').trim().split('?')[0];
+
+  // 1. Thử qua Snap Resolver Server nội bộ (chạy yt-dlp)
+  const devEndpoints = getSnapServerEndpoints();
+
+  if (devEndpoints.length === 0) {
+    const error = new Error('Máy chủ tải Snap Video chưa được cấu hình. Cần đặt EXPO_PUBLIC_SNAP_SERVER_URL tới backend yt-dlp rồi tạo lại development build.');
+    error.code = 'SERVER_NOT_CONFIGURED';
+    throw error;
   }
 
-  // Thử lấy link trực tiếp từ embed Instagram
-  try {
-    const embedRes = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-      signal,
-    });
-
-    if (embedRes.ok) {
-      const html = await embedRes.text();
-      const videoMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/);
-      const displayMatch = html.match(/"display_url"\s*:\s*"([^"]+)"/);
-
-      if (videoMatch && videoMatch[1]) {
-        const cleanVideoUrl = videoMatch[1].replace(/\\u002F/g, '/').replace(/\\u0026/g, '&');
+  for (const endpoint of devEndpoints) {
+    try {
+      const c = new AbortController();
+      const timeout = setTimeout(() => c.abort(), 12000);
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: cleanUrl, mode, quality }),
+        signal: signal || c.signal,
+      });
+      clearTimeout(timeout);
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success && data?.url) {
         return {
-          url: cleanVideoUrl,
-          filename: `instagram_${shortcode}.${mode === 'audio' ? 'mp3' : 'mp4'}`,
+          url: data.url,
+          filename: data.filename || `instagram_${shortcode || Date.now()}.${mode === 'audio' ? 'mp3' : 'mp4'}`,
+          qualityInfo: data.qualityInfo || (mode === 'audio' ? 'Audio MP3' : quality),
+          durationSec: data.durationSec,
         };
+      } else if (data?.message) {
+        throw new Error(data.message);
       }
-
-      if (displayMatch && displayMatch[1]) {
-        const cleanDisplayUrl = displayMatch[1].replace(/\\u002F/g, '/').replace(/\\u0026/g, '&');
-        return {
-          url: cleanDisplayUrl,
-          filename: `instagram_${shortcode}.jpg`,
-        };
-      }
-    }
-  } catch {
-    // Fallback qua snapinsta
-  }
-
-  // Fallback qua snapinsta
-  try {
-    const snapRes = await fetch('https://snapinsta.lc/process', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Origin': 'https://snapinsta.lc',
-        'Referer': 'https://snapinsta.lc/',
-      },
-      body: `q=${encodeURIComponent(url)}&scope=home&lang=en`,
-      signal,
-    });
-
-    if (snapRes.ok) {
-      const text = await snapRes.text();
-      const mediaMatch = text.match(/data-media-src="([^"]+)"/);
-      if (mediaMatch && mediaMatch[1]) {
-        return {
-          url: mediaMatch[1],
-          filename: `instagram_${shortcode}.${mode === 'audio' ? 'mp3' : 'mp4'}`,
-        };
+    } catch (err) {
+      if (err.message && !err.message.includes('fetch') && !err.message.includes('Network') && !err.message.includes('abort')) {
+        throw err;
       }
     }
-  } catch {
-    // ignore
   }
 
-  throw new Error('Không thể lấy video Instagram. Bài viết có thể ở chế độ riêng tư.');
+  // 2. Thử lấy link trực tiếp từ embed Instagram
+  if (shortcode) {
+    try {
+      const embedRes = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+        },
+        signal,
+      });
+
+      if (embedRes.ok) {
+        const html = await embedRes.text();
+        const videoMatch = html.match(/"video_url"\s*:\s*"([^"]+)"/);
+        const displayMatch = html.match(/"display_url"\s*:\s*"([^"]+)"/);
+
+        if (videoMatch && videoMatch[1]) {
+          const cleanVideoUrl = videoMatch[1].replace(/\\u002F/g, '/').replace(/\\u0026/g, '&');
+          return {
+            url: cleanVideoUrl,
+            filename: `instagram_${shortcode}.${mode === 'audio' ? 'mp3' : 'mp4'}`,
+            qualityInfo: 'Instagram HD',
+          };
+        }
+
+        if (displayMatch && displayMatch[1]) {
+          const cleanDisplayUrl = displayMatch[1].replace(/\\u002F/g, '/').replace(/\\u0026/g, '&');
+          return {
+            url: cleanDisplayUrl,
+            filename: `instagram_${shortcode}.jpg`,
+            qualityInfo: 'Hình ảnh HD',
+          };
+        }
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  throw new Error('Không thể trích xuất Instagram từ backend. Hãy kiểm tra log yt-dlp để biết chính xác là LOGIN_REQUIRED, RATE_LIMIT hay link không hỗ trợ.');
 }
 
 /**
  * Điều hướng tải video theo nền tảng tương ứng
  * @param {string} rawUrl - URL video cần tải
  * @param {'video' | 'audio'} mode - Chế độ tải (video hoặc chỉ audio)
+ * @param {string} quality - Mức chất lượng ('best' | '1080p' | '720p' | '480p' | '360p')
  * @param {AbortSignal} signal - Signal để hủy khi cần
- * @returns {Promise<{url: string, filename: string}>}
+ * @returns {Promise<{url: string, filename: string, qualityInfo?: string}>}
  */
-export async function fetchDownloadLink(rawUrl, mode = 'video', signal = null) {
+export async function fetchDownloadLink(rawUrl, mode = 'video', quality = 'best', signal = null) {
   const url = (rawUrl || '').trim();
   const platform = detectPlatform(url);
 
   if (!platform) {
     throw new Error('Liên kết chưa được hỗ trợ. Snap Video hỗ trợ 4 nền tảng: TikTok, YouTube, Facebook, Instagram.');
+  }
+
+  // A configured backend is the only path that applies the common ffmpeg gate.
+  // Do not fall back to a direct platform stream or iOS may receive fragmented media.
+  if (getSnapServerEndpoints().length) {
+    return Promise.race([
+      resolveWithSnapBackend(url, mode, quality, signal),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 25s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)),
+    ]);
   }
 
   const timeoutPromise = new Promise((_, reject) =>
@@ -392,11 +472,11 @@ export async function fetchDownloadLink(rawUrl, mode = 'video', signal = null) {
   if (platform.id === 'tiktok') {
     resolverPromise = resolveTikTok(url, mode, signal);
   } else if (platform.id === 'youtube') {
-    resolverPromise = resolveYouTube(url, mode, signal);
+    resolverPromise = resolveYouTube(url, mode, quality, signal);
   } else if (platform.id === 'facebook') {
     resolverPromise = resolveFacebook(url, mode, signal);
   } else if (platform.id === 'instagram') {
-    resolverPromise = resolveInstagram(url, mode, signal);
+    resolverPromise = resolveInstagram(url, mode, quality, signal);
   } else {
     throw new Error('Nền tảng chưa được hỗ trợ.');
   }
@@ -405,16 +485,24 @@ export async function fetchDownloadLink(rawUrl, mode = 'video', signal = null) {
 }
 
 /**
- * Bắt đầu tải video về máy với khả năng HỦY TẢI (Cancelable)
+ * Bắt đầu tải video/audio về máy với khả năng HỦY TẢI (Cancelable)
+ * Audio trên iOS không thể lưu vào Photos → dùng Share Sheet
  * @param {string} downloadUrl - URL trực tiếp để tải file
  * @param {string} filename - Tên file
  * @param {function} onProgress - Callback tiến trình (0-1)
- * @returns {{ promise: Promise<{uri: string, savedToGallery: boolean}>, cancel: () => Promise<void> }}
+ * @param {'video'|'audio'} mode - Chế độ tải
+ * @returns {{ promise: Promise<{uri: string, savedToGallery: boolean, sharedViaSheet: boolean}>, cancel: () => Promise<void> }}
  */
-export function startVideoDownload(downloadUrl, filename, onProgress) {
-  const safeName = (filename || `video_${Date.now()}.mp4`).replace(/[^a-zA-Z0-9._-]/g, '_');
+export function startVideoDownload(downloadUrl, filename, onProgress, mode = 'video', expectedMetadata = null) {
+  const isAudioMode = mode === 'audio';
+  const defaultExt = isAudioMode ? 'm4a' : 'mp4';
+  const defaultPrefix = isAudioMode ? 'audio_' : 'video_';
+  const safeName = (filename || `${defaultPrefix}${Date.now()}.${defaultExt}`).replace(/[^a-zA-Z0-9._-]/g, '_');
   const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
   const fileUri = `${baseDir}${safeName}`;
+
+  // Xác định loại file: audio nếu mode === 'audio' hoặc đuôi file audio
+  const isAudioFile = isAudioMode || /\.(mp3|m4a|aac|wav|ogg|opus)$/i.test(safeName);
 
   let cancelled = false;
 
@@ -438,30 +526,155 @@ export function startVideoDownload(downloadUrl, filename, onProgress) {
     const result = await downloadResumable.downloadAsync();
     if (cancelled) {
       await cleanupTempFile(fileUri);
-      throw new Error('Đã hủy tải video.');
+      throw new Error(`Đã hủy tải ${isAudioMode ? 'audio' : 'video'}.`);
     }
 
     if (!result || !result.uri) {
       throw new Error('Tải file thất bại. Vui lòng thử lại.');
     }
 
-    // Lưu vào thư viện ảnh
-    let savedToGallery = false;
+    const contentType = result.mimeType || result.headers?.['content-type'] || result.headers?.['Content-Type'] || '';
+    console.info('[SnapVideo] download response', {
+      url: downloadUrl,
+      status: result.status,
+      contentType,
+      contentLength: result.headers?.['content-length'] || result.headers?.['Content-Length'] || null,
+    });
+    if (result.status < 200 || result.status >= 300) {
+      await cleanupTempFile(result.uri);
+      throw new Error(`Máy chủ trả về HTTP ${result.status}; file chưa được lưu.`);
+    }
+
+    // Kiểm tra file tồn tại và có dung lượng > 0
+    const fileInfo = await FileSystem.getInfoAsync(result.uri);
+    if (!fileInfo || !fileInfo.exists) {
+      throw new Error('File tải về không tồn tại. Vui lòng thử lại.');
+    }
+    if (fileInfo.size !== undefined && fileInfo.size === 0) {
+      await cleanupTempFile(result.uri);
+      throw new Error('File tải về rỗng (0 bytes). Link có thể đã hết hạn, vui lòng thử lại.');
+    }
+    const headerLength = Number(result.headers?.['content-length'] || result.headers?.['Content-Length'] || 0);
+    const expectedSize = Number(expectedMetadata?.size || result.headers?.['x-snap-size'] || result.headers?.['X-Snap-Size'] || 0);
+    if ((headerLength && fileInfo.size !== headerLength) || (expectedSize && fileInfo.size !== expectedSize)) {
+      await cleanupTempFile(result.uri);
+      throw new Error(`File tải về không đủ byte (nhận ${fileInfo.size}, cần ${expectedSize || headerLength}). Vui lòng tải lại.`);
+    }
+    const expectedHash = expectedMetadata?.sha256 || result.headers?.['x-snap-sha256'] || result.headers?.['X-Snap-Sha256'];
+    let verifiedSha256 = null;
     try {
-      if (MediaLibrary?.requestPermissionsAsync) {
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status === 'granted' && MediaLibrary?.saveToLibraryAsync) {
-          await MediaLibrary.saveToLibraryAsync(result.uri);
-          savedToGallery = true;
-        }
+      verifiedSha256 = await verifyDownloadedHash(result.uri, expectedHash);
+    } catch (error) {
+      await cleanupTempFile(result.uri);
+      throw error;
+    }
+    console.info('[SnapVideo] downloaded file', {
+      uri: result.uri,
+      exists: fileInfo.exists,
+      size: fileInfo.size,
+      extension: safeName.split('.').pop()?.toLowerCase() || '',
+      sha256: verifiedSha256,
+    });
+
+    if (!isAudioFile && !/\.(mp4|m4v|mov)$/i.test(safeName)) {
+      await cleanupTempFile(result.uri);
+      throw new Error('Video không có định dạng MP4, M4V hoặc MOV tương thích với Ảnh trên iPhone.');
+    }
+    if (!isAudioFile && contentType && !/^video\//i.test(contentType)) {
+      await cleanupTempFile(result.uri);
+      throw new Error(`Máy chủ trả về ${contentType}, không phải video hợp lệ.`);
+    }
+
+    // Xử lý lưu file
+    let savedToGallery = false;
+    let sharedViaSheet = false;
+    let assetId = null;
+
+    if (isAudioFile && Platform.OS === 'android') {
+      // MediaStore accepts audio on Android; the album is the least-privilege Expo API available.
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
+      if (permission.status !== 'granted') {
+        const error = new Error('Chưa được cấp quyền thư viện để lưu audio. Hãy cấp quyền trong Cài đặt rồi thử lại.');
+        error.code = 'MEDIA_PERMISSION_DENIED';
+        error.manualShareUri = result.uri;
+        throw error;
       }
-    } catch (err) {
-      console.warn('Không thể lưu vào thư viện ảnh:', err);
+      const asset = await MediaLibrary.createAssetAsync(result.uri);
+      const verifiedAsset = await MediaLibrary.getAssetInfoAsync(asset.id);
+      if (!verifiedAsset?.id || verifiedAsset.id !== asset.id) {
+        throw new Error('Không thể xác minh audio sau khi lưu vào thư viện Android.');
+      }
+      const album = await MediaLibrary.getAlbumAsync('Snap Video');
+      if (album) await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      else await MediaLibrary.createAlbumAsync('Snap Video', asset, false);
+      assetId = asset.id;
+      savedToGallery = true;
+      console.info('[SnapVideo] Android audio asset verified', { assetId, filename: verifiedAsset.filename });
+    } else if (isAudioFile) {
+      // iOS has no audio Photos library: let the user choose Files through Share Sheet.
+      const sharingAvailable = await Sharing.isAvailableAsync();
+      if (!sharingAvailable) {
+        throw new Error('Thiết bị không hỗ trợ Share Sheet; audio vẫn nằm trong vùng lưu trữ của ứng dụng.');
+      }
+      await Sharing.shareAsync(result.uri, {
+        mimeType: /\.m4a$/i.test(safeName) ? 'audio/mp4' : 'audio/mpeg',
+        dialogTitle: 'Chọn “Lưu vào Tệp” để lưu audio',
+        UTI: 'public.audio',
+      });
+      sharedViaSheet = true;
+    } else {
+      // Video → tạo asset và đọc lại asset. saveToLibraryAsync không trả asset nên không thể xác minh.
+      try {
+        const currentPermission = await MediaLibrary.getPermissionsAsync(false);
+        const permission = currentPermission.status === 'granted'
+          ? currentPermission
+          : await MediaLibrary.requestPermissionsAsync(false);
+        console.info('[SnapVideo] Photos permission', {
+          status: permission.status,
+          granted: permission.granted,
+          canAskAgain: permission.canAskAgain,
+          accessPrivileges: permission.accessPrivileges || null,
+        });
+        if (permission.status !== 'granted') {
+          const error = new Error('Chưa được cấp quyền Thư viện ảnh. Hãy cấp quyền trong Cài đặt rồi thử lại.');
+          error.code = 'PHOTOS_PERMISSION_DENIED';
+          error.manualShareUri = result.uri;
+          throw error;
+        }
+
+        const asset = await MediaLibrary.createAssetAsync(result.uri);
+        const verifiedAsset = await MediaLibrary.getAssetInfoAsync(asset.id);
+        if (!verifiedAsset?.id || verifiedAsset.id !== asset.id) {
+          throw new Error('Không thể xác minh video sau khi lưu vào Thư viện ảnh.');
+        }
+        if (Platform.OS === 'android') {
+          const album = await MediaLibrary.getAlbumAsync('Snap Video');
+          if (album) await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          else await MediaLibrary.createAlbumAsync('Snap Video', asset, false);
+        }
+        assetId = asset.id;
+        savedToGallery = true;
+        console.info('[SnapVideo] Photos asset verified', { assetId, filename: verifiedAsset.filename });
+      } catch (err) {
+        console.warn('[SnapVideo] Photos save failed', { message: err?.message, code: err?.code || null });
+        if (!err.manualShareUri) err.manualShareUri = result.uri;
+        if (err.code !== 'PHOTOS_PERMISSION_DENIED') {
+          const saveError = new Error(Platform.OS === 'android'
+            ? 'Không thể lưu video vào thư viện Android: file không phải video hợp lệ hoặc Android không hỗ trợ định dạng này.'
+            : 'Không thể lưu video vào Ảnh: file không phải video hợp lệ hoặc iPhone không hỗ trợ định dạng này.');
+          saveError.code = 'PHOTOS_INVALID_MEDIA';
+          saveError.manualShareUri = err.manualShareUri;
+          throw saveError;
+        }
+        throw err;
+      }
     }
 
     return {
       uri: result.uri,
       savedToGallery,
+      sharedViaSheet,
+      assetId,
     };
   })();
 
@@ -476,6 +689,17 @@ export function startVideoDownload(downloadUrl, filename, onProgress) {
   };
 
   return { promise, cancel };
+}
+
+export async function shareDownloadedFile(uri, mode = 'video') {
+  if (!(await Sharing.isAvailableAsync())) {
+    throw new Error('Thiết bị không hỗ trợ Share Sheet.');
+  }
+  await Sharing.shareAsync(uri, {
+    mimeType: mode === 'audio' ? 'audio/*' : 'video/mp4',
+    dialogTitle: mode === 'audio' ? 'Chọn “Lưu vào Tệp” để lưu audio' : 'Lưu hoặc chia sẻ video',
+    UTI: mode === 'audio' ? 'public.audio' : 'public.movie',
+  });
 }
 
 /**

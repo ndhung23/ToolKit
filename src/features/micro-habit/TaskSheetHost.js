@@ -1,0 +1,91 @@
+import { useEffect, useState } from 'react';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTheme } from '../../theme';
+import { calculateHabitStatus, createHabitClone } from './microHabitService';
+import { clearPendingTask, getPendingTaskId, subscribeTaskSheet } from './TaskSheetStore';
+import { scheduleHabitReminder } from './NotificationService';
+import { ensureHabitsLoaded, setHabits as saveSharedHabits, subscribeHabits } from './HabitStore';
+
+export default function TaskSheetHost({ navigationReady, navigateToTask }) {
+  const { colors } = useTheme();
+  const [taskId, setTaskId] = useState(getPendingTaskId());
+  const [habits, setHabits] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [missingTask, setMissingTask] = useState(false);
+
+  useEffect(() => subscribeTaskSheet((id) => { if (id) setMissingTask(false); setTaskId(id); }), []);
+  useEffect(() => {
+    let active = true;
+    ensureHabitsLoaded().then((items) => { if (active) { setHabits(items); setLoaded(true); console.info('[TaskSheet]', { stage: 'data-loaded', count: items.length }); } });
+    return () => { active = false; };
+  }, [taskId]);
+  useEffect(() => subscribeHabits(setHabits), []);
+
+  useEffect(() => {
+    if (navigationReady && loaded && taskId && !habits.some((item) => item.id === taskId)) {
+      setMissingTask(true);
+      clearPendingTask();
+    }
+  }, [navigationReady, loaded, taskId, habits]);
+
+  const selectedHabit = habits.find((item) => item.id === taskId);
+  useEffect(() => {
+    if (navigationReady && loaded && selectedHabit) console.info('[TaskSheet]', { at: new Date().toISOString(), stage: 'task-found-sheet-open', taskId });
+  }, [navigationReady, loaded, selectedHabit, taskId]);
+
+  if (missingTask) {
+    return <Modal visible transparent onRequestClose={() => setMissingTask(false)}><View style={styles.missing}><Text>Việc này không còn tồn tại.</Text><Pressable onPress={() => setMissingTask(false)}><Text>Đóng</Text></Pressable></View></Modal>;
+  }
+  if (!navigationReady || !loaded || !taskId) return null;
+  const habit = selectedHabit;
+  if (!habit) return null;
+  const status = calculateHabitStatus(habit);
+  const close = () => clearPendingTask();
+  const cloneTask = async () => {
+    const clone = createHabitClone(habit);
+    clone.notificationId = await scheduleHabitReminder(clone);
+    const updated = [clone, ...habits];
+    await saveSharedHabits(updated);
+    setHabits(updated);
+    close();
+  };
+  const completeTask = async () => {
+    const now = new Date().toISOString();
+    const completed = {
+      ...habit,
+      lastCompletedDate: now,
+      completedCycleAt: habit.type === 'interval' ? now : habit.completedCycleAt,
+      history: [{ id: String(Date.now()), timestamp: now, note: 'Hoàn thành từ hộp việc' }, ...(habit.history || [])].slice(0, 30),
+    };
+    completed.notificationId = await scheduleHabitReminder(completed);
+    await saveSharedHabits(habits.map((item) => item.id === habit.id ? completed : item));
+    console.info('[TaskSheet]', { at: now, stage: 'completed', taskId });
+    close();
+  };
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={close}>
+      <Pressable style={styles.backdrop} onPress={close} />
+      <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <Text style={[styles.title, { color: colors.text }]}>{habit.title}</Text>
+        <Text style={[styles.meta, { color: colors.sub }]}>{habit.category || 'Khác'} · {status.cycleInfo || 'Chu kỳ'}</Text>
+        <Text style={[styles.status, { color: status.urgency === 'overdue' ? '#EF4444' : status.urgency === 'warning' ? '#F59E0B' : '#10B981' }]}>{status.statusText}</Text>
+        {!!habit.note && <Text style={[styles.note, { color: colors.sub }]}>{habit.note}</Text>}
+        <Pressable style={styles.primary} onPress={completeTask}><Text style={styles.primaryText}>Vừa làm xong</Text></Pressable>
+        <View style={styles.row}>
+          <Pressable style={[styles.secondary, { borderColor: colors.cardBorder }]} onPress={cloneTask}><Text style={{ color: colors.text }}>Làm lại</Text></Pressable>
+          <Pressable style={[styles.secondary, { borderColor: colors.cardBorder }]} onPress={() => { close(); navigateToTask(taskId); }}><Text style={{ color: colors.text }}>Xem danh sách</Text></Pressable>
+          <Pressable style={[styles.secondary, { borderColor: colors.cardBorder }]} onPress={close}><Text style={{ color: colors.text }}>Đóng</Text></Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet: { marginTop: 'auto', borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1, padding: 22, gap: 10 },
+  title: { fontSize: 21, fontWeight: '800' }, meta: { fontSize: 14 }, status: { fontWeight: '800' }, note: { fontSize: 14, lineHeight: 20 },
+  primary: { backgroundColor: '#10B981', paddingVertical: 14, borderRadius: 14, alignItems: 'center', marginTop: 4 }, primaryText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  row: { flexDirection: 'row', gap: 8 }, secondary: { flex: 1, minHeight: 42, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, backgroundColor: 'rgba(0,0,0,0.55)' },
+});

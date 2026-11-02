@@ -5,35 +5,153 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 
+export const HABIT_REMINDER_CHANNEL = 'habit-reminders';
+
+export async function ensureHabitReminderChannel() {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync(HABIT_REMINDER_CHANNEL, {
+    name: 'Nhắc nhở việc vặt',
+    // Android notification importance MAX. Numeric value avoids a stale SDK type export.
+    importance: 5,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#10B981',
+  });
+}
+
+export async function requestAndroidExactAlarmPermission() {
+  if (Platform.OS !== 'android' || !Notifications.getExactAlarmPermissionsAsync) return true;
+  let permission = await Notifications.getExactAlarmPermissionsAsync();
+  if (permission.status !== 'granted' && Notifications.requestExactAlarmPermissionsAsync) {
+    permission = await Notifications.requestExactAlarmPermissionsAsync();
+  }
+  return permission.status === 'granted';
+}
+
 // Cấu hình hiển thị thông báo an toàn trong Expo Go
 try {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
     }),
   });
 
   if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
-      name: 'Nhắc nhở việc vặt',
-      importance: 5, // AndroidImportance.MAX
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#10B981',
-    }).catch(() => {});
+    ensureHabitReminderChannel().catch(() => {});
   }
 } catch {
   // Safe fallback
 }
 
 export const STORAGE_KEY_HABITS = '@toolkit_micro_habits_v1';
+export const STORAGE_KEY_CUSTOM_CATEGORIES = '@toolkit_micro_habit_categories_v1';
 
 export const HABIT_TYPES = {
   INTERVAL: 'interval', // Đếm ngược theo số ngày (mỗi X ngày)
   MONTHLY: 'monthly',   // Cố định ngày X hàng tháng
   DAILY: 'daily',       // Lặp lại số lần trong ngày
 };
+export const DEFAULT_CATEGORIES = ['Sinh hoạt', 'Nhà cửa', 'Sức khỏe', 'Xe cộ', 'Chi phí'];
+
+export function normalizeCategoryName(value = '') {
+  return String(value).trim().replace(/\s+/g, ' ');
+}
+
+export function validateCategoryName(value, existing = DEFAULT_CATEGORIES) {
+  const name = normalizeCategoryName(value);
+  if (!name) return 'Vui lòng nhập tên danh mục.';
+  if (name.length > 20) return 'Tên danh mục tối đa 20 ký tự.';
+  if (existing.some((item) => normalizeHabitSearch(item) === normalizeHabitSearch(name))) return 'Tên danh mục đã có.';
+  return null;
+}
+
+export function validateHabitTitle(value) {
+  const title = String(value || '').trim();
+  if (!title) return 'Vui lòng nhập tên công việc.';
+  if (title.length > 60) return 'Tên không được vượt quá 60 ký tự.';
+  return null;
+}
+
+export async function loadCustomCategories() {
+  try {
+    const saved = JSON.parse(await AsyncStorage.getItem(STORAGE_KEY_CUSTOM_CATEGORIES) || '[]');
+    return Array.isArray(saved) ? saved.slice(0, 10) : [];
+  } catch { return []; }
+}
+
+export async function saveCustomCategories(categories = []) {
+  await AsyncStorage.setItem(STORAGE_KEY_CUSTOM_CATEGORIES, JSON.stringify(categories.slice(0, 10)));
+}
+
+export const HABIT_ATTRIBUTE_COLORS = {
+  cycle: { background: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.55)', text: '#60A5FA' },
+  reminder: { background: 'rgba(6,182,212,0.15)', border: 'rgba(6,182,212,0.55)', text: '#22D3EE' },
+  count: { background: 'rgba(99,102,241,0.15)', border: 'rgba(99,102,241,0.55)', text: '#A5B4FC' },
+};
+
+export function formatTaskNameForNotification(name, max = 60) {
+  const clean = String(name || '').trim().replace(/\s+/g, ' ');
+  if (clean.length <= max) return clean;
+  const clipped = clean.slice(0, max - 1);
+  const boundary = clipped.lastIndexOf(' ');
+  return `${(boundary > Math.floor(max / 2) ? clipped.slice(0, boundary) : clipped).trim()}…`;
+}
+
+export function createHabitClone(habit, startDate = new Date()) {
+  const start = new Date(startDate).toISOString();
+  return {
+    ...habit,
+    id: `habit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    seriesId: habit.seriesId || habit.id,
+    lastCompletedDate: habit.type === HABIT_TYPES.DAILY ? habit.lastCompletedDate : start,
+    currentCount: habit.type === HABIT_TYPES.DAILY ? 0 : habit.currentCount,
+    lastDailyDate: habit.type === HABIT_TYPES.DAILY ? getTodayDateString(startDate) : habit.lastDailyDate,
+    notificationId: null,
+    history: [],
+  };
+}
+
+export function getSeriesCompletionCount(habit, allHabits = []) {
+  const seriesId = habit.seriesId || habit.id;
+  return allHabits.filter((item) => (item.seriesId || item.id) === seriesId)
+    .reduce((total, item) => total + (Array.isArray(item.history) ? item.history.length : 0), 0);
+}
+
+export function getHabitStatusGroup(status) {
+  if (status?.urgency === 'completed') return 'completed';
+  if (status?.urgency === 'overdue') return 'overdue';
+  if (status?.urgency === 'warning') return 'warning';
+  return 'safe';
+}
+
+export function normalizeHabitSearch(value = '') {
+  return String(value)
+    .trim()
+    .toLocaleLowerCase('vi-VN')
+    .replace(/đ/g, 'd')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+export function getHabitStats(habitsWithStatus = []) {
+  const stats = { total: habitsWithStatus.length, overdue: 0, warning: 0, safe: 0, completed: 0 };
+  habitsWithStatus.forEach((habit) => { stats[getHabitStatusGroup(habit.status)] += 1; });
+  return stats;
+}
+
+export function filterHabits(habitsWithStatus = [], { typeFilter = 'all', statusFilter = null, search = '' } = {}) {
+  const query = normalizeHabitSearch(search);
+  return habitsWithStatus.filter((habit) => {
+    const typeMatches = typeFilter === 'all'
+      || (typeFilter === 'urgent' && ['overdue', 'warning'].includes(getHabitStatusGroup(habit.status)))
+      || habit.type === typeFilter;
+    const statusMatches = !statusFilter || getHabitStatusGroup(habit.status) === statusFilter;
+    const searchMatches = !query || normalizeHabitSearch(`${habit.title || ''} ${habit.category || ''}`).includes(query);
+    return typeMatches && statusMatches && searchMatches;
+  }).sort((a, b) => ['overdue', 'warning', 'safe', 'completed'].indexOf(getHabitStatusGroup(a.status)) - ['overdue', 'warning', 'safe', 'completed'].indexOf(getHabitStatusGroup(b.status)));
+}
 
 // Chuẩn hóa ngày về 00:00:00 để so sánh số ngày chính xác
 export function getMidnight(dateInput = new Date()) {
@@ -55,6 +173,49 @@ export function getDaysDiff(targetDate, baseDate = new Date()) {
   const t = getMidnight(targetDate).getTime();
   const b = getMidnight(baseDate).getTime();
   return Math.round((t - b) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Lấy ngày hợp lệ của một tháng (tự động co về ngày cuối tháng nếu tháng ngắn hơn targetDay)
+ * Ví dụ: ngày 31 tháng 2 -> 28 hoặc 29; ngày 31 tháng 11 -> 30
+ */
+export function getValidMonthlyDate(year, monthIndex, targetDay) {
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const validDay = Math.min(Math.max(1, targetDay), daysInMonth);
+  return new Date(year, monthIndex, validDay, 0, 0, 0, 0);
+}
+
+/**
+ * Lấy danh sách toàn bộ thông báo đã lên lịch trong hệ điều hành (dùng cho debug & quản lý)
+ */
+export async function getAllScheduledHabitReminders() {
+  try {
+    const list = await Notifications.getAllScheduledNotificationsAsync();
+    return list.map((item) => {
+      let triggerSummary = 'Không xác định';
+      if (item.trigger) {
+        if (item.trigger.type === 'calendar' || item.trigger.date) {
+          triggerSummary = `Ngày ${new Date(item.trigger.date || item.trigger.value).toLocaleString('vi-VN')}`;
+        } else if (item.trigger.hour !== undefined) {
+          const h = String(item.trigger.hour).padStart(2, '0');
+          const m = String(item.trigger.minute || 0).padStart(2, '0');
+          triggerSummary = `Hàng ngày lúc ${h}:${m}`;
+        } else if (item.trigger.seconds) {
+          triggerSummary = `Sau ${item.trigger.seconds} giây`;
+        }
+      }
+      return {
+        id: item.identifier,
+        title: item.content?.title || '(Không có tiêu đề)',
+        body: item.content?.body || '',
+        habitId: item.content?.data?.habitId || null,
+        triggerSummary,
+      };
+    });
+  } catch (err) {
+    console.warn('Lỗi lấy danh sách thông báo OS:', err);
+    return [];
+  }
 }
 
 /**
@@ -80,6 +241,9 @@ export async function scheduleHabitReminder(habit) {
   }
 
   try {
+    await ensureHabitReminderChannel();
+    const exactAlarmGranted = await requestAndroidExactAlarmPermission();
+    if (!exactAlarmGranted) console.warn('Android exact-alarm permission denied; reminder uses best-effort delivery.');
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
@@ -98,17 +262,57 @@ export async function scheduleHabitReminder(habit) {
       return null;
     }
 
+    // 1. Cho việc hàng ngày (DAILY): Lặp lại hàng ngày vào đúng khung giờ
+    if (habit.type === HABIT_TYPES.DAILY) {
+      const id = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🔔 Nhắc việc',
+          body: `${formatTaskNameForNotification(habit.title)}\n${habit.note || 'Đã đến giờ hoàn thành mục tiêu.'}`,
+          sound: true,
+          data: { habitId: habit.id, taskId: habit.id },
+          ...(Platform.OS === 'android' ? { channelId: HABIT_REMINDER_CHANNEL } : {}),
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour,
+          minute,
+          repeats: true,
+        },
+      });
+      return id;
+    }
+
+    // 2. Cho việc theo chu kỳ ngày (INTERVAL) hoặc theo tháng (MONTHLY):
+    // Phải lên lịch vào đúng NGÀY ĐẾN HẠN tiếp theo lúc hour:minute (không được rung chuông mỗi ngày!)
+    const status = calculateHabitStatus(habit);
+    const targetDueDate = status.dueDate || new Date();
+    const triggerDate = new Date(
+      targetDueDate.getFullYear(),
+      targetDueDate.getMonth(),
+      targetDueDate.getDate(),
+      hour,
+      minute,
+      0,
+      0
+    );
+
+    // iOS chỉ nhận trigger tương lai; việc quá hạn sẽ được thể hiện rõ trên thẻ thay vì tạo chuông giả.
+    const now = new Date();
+    if (triggerDate.getTime() <= now.getTime()) {
+      return null;
+    }
+
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: `Nhắc việc: ${habit.title}`,
-        body: habit.note ? `${habit.note}` : `Đã đến giờ thực hiện "${habit.title}"!`,
+        title: '🔔 Nhắc việc',
+        body: `${formatTaskNameForNotification(habit.title)}\n${habit.note || 'Hôm nay là ngày đến hạn chu kỳ.'}`,
         sound: true,
-        data: { habitId: habit.id },
+        data: { habitId: habit.id, taskId: habit.id },
+        ...(Platform.OS === 'android' ? { channelId: HABIT_REMINDER_CHANNEL } : {}),
       },
       trigger: {
-        hour,
-        minute,
-        repeats: true,
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: triggerDate,
       },
     });
 
@@ -117,6 +321,28 @@ export async function scheduleHabitReminder(habit) {
     console.warn('Lỗi lên lịch thông báo việc vặt:', err);
     return null;
   }
+}
+
+/** Rebuild native schedules on app open; iOS accepts at most 64 pending notifications. */
+export async function reconcileHabitReminders(habits = []) {
+  const candidates = habits
+    .filter((habit) => habit?.reminderEnabled && habit?.reminderTime)
+    .map((habit) => ({ habit, dueDate: calculateHabitStatus(habit).dueDate || new Date(8640000000000000) }))
+    .sort((a, b) => a.dueDate - b.dueDate)
+    .slice(0, 64);
+
+  const permittedIds = new Set(candidates.map(({ habit }) => habit.id));
+  const updated = [];
+  for (const habit of habits) {
+    if (!permittedIds.has(habit.id)) {
+      if (habit.notificationId) await cancelHabitReminder(habit.notificationId);
+      updated.push({ ...habit, notificationId: null });
+      continue;
+    }
+    const notificationId = await scheduleHabitReminder(habit);
+    updated.push({ ...habit, notificationId });
+  }
+  return updated;
 }
 
 /**
@@ -147,20 +373,14 @@ export async function testInstantNotification(title = '🔔 Thử nghiệm thôn
       throw new Error('Chưa cấp quyền thông báo trên thiết bị. Vui lòng cho phép quyền thông báo trong Cài đặt máy.');
     }
 
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Nhắc nhở việc vặt',
-        importance: 5, // AndroidImportance.MAX
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#10B981',
-      });
-    }
+    await ensureHabitReminderChannel();
 
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
         sound: true,
+        ...(Platform.OS === 'android' ? { channelId: HABIT_REMINDER_CHANNEL } : {}),
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -178,8 +398,7 @@ export async function testInstantNotification(title = '🔔 Thử nghiệm thôn
  * @param {object} item 
  * @returns {object} { daysRemaining, urgency: 'overdue'|'warning'|'safe', statusText, progress: 0..1, dueDate }
  */
-export function calculateHabitStatus(item) {
-  const now = new Date();
+export function calculateHabitStatus(item, now = new Date()) {
   const todayStr = getTodayDateString(now);
 
   // 1. CHU KỲ THEO SỐ NGÀY (INTERVAL)
@@ -195,15 +414,15 @@ export function calculateHabitStatus(item) {
     const daysPassed = getDaysDiff(now, lastDate);
     const progress = Math.max(0, Math.min(1, daysPassed / intervalDays));
 
-    let urgency = 'safe';
-    let statusText = `Còn ${daysRemaining} ngày`;
+    let urgency = item.completedCycleAt ? 'completed' : 'safe';
+    let statusText = item.completedCycleAt ? `Đã xong chu kỳ này (còn ${daysRemaining} ngày)` : `Còn ${daysRemaining} ngày`;
 
     if (daysRemaining < 0) {
       urgency = 'overdue';
       statusText = `Quá hạn ${Math.abs(daysRemaining)} ngày!`;
     } else if (daysRemaining === 0) {
       urgency = 'overdue';
-      statusText = 'Hôm nay là hạn chót!';
+      statusText = 'Hôm nay đến hạn!';
     } else if (daysRemaining <= 3 || progress >= 0.8) {
       urgency = 'warning';
       statusText = `Sắp đến hạn (còn ${daysRemaining} ngày)`;
@@ -214,6 +433,7 @@ export function calculateHabitStatus(item) {
       daysPassed,
       urgency,
       statusText,
+      cycleInfo: `Mỗi ${intervalDays} ngày`,
       progress,
       dueDate,
     };
@@ -225,39 +445,61 @@ export function calculateHabitStatus(item) {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
     
-    // Xác định ngày hạn tháng này
-    let dueDate = new Date(currentYear, currentMonth, targetDay);
+    // 1. Ngày hạn của THÁNG NÀY (đã tự co về ngày cuối tháng nếu tháng ngắn)
+    const dueDateThisMonth = getValidMonthlyDate(currentYear, currentMonth, targetDay);
 
-    // Nếu đã hoàn thành trong chu kỳ tháng này (dựa vào lastCompletedDate)
+    // 2. Kiểm tra xem việc này đã được hoàn thành cho chu kỳ tháng này chưa
+    let isCompletedForThisMonth = false;
     if (item.lastCompletedDate) {
-      const lastDone = new Date(item.lastCompletedDate);
-      if (lastDone.getFullYear() === currentYear && lastDone.getMonth() === currentMonth && lastDone.getDate() >= targetDay) {
-        // Đã hoàn thành kỳ này -> chuyển sang tháng sau
-        dueDate = new Date(currentYear, currentMonth + 1, targetDay);
+      const lastDone = getMidnight(new Date(item.lastCompletedDate));
+      // Nếu đã làm trong tháng này
+      if (lastDone.getFullYear() === currentYear && lastDone.getMonth() === currentMonth) {
+        // Đã hoàn thành trong chu kỳ tháng này
+        isCompletedForThisMonth = true;
+      } else if (lastDone >= dueDateThisMonth) {
+        isCompletedForThisMonth = true;
+      }
+    }
+
+    let dueDate;
+    let urgency = 'safe';
+    let statusText = '';
+    const cycleInfo = `Ngày ${targetDay} hàng tháng`;
+
+    if (isCompletedForThisMonth) {
+      // Đã hoàn thành tháng này -> Kỳ tiếp theo là THÁNG SAU
+      dueDate = getValidMonthlyDate(currentYear, currentMonth + 1, targetDay);
+      const daysRemaining = getDaysDiff(dueDate, now);
+      statusText = `Đã xong tháng này (còn ${daysRemaining} ngày)`;
+      urgency = 'completed';
+    } else {
+      // Chưa hoàn thành tháng này
+      dueDate = dueDateThisMonth;
+      const daysRemaining = getDaysDiff(dueDate, now);
+
+      if (daysRemaining < 0) {
+        urgency = 'overdue';
+        statusText = `Quá hạn ${Math.abs(daysRemaining)} ngày!`;
+      } else if (daysRemaining === 0) {
+        urgency = 'overdue'; // Hôm nay đến hạn cần làm
+        statusText = 'Hôm nay đến hạn!';
+      } else if (daysRemaining <= 3) {
+        urgency = 'warning';
+        statusText = `Sắp đến hạn (còn ${daysRemaining} ngày)`;
+      } else {
+        urgency = 'safe';
+        statusText = `Còn ${daysRemaining} ngày`;
       }
     }
 
     const daysRemaining = getDaysDiff(dueDate, now);
 
-    let urgency = 'safe';
-    let statusText = `Ngày ${targetDay} hàng tháng (còn ${daysRemaining} ngày)`;
-
-    if (daysRemaining < 0) {
-      urgency = 'overdue';
-      statusText = `Quá hạn đóng ${Math.abs(daysRemaining)} ngày!`;
-    } else if (daysRemaining === 0) {
-      urgency = 'overdue';
-      statusText = 'Hôm nay đến hạn!';
-    } else if (daysRemaining <= 3) {
-      urgency = 'warning';
-      statusText = `Sắp đến ngày đóng (còn ${daysRemaining} ngày)`;
-    }
-
     return {
       daysRemaining,
       urgency,
       statusText,
-      progress: daysRemaining <= 0 ? 1 : Math.max(0, 1 - daysRemaining / 30),
+      cycleInfo,
+      progress: isCompletedForThisMonth ? 1 : daysRemaining <= 0 ? 1 : Math.max(0, 1 - daysRemaining / 30),
       dueDate,
     };
   }
@@ -274,20 +516,21 @@ export function calculateHabitStatus(item) {
     let statusText = `Đã xong ${current}/${target} ${item.unit || 'lần'}`;
 
     if (isCompleted) {
-      urgency = 'safe';
-      statusText = `Hoàn thành hôm nay! (${current}/${target})`;
+      urgency = 'completed';
+      statusText = `Đã hoàn thành! (${current}/${target})`;
     } else if (current === 0) {
       urgency = 'warning';
-      statusText = `Chưa làm lần nào (0/${target} ${item.unit || 'lần'})`;
+      statusText = `Chưa làm (0/${target} ${item.unit || 'lần'})`;
     } else {
       urgency = 'warning';
-      statusText = `Tiến độ hôm nay: ${current}/${target} ${item.unit || 'lần'}`;
+      statusText = `Tiến độ: ${current}/${target} ${item.unit || 'lần'}`;
     }
 
     return {
       daysRemaining: 0,
       urgency,
       statusText,
+      cycleInfo: `Mục tiêu ${target} ${item.unit || 'lần'}/ngày`,
       progress,
       isCompleted,
       currentCount: current,

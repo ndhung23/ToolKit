@@ -5,6 +5,9 @@ node_modules/
 
 # Expo
 .expo/
+.expo-export-verify/
+.expo-export-android-verify/
+.expo-export-ios-verify/
 dist/
 web-build/
 expo-env.d.ts
@@ -44,3 +47,10 @@ yarn-error.*
 /android
 
 /AGENTS.md
+yt-dlp.exe
+cookies.txt
+
+ffmpeg.exe
+ffprobe.exe
+temp_downloads/
+temp_test_downloads/

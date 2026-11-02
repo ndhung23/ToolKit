@@ -22,7 +22,6 @@ import { CleanPhotosScreen } from '../features/clean-photos';
 import { FbMultiScreen } from '../features/fb-multi';
 import { AiReplyScreen } from '../features/ai-reply';
 import { SnapVideoScreen } from '../features/snap-video';
-import { VoiceTextScreen } from '../features/voice-text';
 import { MicroHabitScreen } from '../features/micro-habit';
 import { SettingsScreen } from '../features/settings';
 import { AdminScreen } from '../features/admin';
@@ -109,11 +108,6 @@ function AppStack() {
         name="SnapVideo"
         component={SnapVideoScreen}
         options={{ title: 'Snap Video' }}
-      />
-      <AppStackNav.Screen
-        name="VoiceText"
-        component={VoiceTextScreen}
-        options={{ title: 'Giọng nói ↔ Văn bản' }}
       />
       <AppStackNav.Screen
         name="MicroHabit"

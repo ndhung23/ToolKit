@@ -1,0 +1,446 @@
+// scripts/snap-server.js
+// Micro-backend chạy yt-dlp + ffmpeg trên IP dân cư (Residential IP) để vượt qua chặn Botguard,
+// hỗ trợ lựa chọn chất lượng video (1080p, 720p, 480p, 360p), ghép âm thanh bằng FFmpeg và đo ffprobe chuẩn xác
+const http = require('http');
+const { execFile, execFileSync } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+
+const PORT = Number(process.env.SNAP_SERVER_PORT || 4000);
+const YTDLP_PATH = path.join(__dirname, '..', 'yt-dlp.exe');
+const FFMPEG_PATH = path.join(__dirname, '..', 'ffmpeg.exe');
+const FFPROBE_PATH = path.join(__dirname, '..', 'ffprobe.exe');
+const COOKIES_PATH = path.join(__dirname, '..', 'cookies.txt');
+const DOWNLOADS_DIR = path.join(__dirname, '..', 'temp_downloads');
+const DEBUG_DIR = path.join(DOWNLOADS_DIR, 'debug');
+const outputMetadata = new Map();
+const backendState = { lastUpdateAt: null, lastUpdateError: null, lastYoutubeSuccessAt: null, lastYoutubeError: null };
+
+if (!fs.existsSync(DOWNLOADS_DIR)) {
+  fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true });
+
+// Tự động dọn file giao cho app sau 30 phút, giữ raw/final debug trong 1 giờ.
+function cleanOldDownloads() {
+  try {
+    const now = Date.now();
+    for (const [directory, maxAge] of [[DOWNLOADS_DIR, 30 * 60 * 1000], [DEBUG_DIR, 60 * 60 * 1000]]) {
+      for (const f of fs.readdirSync(directory)) {
+        const fp = path.join(directory, f);
+        const stat = fs.statSync(fp);
+        if (stat.isFile() && now - stat.mtimeMs > maxAge) {
+          fs.unlinkSync(fp);
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function findGeneratedFile(prefix) {
+  const files = fs.readdirSync(DEBUG_DIR)
+    .filter((name) => name.startsWith(prefix))
+    .map((name) => ({ name, stat: fs.statSync(path.join(DEBUG_DIR, name)) }))
+    .filter(({ stat }) => stat.isFile())
+    .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+  return files[0] ? path.join(DEBUG_DIR, files[0].name) : null;
+}
+
+function getYtDlpVersion() {
+  try { return execFileSync(YTDLP_PATH, ['--version'], { encoding: 'utf8', timeout: 8000 }).trim(); } catch { return 'unavailable'; }
+}
+
+function updateYtDlpIfDue() {
+  const day = 24 * 60 * 60 * 1000;
+  if (backendState.lastUpdateAt && Date.now() - new Date(backendState.lastUpdateAt).getTime() < day) return;
+  backendState.lastUpdateAt = new Date().toISOString();
+  execFile(YTDLP_PATH, ['-U'], { timeout: 30000 }, (error, stdout, stderr) => {
+    backendState.lastUpdateError = error ? (stderr || error.message || 'update failed').toString().slice(0, 300) : null;
+    console.log('[SnapServer] yt-dlp update:', backendState.lastUpdateError || stdout.trim());
+  });
+}
+
+function normalizeInstagramUrl(rawUrl) {
+  try {
+    let clean = (rawUrl || '').trim();
+    // Bỏ query parameters như ?igsh=...
+    clean = clean.split('?')[0].split('&')[0];
+    return clean;
+  } catch {
+    return rawUrl;
+  }
+}
+
+function normalizeTrackingParams(rawUrl) {
+  const url = new URL(rawUrl);
+  for (const key of [...url.searchParams.keys()]) {
+    if (key === 'igsh' || key === 'fbclid' || key === 'mibextid' || key === 'si' || key.startsWith('utm_')) url.searchParams.delete(key);
+  }
+  return url.toString();
+}
+
+function isSupportedMediaUrl(rawUrl) {
+  try {
+    const hostname = new URL(rawUrl).hostname.toLowerCase().replace(/^www\./, '');
+    return [
+      'youtube.com', 'm.youtube.com', 'youtu.be',
+      'tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com',
+      'facebook.com', 'm.facebook.com', 'fb.watch',
+      'instagram.com',
+    ].includes(hostname) || hostname.endsWith('.tiktok.com') || hostname.endsWith('.facebook.com');
+  } catch {
+    return false;
+  }
+}
+
+function probeVideoFile(filePath) {
+  if (!fs.existsSync(FFPROBE_PATH)) {
+    throw { code: 'FFPROBE_MISSING', message: 'Máy chủ thiếu ffprobe nên không thể xác minh video.' };
+  }
+  const output = execFileSync(FFPROBE_PATH, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', filePath], { encoding: 'utf8' });
+  const probe = JSON.parse(output);
+  const video = probe.streams?.find((stream) => stream.codec_type === 'video');
+  const audio = probe.streams?.find((stream) => stream.codec_type === 'audio');
+  const duration = Number(probe.format?.duration || video?.duration || 0);
+  if (!video || !video.width || !video.height || duration <= 0) {
+    throw { code: 'INVALID_MEDIA', message: 'Backend tạo file không có luồng video hợp lệ; không gửi file này về iPhone.' };
+  }
+  return {
+    width: video.width,
+    height: video.height,
+    vcodec: video.codec_name,
+    acodec: audio?.codec_name || null,
+    duration,
+    format: probe.format?.format_name || null,
+  };
+}
+
+function runFile(command, args, timeout = 120000) {
+  return new Promise((resolve, reject) => execFile(command, args, { timeout }, (error, stdout, stderr) => error ? reject(Object.assign(error, { stderr })) : resolve({ stdout, stderr })));
+}
+
+function probeMediaFile(filePath) {
+  const output = execFileSync(FFPROBE_PATH, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', filePath], { encoding: 'utf8' });
+  const probe = JSON.parse(output);
+  const video = probe.streams?.find((stream) => stream.codec_type === 'video');
+  const audio = probe.streams?.find((stream) => stream.codec_type === 'audio');
+  const duration = Number(probe.format?.duration || 0);
+  const fd = fs.openSync(filePath, 'r');
+  const sample = Buffer.alloc(Math.min(fs.statSync(filePath).size, 1024 * 1024));
+  fs.readSync(fd, sample, 0, sample.length, 0);
+  fs.closeSync(fd);
+  const moovOffset = sample.indexOf(Buffer.from('moov'));
+  const mdatOffset = sample.indexOf(Buffer.from('mdat'));
+  return { duration, video, audio, format: probe.format, moovAtStart: moovOffset >= 0 && (mdatOffset < 0 || moovOffset < mdatOffset), raw: probe };
+}
+
+function decodedDuration(progress) {
+  const matches = [...progress.matchAll(/out_time_us=(\d+)/g)];
+  return matches.length ? Number(matches.at(-1)[1]) / 1000000 : 0;
+}
+
+async function normalizeAndVerify(inputPath, mode, outputPath) {
+  const ffmpegArgs = mode === 'audio'
+    ? ['-y', '-fflags', '+genpts', '-i', inputPath, '-vn', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', outputPath]
+    : ['-y', '-fflags', '+genpts', '-i', inputPath, '-map', '0:v:0?', '-map', '0:a:0?', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', outputPath];
+  await runFile(FFMPEG_PATH, ffmpegArgs);
+  const decode = await runFile(FFMPEG_PATH, ['-v', 'error', '-progress', 'pipe:1', '-nostats', '-i', outputPath, '-f', 'null', '-']);
+  const probe = probeMediaFile(outputPath);
+  const actualDuration = decodedDuration(decode.stdout);
+  if (!probe.duration || probe.duration <= 0 || !probe.moovAtStart) throw { code: 'INVALID_MEDIA', message: 'File chuẩn hóa thiếu duration hoặc moov atom ở đầu file.' };
+  if (!actualDuration || Math.abs(actualDuration - probe.duration) > Math.max(0.5, probe.duration * 0.01)) throw { code: 'INVALID_DURATION', message: `Duration metadata (${probe.duration}s) không khớp duration giải mã (${actualDuration}s).` };
+  if (mode === 'audio' && (!probe.audio || probe.audio.codec_name !== 'aac' || probe.video)) throw { code: 'INVALID_AUDIO', message: 'Audio đầu ra không phải AAC/M4A hợp lệ.' };
+  if (mode === 'video' && (!probe.video || !['h264', 'hevc'].includes(probe.video.codec_name) || probe.video.pix_fmt !== 'yuv420p' || !probe.audio || probe.audio.codec_name !== 'aac')) throw { code: 'INVALID_VIDEO', message: 'Video đầu ra không tương thích iPhone (cần H.264/HEVC yuv420p + AAC).' };
+  const stat = fs.statSync(outputPath);
+  const hash = crypto.createHash('sha256');
+  await new Promise((resolve, reject) => fs.createReadStream(outputPath).on('data', (chunk) => hash.update(chunk)).on('end', resolve).on('error', reject));
+  const metadata = { size: stat.size, sha256: hash.digest('hex'), duration: probe.duration, decodedDuration: actualDuration, codec: mode === 'audio' ? probe.audio.codec_name : probe.video.codec_name, resolution: probe.video ? `${probe.video.width}x${probe.video.height}` : null };
+  outputMetadata.set(path.basename(outputPath), metadata);
+  return metadata;
+}
+
+/**
+ * Phân tích và tải video/audio với chất lượng chỉ định
+ * @param {string} rawUrl 
+ * @param {'video' | 'audio'} mode 
+ * @param {string} quality 'best' | '1080p' | '720p' | '480p' | '360p'
+ * @param {string} host 
+ */
+function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'localhost:4000') {
+  return new Promise((resolve, reject) => {
+    cleanOldDownloads();
+
+    const isYt = rawUrl.includes('youtu.be') || rawUrl.includes('youtube.com');
+    const isIg = rawUrl.includes('instagram.com');
+    const cookiesArgs = fs.existsSync(COOKIES_PATH) ? ['--cookies', COOKIES_PATH] : [];
+
+    let targetUrl = isIg ? normalizeInstagramUrl(rawUrl) : normalizeTrackingParams(rawUrl);
+    console.log('[SnapServer Request]', { platform: isYt ? 'youtube' : isIg ? 'instagram' : rawUrl.includes('facebook') || rawUrl.includes('fb.watch') ? 'facebook' : 'other', url: rawUrl, normalizedUrl: targetUrl, mode, quality });
+
+    const tStart = Date.now();
+    updateYtDlpIfDue();
+    const youtubeRuntimeArgs = isYt ? ['--js-runtimes', 'node', '--extractor-args', 'youtube:player_client=visionos,android'] : [];
+
+    // ==========================================
+    // 1. XỬ LÝ CHẾ ĐỘ AUDIO (Tốc độ cao)
+    // ==========================================
+    if (mode === 'audio') {
+      const id = Date.now().toString();
+      const rawPrefix = `raw_${id}`;
+      const rawTemplate = path.join(DEBUG_DIR, `${rawPrefix}.%(ext)s`);
+      const filename = `${isYt ? 'youtube' : isIg ? 'instagram' : targetUrl.includes('facebook') || targetUrl.includes('fb.watch') ? 'facebook' : 'media'}_audio_${id}.m4a`;
+      const finalPath = path.join(DOWNLOADS_DIR, filename);
+      const audioArgs = [...youtubeRuntimeArgs, ...cookiesArgs, '-f', isYt ? '140/bestaudio' : 'bestaudio/best', '-o', rawTemplate, targetUrl];
+      console.log(`[SnapServer Audio] Downloading and normalizing ${isYt ? 'YouTube' : 'media'} audio`);
+
+      execFile(YTDLP_PATH, audioArgs, { timeout: 25000 }, (error, stdout, stderr) => {
+        const tEnd = Date.now();
+        const durationSec = ((tEnd - tStart) / 1000).toFixed(2);
+
+        if (error) {
+          const errText = (stderr || error.message || '').toString();
+          if (isYt) backendState.lastYoutubeError = { at: new Date().toISOString(), error: errText.slice(0, 300) };
+          console.error('[SnapServer Audio Error]:', errText);
+          return reject(parseError(errText));
+        }
+
+        const rawPath = findGeneratedFile(rawPrefix);
+        if (!rawPath) return reject({ code: 'FILE_NOT_FOUND', message: 'Tải audio hoàn tất nhưng không tạo được file nguồn.' });
+        normalizeAndVerify(rawPath, 'audio', finalPath).then((metadata) => {
+          if (isYt) backendState.lastYoutubeSuccessAt = new Date().toISOString();
+          console.log('[SnapServer Audio Success] normalized', { rawPath, finalPath, metadata });
+          resolve({ success: true, mode: 'audio', url: `http://${host}/download/${filename}`, filename, qualityInfo: `AAC 128kbps • ${(metadata.size / (1024 * 1024)).toFixed(2)}MB`, durationSec, metadata });
+        }).catch((normalizeError) => {
+          console.error('[SnapServer Audio Normalize Error]', normalizeError.stderr || normalizeError.message || normalizeError);
+          reject(normalizeError.code ? normalizeError : { code: 'INVALID_AUDIO', message: 'Không thể chuẩn hóa audio thành M4A/AAC hợp lệ.' });
+        });
+      });
+      return;
+    }
+
+    // ==========================================
+    // 2. XỬ LÝ CHẾ ĐỘ VIDEO (Ghép HD + ffprobe)
+    // ==========================================
+    let targetHeight = 0;
+    if (quality === '1080p') targetHeight = 1080;
+    else if (quality === '720p') targetHeight = 720;
+    else if (quality === '480p') targetHeight = 480;
+    else if (quality === '360p') targetHeight = 360;
+
+    const id = Date.now().toString();
+    const platformName = isYt ? 'youtube' : isIg ? 'instagram' : targetUrl.includes('facebook') || targetUrl.includes('fb.watch') ? 'facebook' : 'media';
+    const rawPrefix = `raw_${id}`;
+    const rawTemplate = path.join(DEBUG_DIR, `${rawPrefix}.%(ext)s`);
+    const outFilename = `${platformName}_video_${id}.mp4`;
+    const outFilePath = path.join(DOWNLOADS_DIR, outFilename);
+
+    let formatSelector = '';
+    const isFacebook = targetUrl.includes('facebook.com') || targetUrl.includes('fb.watch');
+    if (isFacebook) {
+      formatSelector = 'bv*+ba/b/best';
+    } else if (targetHeight > 0) {
+      formatSelector = `bv*[height<=${targetHeight}][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=${targetHeight}]+ba/b[height<=${targetHeight}]/best`;
+    } else {
+      formatSelector = `bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*+ba/b/best`;
+    }
+
+    const videoArgs = [
+      ...(fs.existsSync(FFMPEG_PATH) ? ['--ffmpeg-location', FFMPEG_PATH] : []),
+      ...youtubeRuntimeArgs,
+      ...cookiesArgs,
+      '-f', formatSelector,
+      '--merge-output-format', 'mp4',
+      ...(isIg ? ['--recode-video', 'mp4', '--postprocessor-args', 'ffmpeg:-c:v libx264 -crf 20 -preset veryfast -c:a aac -movflags +faststart'] : []),
+      '-o', rawTemplate,
+      targetUrl,
+    ];
+
+    console.log(`[SnapServer Video] Downloading ${isYt ? 'YouTube' : isFacebook ? 'Facebook' : 'media'} at ${quality}`, { formatSelector, targetUrl });
+
+    execFile(YTDLP_PATH, videoArgs, { timeout: 60000 }, (error, stdout, stderr) => {
+      const tEnd = Date.now();
+      const durationSec = ((tEnd - tStart) / 1000).toFixed(2);
+
+      if (error) {
+        const errText = (stderr || error.message || '').toString();
+        if (isYt) backendState.lastYoutubeError = { at: new Date().toISOString(), error: errText.slice(0, 300) };
+        console.error('[SnapServer Video Error]:', errText);
+        return reject(parseError(errText));
+      }
+
+      const rawFilePath = findGeneratedFile(rawPrefix);
+      if (!rawFilePath) {
+        return reject({ code: 'FILE_NOT_FOUND', message: 'Tải video hoàn tất nhưng không tạo được file đầu ra.' });
+      }
+
+      // Xác minh file trước khi trả về app. Photos iOS sẽ từ chối MP4 không có video (PHPhotos 3302).
+      let realHeight = targetHeight || 720;
+      let realWidth = 1280;
+      let codec = 'h264';
+      let sizeMB = '0.00';
+
+      normalizeAndVerify(rawFilePath, 'video', outFilePath).then((metadata) => {
+        sizeMB = (metadata.size / (1024 * 1024)).toFixed(2);
+        const media = probeVideoFile(outFilePath);
+        realHeight = media.height;
+        realWidth = media.width;
+        codec = media.vcodec;
+        console.log('[SnapServer] normalized ffprobe verified', { rawFilePath, media, metadata });
+        const qualityInfo = `${realHeight}p • ${sizeMB}MB (${durationSec}s)`;
+        const serveUrl = `http://${host}/download/${outFilename}`;
+        if (isYt) backendState.lastYoutubeSuccessAt = new Date().toISOString();
+        resolve({ success: true, mode: 'video', url: serveUrl, filename: outFilename, quality: `${realHeight}p`, resolution: `${realWidth}x${realHeight}`, codec, sizeMB, qualityInfo, durationSec, metadata });
+      }).catch((normalizeError) => {
+        console.error('[SnapServer Video Normalize Error]', normalizeError.stderr || normalizeError.message || normalizeError);
+        reject(normalizeError.code ? normalizeError : { code: 'INVALID_MEDIA', message: 'Không thể chuẩn hóa video thành MP4 tương thích iPhone.' });
+      });
+    });
+  });
+}
+
+function parseError(errText) {
+  let code = 'ERROR';
+  let message = 'Không thể tải nội dung từ liên kết này.';
+
+  if (errText.includes('Cannot parse data')) {
+    code = 'EXTRACTOR_CHANGED';
+    message = 'Facebook đã thay đổi dữ liệu trang; yt-dlp hiện chưa trích xuất được video này.';
+  } else if (errText.includes('Sign in to confirm you’re not a bot') || errText.includes('Botguard')) {
+    code = 'BOT_CHECK';
+    message = 'YouTube đang yêu cầu xác minh Botguard trên máy chủ. Cần PO Token hoặc cookies của tài khoản phụ ở backend.';
+  } else if (errText.includes('login') || errText.includes('empty media response') || errText.includes('requires authentication')) {
+    code = 'LOGIN_REQUIRED';
+    message = 'Nền tảng yêu cầu đăng nhập đối với nội dung này. Máy chủ chưa có cookies của tài khoản phụ.';
+  } else if (errText.includes('Private') || errText.includes('this account is private')) {
+    code = 'PRIVATE_ACCOUNT';
+    message = 'Nội dung hoặc tài khoản này đang ở chế độ riêng tư.';
+  } else if (errText.includes('Requested format is not available') || errText.includes('No video formats found')) {
+    code = 'FORMAT_UNAVAILABLE';
+    message = 'Định dạng stream yêu cầu không khả dụng.';
+  } else if (errText.includes('Video unavailable') || errText.includes('404')) {
+    code = 'NOT_FOUND';
+    message = 'Video không tồn tại hoặc đã bị xóa.';
+  } else if (errText.includes('429') || errText.includes('rate limit')) {
+    code = 'RATE_LIMIT';
+    message = 'Nền tảng đang giới hạn số lượt tải. Hãy thử lại sau.';
+  }
+
+  return { code, message, raw: errText };
+}
+
+const server = http.createServer(async (req, res) => {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+  // Health check
+  if (req.method === 'GET' && parsedUrl.pathname === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      engine: 'yt-dlp + ffmpeg',
+      ffmpegAvailable: fs.existsSync(FFMPEG_PATH),
+      ffprobeAvailable: fs.existsSync(FFPROBE_PATH),
+      ytDlpVersion: getYtDlpVersion(),
+      lastUpdateAt: backendState.lastUpdateAt,
+      lastUpdateError: backendState.lastUpdateError,
+      lastYoutubeSuccessAt: backendState.lastYoutubeSuccessAt,
+      lastYoutubeError: backendState.lastYoutubeError,
+      cookiesConfigured: fs.existsSync(COOKIES_PATH),
+      port: PORT,
+    }));
+    return;
+  }
+
+  // Phục vụ tải file trực tiếp từ temp_downloads
+  if (req.method === 'GET' && parsedUrl.pathname.startsWith('/download/')) {
+    const filename = path.basename(parsedUrl.pathname);
+    const filePath = path.join(DOWNLOADS_DIR, filename);
+
+    if (fs.existsSync(filePath)) {
+      const stat = fs.statSync(filePath);
+      const isAudio = filename.endsWith('.mp3') || filename.endsWith('.m4a');
+      const metadata = outputMetadata.get(filename);
+      const mediaHeaders = {
+        'Content-Type': filename.endsWith('.m4a') ? 'audio/mp4' : isAudio ? 'audio/mpeg' : 'video/mp4',
+        'Accept-Ranges': 'bytes',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        ...(metadata ? { 'X-Snap-Size': metadata.size, 'X-Snap-Sha256': metadata.sha256, 'X-Snap-Duration': metadata.duration } : {}),
+      };
+      const range = req.headers.range;
+      if (range) {
+        const match = /bytes=(\d+)-(\d*)/.exec(range);
+        const start = match ? Number(match[1]) : 0;
+        const end = match?.[2] ? Math.min(Number(match[2]), stat.size - 1) : stat.size - 1;
+        if (start > end || start >= stat.size) { res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` }); res.end(); return; }
+        res.writeHead(206, { ...mediaHeaders, 'Content-Length': end - start + 1, 'Content-Range': `bytes ${start}-${end}/${stat.size}` });
+        fs.createReadStream(filePath, { start, end }).pipe(res); return;
+      }
+      res.writeHead(200, { ...mediaHeaders, 'Content-Length': stat.size });
+      const stream = fs.createReadStream(filePath);
+      stream.pipe(res);
+      return;
+    } else {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'File không tồn tại hoặc đã hết hạn.' }));
+      return;
+    }
+  }
+
+  // API Resolve Media
+  if (req.method === 'POST' && parsedUrl.pathname === '/api/resolve') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const { url, mode, quality } = payload;
+        if (!url || !isSupportedMediaUrl(url)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'UNSUPPORTED', message: 'Liên kết không thuộc nền tảng được hỗ trợ.' }));
+          return;
+        }
+
+        const host = req.headers.host || `localhost:${PORT}`;
+        const result = await processMediaRequest(url, mode || 'video', quality || 'best', host);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: false,
+          code: err.code || 'UNKNOWN',
+          message: err.message || 'Lỗi xử lý video.',
+        }));
+      }
+    });
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[SnapServer] Đang lắng nghe tại http://0.0.0.0:${PORT}`);
+  console.log(`[SnapServer] Engine yt-dlp: ${YTDLP_PATH}`);
+  console.log(`[SnapServer] FFmpeg: ${fs.existsSync(FFMPEG_PATH) ? 'Có sẵn' : 'Không tìm thấy'}`);
+  console.log(`[SnapServer] FFprobe: ${fs.existsSync(FFPROBE_PATH) ? 'Có sẵn' : 'Không tìm thấy'}`);
+  if (fs.existsSync(COOKIES_PATH)) {
+    console.log(`[SnapServer] Đã tải cookies từ ${COOKIES_PATH}`);
+  } else {
+    console.log(`[SnapServer] Chưa có cookies.txt`);
+  }
+});
