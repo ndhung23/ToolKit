@@ -142,22 +142,37 @@ function decodedDuration(progress) {
   return matches.length ? Number(matches.at(-1)[1]) / 1000000 : 0;
 }
 
+async function verifyMediaFile(filePath, mode) {
+  const decode = await runFile(FFMPEG_PATH, ['-v', 'error', '-progress', 'pipe:1', '-nostats', '-i', filePath, '-f', 'null', '-']);
+  const probe = probeMediaFile(filePath);
+  const actualDuration = decodedDuration(decode.stdout);
+  if (!probe.duration || probe.duration <= 0 || (mode === 'video' && !probe.moovAtStart)) throw { code: 'INVALID_MEDIA', message: 'File thiếu duration hoặc moov atom ở đầu file.' };
+  if (!actualDuration || Math.abs(actualDuration - probe.duration) > Math.max(0.5, probe.duration * 0.01)) throw { code: 'INVALID_DURATION', message: `Duration metadata (${probe.duration}s) không khớp duration giải mã (${actualDuration}s).` };
+  if (mode === 'audio' && (!probe.audio || probe.audio.codec_name !== 'aac' || probe.video)) throw { code: 'INVALID_AUDIO', message: 'Audio đầu ra không phải AAC/M4A hợp lệ.' };
+  if (mode === 'video' && (!probe.video || !['h264', 'hevc'].includes(probe.video.codec_name) || probe.video.pix_fmt !== 'yuv420p' || !probe.audio || probe.audio.codec_name !== 'aac')) throw { code: 'INVALID_VIDEO', message: 'Video đầu ra không tương thích iPhone (cần H.264/HEVC yuv420p + AAC).' };
+  const stat = fs.statSync(filePath);
+  const hash = crypto.createHash('sha256');
+  await new Promise((resolve, reject) => fs.createReadStream(filePath).on('data', (chunk) => hash.update(chunk)).on('end', resolve).on('error', reject));
+  return { size: stat.size, sha256: hash.digest('hex'), duration: probe.duration, decodedDuration: actualDuration, codec: mode === 'audio' ? probe.audio.codec_name : probe.video.codec_name, resolution: probe.video ? `${probe.video.width}x${probe.video.height}` : null };
+}
+
 async function normalizeAndVerify(inputPath, mode, outputPath) {
+  if (mode === 'video') {
+    try {
+      const metadata = await verifyMediaFile(inputPath, mode);
+      try { fs.linkSync(inputPath, outputPath); } catch { fs.copyFileSync(inputPath, outputPath); }
+      outputMetadata.set(path.basename(outputPath), metadata);
+      console.log('[SnapServer Video] source already iPhone-compatible; skipped transcode');
+      return metadata;
+    } catch (error) {
+      console.warn('[SnapServer Video] source needs transcode:', error.code || error.message);
+    }
+  }
   const ffmpegArgs = mode === 'audio'
     ? ['-y', '-fflags', '+genpts', '-i', inputPath, '-vn', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', outputPath]
     : ['-y', '-fflags', '+genpts', '-i', inputPath, '-map', '0:v:0?', '-map', '0:a:0?', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', outputPath];
   await runFile(FFMPEG_PATH, ffmpegArgs);
-  const decode = await runFile(FFMPEG_PATH, ['-v', 'error', '-progress', 'pipe:1', '-nostats', '-i', outputPath, '-f', 'null', '-']);
-  const probe = probeMediaFile(outputPath);
-  const actualDuration = decodedDuration(decode.stdout);
-  if (!probe.duration || probe.duration <= 0 || !probe.moovAtStart) throw { code: 'INVALID_MEDIA', message: 'File chuẩn hóa thiếu duration hoặc moov atom ở đầu file.' };
-  if (!actualDuration || Math.abs(actualDuration - probe.duration) > Math.max(0.5, probe.duration * 0.01)) throw { code: 'INVALID_DURATION', message: `Duration metadata (${probe.duration}s) không khớp duration giải mã (${actualDuration}s).` };
-  if (mode === 'audio' && (!probe.audio || probe.audio.codec_name !== 'aac' || probe.video)) throw { code: 'INVALID_AUDIO', message: 'Audio đầu ra không phải AAC/M4A hợp lệ.' };
-  if (mode === 'video' && (!probe.video || !['h264', 'hevc'].includes(probe.video.codec_name) || probe.video.pix_fmt !== 'yuv420p' || !probe.audio || probe.audio.codec_name !== 'aac')) throw { code: 'INVALID_VIDEO', message: 'Video đầu ra không tương thích iPhone (cần H.264/HEVC yuv420p + AAC).' };
-  const stat = fs.statSync(outputPath);
-  const hash = crypto.createHash('sha256');
-  await new Promise((resolve, reject) => fs.createReadStream(outputPath).on('data', (chunk) => hash.update(chunk)).on('end', resolve).on('error', reject));
-  const metadata = { size: stat.size, sha256: hash.digest('hex'), duration: probe.duration, decodedDuration: actualDuration, codec: mode === 'audio' ? probe.audio.codec_name : probe.video.codec_name, resolution: probe.video ? `${probe.video.width}x${probe.video.height}` : null };
+  const metadata = await verifyMediaFile(outputPath, mode);
   outputMetadata.set(path.basename(outputPath), metadata);
   return metadata;
 }
