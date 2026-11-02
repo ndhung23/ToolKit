@@ -309,7 +309,7 @@ export default function DraggableGrid({
                   ]}
                   numberOfLines={2}
                 >
-                  {t(`tools.${toolItem.id}.shortTitle`) || toolItem.shortTitle || toolItem.title}
+                  {t(`tools.${toolItem.id}.shortTitle`, {}, toolItem.shortTitle || toolItem.title)}
                 </Text>
               </Pressable>
             </Animated.View>

@@ -21,6 +21,8 @@ import { ImageToPdfScreen } from '../features/image-to-pdf';
 import { CleanPhotosScreen } from '../features/clean-photos';
 import { FbMultiScreen } from '../features/multi';
 import { AiReplyScreen } from '../features/ai-reply';
+import { SnapVideoScreen } from '../features/snap-video';
+import { MicroHabitScreen } from '../features/micro-habit';
 import { SettingsScreen } from '../features/settings';
 import { AdminScreen } from '../features/admin';
 import FloatingTabBar from '../components/FloatingTabBar';
@@ -101,6 +103,16 @@ function AppStack() {
         name="AiReply"
         component={AiReplyScreen}
         options={{ title: 'AI gợi ý trả lời tin nhắn' }}
+      />
+      <AppStackNav.Screen
+        name="SnapVideo"
+        component={SnapVideoScreen}
+        options={{ title: 'Snap Video' }}
+      />
+      <AppStackNav.Screen
+        name="MicroHabit"
+        component={MicroHabitScreen}
+        options={{ title: 'Chu kỳ việc vặt' }}
       />
       <AppStackNav.Screen
         name="Settings"

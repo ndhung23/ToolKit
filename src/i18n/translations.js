@@ -137,6 +137,18 @@ export const translations = {
         desc: 'Phân tích ngữ cảnh tin nhắn đến và gợi ý câu trả lời thông minh',
         badge: 'VIP AI',
       },
+      snap_video: {
+        title: 'Tải video từ mạng xã hội không logo',
+        shortTitle: 'Snap Video',
+        desc: 'Tải video TikTok, YouTube, Facebook, Instagram không dính watermark',
+        badge: 'Mới',
+      },
+      micro_habit: {
+        title: 'Theo dõi việc vặt & Chu kỳ sinh hoạt',
+        shortTitle: 'Chu kỳ việc vặt',
+        desc: 'Bấm nút để reset vòng lặp: thay nhớt, đổi ga nước, tiền trọ, uống thuốc...',
+        badge: 'Mới',
+      },
     },
 
     // Chung (Common)
@@ -286,6 +298,18 @@ export const translations = {
         shortTitle: 'AI Reply',
         desc: 'Analyze conversation context and suggest smart quick replies',
         badge: 'VIP AI',
+      },
+      snap_video: {
+        title: 'Download social media videos without watermark',
+        shortTitle: 'Snap Video',
+        desc: 'Download TikTok, YouTube, Facebook, Instagram videos without watermark',
+        badge: 'New',
+      },
+      micro_habit: {
+        title: 'Micro-Habit & Refill Tracker',
+        shortTitle: 'Refill Tracker',
+        desc: 'Tap to reset loop: oil change, water refill, rent, vitamins...',
+        badge: 'New',
       },
     },
 

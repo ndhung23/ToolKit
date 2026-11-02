@@ -18,12 +18,17 @@
     },
     "android": {
       "package": "com.ndhung23.toolkit",
+      "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#141416",
         "foregroundImage": "./assets/favicon1.png"
       },
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.SCHEDULE_EXACT_ALARM"
       ]
     },
     "web": {
@@ -37,7 +42,9 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Cho phép ToolKit sử dụng máy ảnh để phục vụ các tiện ích trong ứng dụng."
+          "cameraPermission": "Cho phép ToolKit sử dụng máy ảnh để phục vụ các tiện ích trong ứng dụng.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ],
       [
@@ -47,7 +54,15 @@
           "color": "#FFD000"
         }
       ],
-      "expo-status-bar"
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Cho phép ToolKit truy cập ảnh và video để xác minh video đã lưu.",
+          "savePhotosPermission": "Cho phép ToolKit lưu video đã tải vào Thư viện ảnh."
+        }
+      ],
+      "expo-status-bar",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {
