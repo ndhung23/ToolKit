@@ -74,6 +74,7 @@ export default function MicroHabitScreen({ navigation, route }) {
   const listRef = useRef(null);
   const handledRouteHabitId = useRef(null);
   const [highlightHabitId, setHighlightHabitId] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [selectedHabitForHistory, setSelectedHabitForHistory] = useState(null);
@@ -575,6 +576,37 @@ export default function MicroHabitScreen({ navigation, route }) {
       updateHabitsList([newHabit, ...habits]);
     }
 
+    // Auto-routing về đúng ô lọc & làm nổi bật (VIỆC AF)
+    const savedItem = editingId
+      ? { ...habits.find((h) => h.id === editingId), title: trimmedTitle, type: formType, intervalDays: Math.max(1, parseInt(formIntervalDays || 1, 10)), dayOfMonth: parsedDayOfMonth, targetCount: Math.max(1, parseInt(formTargetCount || 1, 10)), startDate: formStartDate || null, reminderTime: validTime || '08:00', reminderEnabled: formReminderEnabled }
+      : { id: `habit-${Date.now()}`, title: trimmedTitle, type: formType, startDate: formStartDate || null, reminderTime: validTime || '08:00', reminderEnabled: formReminderEnabled };
+
+    const targetStatus = calculateHabitStatus(savedItem);
+    const targetGroup = getHabitStatusGroup(targetStatus);
+    const STATUS_GROUP_NAMES = {
+      overdue: 'Quá hạn',
+      warning: 'Sắp đến hạn',
+      safe: 'An toàn / Chưa đến hạn',
+      completed: 'Đã hoàn thành',
+    };
+
+    const isVisibleUnderCurrentFilter =
+      (!activeStatusFilter || activeStatusFilter === targetGroup) &&
+      (activeFilter === 'all' || activeFilter === savedItem.type || (activeFilter === 'urgent' && ['overdue', 'warning'].includes(targetGroup))) &&
+      (!debouncedSearch || normalizeHabitSearch(`${savedItem.title || ''} ${savedItem.category || ''}`).includes(normalizeHabitSearch(debouncedSearch)));
+
+    if (!isVisibleUnderCurrentFilter) {
+      setActiveStatusFilter(targetGroup);
+      setActiveFilter('all');
+      setSearchInput('');
+      setDebouncedSearch('');
+      setToastMessage(`Việc đã chuyển sang nhóm ${STATUS_GROUP_NAMES[targetGroup] || targetGroup}`);
+      setTimeout(() => setToastMessage(null), 2500);
+    }
+
+    setHighlightHabitId(savedItem.id);
+    setTimeout(() => setHighlightHabitId(null), 2500);
+
     setModalVisible(false);
     setFormErrors({});
   };
@@ -771,6 +803,12 @@ export default function MicroHabitScreen({ navigation, route }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
+      {toastMessage ? (
+        <View style={styles.toastPill}>
+          <Ionicons name="information-circle" size={16} color="#FFFFFF" />
+          <Text style={styles.toastPillText}>{toastMessage}</Text>
+        </View>
+      ) : null}
       <ScreenHeader
         title="Chu kỳ việc vặt"
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
@@ -1806,6 +1844,14 @@ const styles = StyleSheet.create({
     color: '#EF4444', fontSize: 11, fontWeight: '600', marginTop: 3, marginLeft: 4,
   },
   charCount: { fontSize: 11, alignSelf: 'flex-end', marginTop: 3 },
+  toastPill: {
+    position: 'absolute', top: 56, alignSelf: 'center', zIndex: 9999,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#10B981', paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25, shadowRadius: 4, elevation: 5,
+  },
+  toastPillText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 
   // Form Selector Elements (VIỆC 1)
   formSectionBox: { marginVertical: 4 },
