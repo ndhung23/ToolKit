@@ -241,7 +241,7 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
 
     const tStart = Date.now();
     updateYtDlpIfDue();
-    const youtubeRuntimeArgs = isYt ? ['--js-runtimes', 'node', '--extractor-args', 'youtube:player_client=visionos,android'] : [];
+    const youtubeRuntimeArgs = isYt ? ['--js-runtimes', 'node', '--extractor-args', 'youtube:player_client=visionos'] : [];
 
     // ==========================================
     // 1. XỬ LÝ CHẾ ĐỘ AUDIO (Tốc độ cao)
