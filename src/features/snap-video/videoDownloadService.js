@@ -470,11 +470,16 @@ export async function fetchDownloadLink(rawUrl, mode = 'video', quality = 'best'
 
   // A configured backend is the only path that applies the common ffmpeg gate.
   // Do not fall back to a direct platform stream or iOS may receive fragmented media.
-  if (getSnapServerEndpoints().length) {
-    return Promise.race([
-      resolveWithSnapBackend(url, mode, quality, signal),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 75s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)),
-    ]);
+    if (getSnapServerEndpoints().length) {
+    try {
+      return await Promise.race([
+        resolveWithSnapBackend(url, mode, quality, signal),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 75s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)),
+      ]);
+    } catch (backendError) {
+      if (mode === 'audio' || signal?.aborted) throw backendError;
+      console.warn('[SnapVideo] Backend resolve failed, trying fallback resolvers:', backendError?.message);
+    }
   }
   if (mode === 'audio') {
     const error = new Error('Audio MP3 cần máy chủ Snap Video để chuẩn hóa file.');
