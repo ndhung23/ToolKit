@@ -317,8 +317,8 @@ export default function ScreenTimeScreen({ navigation }) {
                 <Ionicons name="information-circle-outline" size={16} color={colors.primary} />
                 <Text style={[styles.duoHintText, { color: colors.sub }]}>
                   {isVietnamese
-                    ? 'Thông báo đẩy (Local Notification) được hệ điều hành iOS/Android quản lý độc lập. Do đó dù bạn có vuốt tắt app hay khóa màn hình thì đúng giờ máy vẫn sẽ đổ chuông và hiện thông báo nhắc nhở y hệt Duolingo!'
-                    : 'Local notifications are handled by the OS daemon, so your device will still alert you even if ToolKit is closed.'}
+                    ? 'ToolKit theo dõi phiên sử dụng liên tục khi bạn mở ứng dụng và sẽ cảnh báo nghỉ ngơi khi đạt ngưỡng. Khi bạn tắt ứng dụng hoặc khóa máy trên 5 phút, phiên sử dụng sẽ tự động đặt lại để không bắn thông báo làm phiền khi bạn không dùng máy.'
+                    : 'ToolKit monitors active continuous screen sessions and alerts you to rest when the limit is reached. When you close the app or lock the screen for over 5 minutes, the session automatically resets to avoid disturbing you.'}
                 </Text>
               </View>
             </View>
@@ -343,7 +343,7 @@ export default function ScreenTimeScreen({ navigation }) {
 
               <View style={{ flex: 1, marginHorizontal: 12 }}>
                 <View style={styles.appTitleRow}>
-                  <Text style={[styles.appName, { color: colors.text }]}>{app.name}</Text>
+                  <Text style={[styles.appName, { color: colors.text }]}>{app.id === 'game' ? (isVietnamese ? 'Trò chơi & Game' : 'Games') : app.id === 'web' ? (isVietnamese ? 'Trình duyệt Web' : 'Web Browser') : app.name}</Text>
                   <Text style={[styles.appDuration, { color: colors.sub }]}>
                     {app.usedMinutes}p / {app.limitMinutes}p
                   </Text>
