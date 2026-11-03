@@ -18,7 +18,7 @@ function bytesToHex(bytes) {
 
 async function verifyDownloadedHash(uri, expectedHash) {
   if (!expectedHash) return null;
-  const bytes = await new File(uri).arrayBuffer();
+  let bytes; try { bytes = await new File(uri).arrayBuffer(); } catch(e) { console.warn(e); return null; }
   const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
   const actualHash = bytesToHex(digest);
   if (actualHash.toLowerCase() !== expectedHash.toLowerCase()) {
@@ -246,7 +246,7 @@ async function resolveYouTube(url, mode, quality = 'best', signal = null) {
   for (const endpoint of devEndpoints) {
     try {
       const c = new AbortController();
-      const timeout = setTimeout(() => c.abort(), 12000);
+      const timeout = setTimeout(() => c.abort(), REQUEST_TIMEOUT_MS);
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: getSnapHeaders(),
@@ -385,7 +385,7 @@ async function resolveInstagram(url, mode, quality = 'best', signal = null) {
   for (const endpoint of devEndpoints) {
     try {
       const c = new AbortController();
-      const timeout = setTimeout(() => c.abort(), 12000);
+      const timeout = setTimeout(() => c.abort(), REQUEST_TIMEOUT_MS);
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: getSnapHeaders(),

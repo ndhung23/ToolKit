@@ -62,8 +62,15 @@ function titleFromYtDlpOutput(stdout) {
   return line ? line.slice('__SNAP_TITLE__:'.length).trim() : '';
 }
 
+let cachedYtDlpVersion = null;
 function getYtDlpVersion() {
-  try { return execFileSync(YTDLP_PATH, ['--version'], { encoding: 'utf8', timeout: 8000 }).trim(); } catch { return 'unavailable'; }
+  if (cachedYtDlpVersion) return cachedYtDlpVersion;
+  try {
+    cachedYtDlpVersion = execFileSync(YTDLP_PATH, ['--version'], { encoding: 'utf8', timeout: 8000 }).trim();
+    return cachedYtDlpVersion;
+  } catch {
+    return 'unavailable';
+  }
 }
 
 function updateYtDlpIfDue() {
@@ -71,6 +78,7 @@ function updateYtDlpIfDue() {
   if (backendState.lastUpdateAt && Date.now() - new Date(backendState.lastUpdateAt).getTime() < day) return;
   backendState.lastUpdateAt = new Date().toISOString();
   execFile(YTDLP_PATH, ['-U'], { timeout: 30000 }, (error, stdout, stderr) => {
+    if (!error && stdout) cachedYtDlpVersion = stdout.trim();
     backendState.lastUpdateError = error ? (stderr || error.message || 'update failed').toString().slice(0, 300) : null;
     console.log('[SnapServer] yt-dlp update:', backendState.lastUpdateError || stdout.trim());
   });
@@ -241,7 +249,7 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
 
     const tStart = Date.now();
     updateYtDlpIfDue();
-    const youtubeRuntimeArgs = isYt ? ['--js-runtimes', 'node', '--extractor-args', 'youtube:player_client=visionos'] : [];
+    const youtubeRuntimeArgs = isYt ? ['--js-runtimes', 'node', '--extractor-args', 'youtube:player_client=visionos,web_creator'] : [];
 
     // ==========================================
     // 1. XỬ LÝ CHẾ ĐỘ AUDIO (Tốc độ cao)
@@ -254,7 +262,7 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
       const audioArgs = [...youtubeRuntimeArgs, ...cookiesArgs, '-f', isYt ? '140/bestaudio' : 'bestaudio/best', '--print', 'after_move:__SNAP_TITLE__:%(title)s', '-o', rawTemplate, targetUrl];
       console.log(`[SnapServer Audio] Downloading and normalizing ${isYt ? 'YouTube' : 'media'} audio`);
 
-      execFile(YTDLP_PATH, audioArgs, { timeout: 25000 }, (error, stdout, stderr) => {
+      execFile(YTDLP_PATH, audioArgs, { timeout: 60000 }, (error, stdout, stderr) => {
         const tEnd = Date.now();
         const durationSec = ((tEnd - tStart) / 1000).toFixed(2);
 
@@ -321,7 +329,7 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
 
     console.log(`[SnapServer Video] Downloading ${isYt ? 'YouTube' : isFacebook ? 'Facebook' : 'media'} at ${quality}`, { formatSelector, targetUrl });
 
-    execFile(YTDLP_PATH, videoArgs, { timeout: 60000 }, (error, stdout, stderr) => {
+    execFile(YTDLP_PATH, videoArgs, { timeout: 120000 }, (error, stdout, stderr) => {
       const tEnd = Date.now();
       const durationSec = ((tEnd - tStart) / 1000).toFixed(2);
 
