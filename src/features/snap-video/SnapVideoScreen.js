@@ -20,6 +20,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 import {
   SUPPORTED_PLATFORMS,
   detectPlatform,
@@ -45,15 +46,32 @@ const QUALITY_OPTIONS = [
  * Gom toàn bộ chuỗi văn bản UI theo chế độ tải (video / audio)
  * Đảm bảo không bị hardcode lẫn lộn giữa Video và Audio
  */
-export function getDownloadLabels(mode, platform = Platform.OS) {
+export function getDownloadLabels(mode, platform = Platform.OS, isEn = false) {
   const isAudio = mode === 'audio';
   const mediaType = isAudio ? 'audio' : 'video';
   const MediaType = isAudio ? 'Audio' : 'Video';
 
+  if (isEn) {
+    return {
+      isAudio, mediaType, MediaType,
+      buttonIdle: `Download ${MediaType}`,
+      buttonLoading: `Downloading ${mediaType}...`,
+      analyzing: `Analyzing ${mediaType} link...`,
+      downloading: `Downloading ${mediaType}...`,
+      cancelBtn: 'Cancel',
+      cancelledError: `Cancelled ${mediaType} download.`,
+      successTitle: `Downloaded ${mediaType} successfully! 🎉`,
+      successGallery: isAudio ? 'Audio saved to library.' : 'Video saved to photo library.',
+      successSheet: `${MediaType} downloaded successfully. Save via share menu.`,
+      notSavedYetTitle: 'Download complete, not saved',
+      notSavedYetMsg: 'File downloaded. Please check permissions in Settings.',
+      failTitle: `${MediaType} download failed`,
+      emptyHistory: `No ${mediaType} downloaded in this session`,
+    };
+  }
+
   return {
-    isAudio,
-    mediaType,
-    MediaType,
+    isAudio, mediaType, MediaType,
     buttonIdle: `Tải ${MediaType}`,
     buttonLoading: `Đang tải ${mediaType}...`,
     analyzing: `Đang phân tích link ${mediaType}...`,
@@ -76,10 +94,12 @@ export function getDownloadLabels(mode, platform = Platform.OS) {
 
 export default function SnapVideoScreen({ navigation }) {
   const { colors } = useTheme();
+  const { t, language } = useLanguage();
+  const isEn = language === 'en';
   const [url, setUrl] = useState('');
   const [downloadMode, setDownloadMode] = useState('video'); // 'video' | 'audio'
   const [selectedQuality, setSelectedQuality] = useState('best'); // 'best' | '1080p' | '720p' | '480p' | '360p'
-  const labels = useMemo(() => getDownloadLabels(downloadMode), [downloadMode]);
+  const labels = useMemo(() => getDownloadLabels(downloadMode, Platform.OS, isEn), [downloadMode, isEn]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
@@ -111,7 +131,7 @@ export default function SnapVideoScreen({ navigation }) {
     setDetectedPlatform(platform);
   }, []);
 
-  // Dán link từ clipboard
+  // {t('snapVideo.pasteBtn') ? `${t('snapVideo.pasteBtn')} (Clipboard)` : 'Dán link từ clipboard'}
   const handlePaste = useCallback(async () => {
     try {
       const text = await Clipboard.getStringAsync();
@@ -411,7 +431,7 @@ export default function SnapVideoScreen({ navigation }) {
                   style={[styles.input, { color: colors.text }]}
                   value={url}
                   onChangeText={handleUrlChange}
-                  placeholder="Dán link video vào đây..."
+                  placeholder={t('snapVideo.inputPlaceholder') || 'Dán link video vào đây...'}
                   placeholderTextColor={colors.sub}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -583,12 +603,12 @@ export default function SnapVideoScreen({ navigation }) {
             {/* Tiêu đề lịch sử */}
             {history.length > 0 && (
               <View style={styles.historyHeader}>
-                <Text style={[styles.historyTitle, { color: colors.text }]}>Đã tải gần đây</Text>
+                <Text style={[styles.historyTitle, { color: colors.text }]}>{t('snapVideo.historyTitle') || 'Đã tải gần đây'}</Text>
                 <Pressable
                   onPress={() => setHistory([])}
                   hitSlop={8}
                 >
-                  <Text style={[styles.historyClear, { color: colors.danger }]}>Xóa</Text>
+                  <Text style={[styles.historyClear, { color: colors.danger }]}>{t('snapVideo.clearHistory') || 'Xóa'}</Text>
                 </Pressable>
               </View>
             )}

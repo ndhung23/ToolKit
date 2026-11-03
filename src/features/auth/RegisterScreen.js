@@ -15,6 +15,7 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from './AuthContext';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../context/LanguageContext';
 import { useSafeTop } from '../../components/ui';
 
 const FAVICON_ICON = require('../../../assets/favicon1.png');
@@ -22,6 +23,7 @@ const FAVICON_ICON = require('../../../assets/favicon1.png');
 export default function RegisterScreen({ navigation }) {
   const { colors } = useTheme();
   const { signUp, signInWithGoogle } = useAuth();
+  const { t, isVietnamese } = useLanguage();
   const safeTop = useSafeTop();
 
   const [username, setUsername] = useState('');
@@ -52,19 +54,19 @@ export default function RegisterScreen({ navigation }) {
     const cleanUser = username.trim();
 
     if (!cleanUser) {
-      setErr('Vui lòng nhập tên đăng nhập.');
+      setErr(isVietnamese ? 'Vui lòng nhập tên đăng nhập.' : 'Please enter a username.');
       return;
     }
     if (cleanUser.length < 3) {
-      setErr('Tên đăng nhập phải có ít nhất 3 ký tự.');
+      setErr(isVietnamese ? 'Tên đăng nhập phải có ít nhất 3 ký tự.' : 'Username must be at least 3 characters.');
       return;
     }
     if (!pw || pw.length < 6) {
-      setErr('Mật khẩu phải có độ dài tối thiểu từ 6 ký tự trở lên.');
+      setErr(isVietnamese ? 'Mật khẩu phải có độ dài tối thiểu từ 6 ký tự trở lên.' : 'Password must be at least 6 characters.');
       return;
     }
     if (pw !== confirmPw) {
-      setErr('Mật khẩu xác nhận không khớp.');
+      setErr(isVietnamese ? 'Mật khẩu xác nhận không khớp.' : 'Passwords do not match.');
       return;
     }
 
@@ -74,7 +76,7 @@ export default function RegisterScreen({ navigation }) {
       // Đăng ký xong tự động đăng nhập và chuyển thẳng về Trang chủ (Home)
       navigateToHome();
     } catch (e) {
-      setErr(e?.message || 'Đăng ký không thành công. Vui lòng thử lại.');
+      setErr(e?.message || (isVietnamese ? 'Đăng ký không thành công. Vui lòng thử lại.' : 'Registration failed. Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -115,7 +117,7 @@ export default function RegisterScreen({ navigation }) {
               hitSlop={10}
             >
               <Ionicons name="chevron-back" size={20} color={colors.primary} />
-              <Text style={[styles.backBtnText, { color: colors.primary }]}>Quay lại</Text>
+              <Text style={[styles.backBtnText, { color: colors.primary }]}>{t('auth.back')}</Text>
             </Pressable>
           </View>
         )}
@@ -126,10 +128,10 @@ export default function RegisterScreen({ navigation }) {
             <Image source={FAVICON_ICON} style={styles.mascotImg} resizeMode="contain" />
           </View>
           <Text style={[styles.appName, { color: colors.primary }]}>
-            Tạo tài khoản mới <Text style={{ fontSize: 24 }}>✨</Text>
+            ToolKit <Text style={{ fontSize: 24 }}>✨</Text>
           </Text>
           <Text style={[styles.appTagline, { color: colors.sub }]}>
-            Đăng ký để đồng bộ dữ liệu và trải nghiệm trọn bộ tiện ích
+            {t('auth.registerSubtitle')}
           </Text>
         </View>
 
@@ -140,7 +142,7 @@ export default function RegisterScreen({ navigation }) {
             { backgroundColor: colors.card, borderColor: colors.cardBorder },
           ]}
         >
-          <Text style={[styles.formTitle, { color: colors.text }]}>Đăng ký</Text>
+          <Text style={[styles.formTitle, { color: colors.text }]}>{t('auth.registerTitle')}</Text>
 
           {/* Tên đăng nhập */}
           <View style={[styles.inputBox, { borderColor: colors.border, backgroundColor: colors.bg }]}>
@@ -148,7 +150,7 @@ export default function RegisterScreen({ navigation }) {
             <TextInput
               value={username}
               onChangeText={setUsername}
-              placeholder="Tên đăng nhập (từ 3 ký tự)"
+              placeholder={t('auth.usernameOrEmail')}
               placeholderTextColor={colors.sub}
               autoCapitalize="none"
               style={[styles.inputField, { color: colors.text }]}
@@ -161,7 +163,7 @@ export default function RegisterScreen({ navigation }) {
             <TextInput
               value={pw}
               onChangeText={setPw}
-              placeholder="Mật khẩu (tối thiểu 6 ký tự)"
+              placeholder={t('auth.password')}
               placeholderTextColor={colors.sub}
               secureTextEntry={!showPw}
               style={[styles.inputField, { color: colors.text }]}
@@ -177,7 +179,7 @@ export default function RegisterScreen({ navigation }) {
             <TextInput
               value={confirmPw}
               onChangeText={setConfirmPw}
-              placeholder="Xác nhận lại mật khẩu"
+              placeholder={t('auth.confirmPassword')}
               placeholderTextColor={colors.sub}
               secureTextEntry={!showConfirmPw}
               style={[styles.inputField, { color: colors.text }]}
@@ -208,14 +210,14 @@ export default function RegisterScreen({ navigation }) {
             {busy ? (
               <ActivityIndicator color="#121214" />
             ) : (
-              <Text style={styles.submitBtnText}>Đăng ký tài khoản</Text>
+              <Text style={styles.submitBtnText}>{t('auth.registerNow')}</Text>
             )}
           </Pressable>
 
           {/* Đường phân cách */}
           <View style={styles.dividerRow}>
             <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.sub }]}>HOẶC</Text>
+            <Text style={[styles.dividerText, { color: colors.sub }]}>{t('auth.orDivider')}</Text>
             <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
           </View>
 
@@ -236,16 +238,16 @@ export default function RegisterScreen({ navigation }) {
             ) : (
               <View style={styles.googleBtnContent}>
                 <Ionicons name="logo-google" size={19} color="#EA4335" />
-                <Text style={styles.googleBtnText}>Đăng ký nhanh với Google</Text>
+                <Text style={styles.googleBtnText}>{t('auth.loginWithGoogle')}</Text>
               </View>
             )}
           </Pressable>
 
           {/* Chuyển sang màn hình Đăng nhập */}
           <View style={styles.bottomSwitchRow}>
-            <Text style={{ color: colors.sub, fontSize: 14 }}>Đã có tài khoản? </Text>
+            <Text style={{ color: colors.sub, fontSize: 14 }}>{t('auth.haveAccount')} </Text>
             <Pressable onPress={() => navigation?.navigate('Login')} hitSlop={8}>
-              <Text style={[styles.switchLink, { color: colors.primary }]}>Đăng nhập ngay</Text>
+              <Text style={[styles.switchLink, { color: colors.primary }]}>{t('auth.loginNow')}</Text>
             </Pressable>
           </View>
         </View>

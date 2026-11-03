@@ -2,14 +2,16 @@ import { View, Text, Pressable, StyleSheet, FlatList } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../context/LanguageContext';
 
 export default function CleanPhotosScreen({ navigation }) {
   const { colors } = useTheme();
+  const { isVietnamese } = useLanguage();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScreenHeader
-        title="Dọn ảnh trùng lặp"
+        title={isVietnamese ? 'Dọn ảnh trùng lặp' : 'Duplicate Photo Cleaner'}
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
       <FlatList
@@ -17,18 +19,22 @@ export default function CleanPhotosScreen({ navigation }) {
         renderItem={null}
         ListHeaderComponent={
           <>
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <View style={styles.iconCircle}>
-          <Ionicons name="information-circle-outline" size={36} color={colors.primary} />
-        </View>
-        <Text style={[styles.unavailableTitle, { color: colors.text }]}>Chưa hỗ trợ quét ảnh trùng</Text>
-        <Text style={[styles.statDesc, { color: colors.sub }]}>
-          Ứng dụng chưa có khả năng quét và xóa ảnh trùng trên thiết bị. Không có ảnh hoặc dung lượng nào được báo giả.
-        </Text>
-        <Pressable onPress={() => navigation?.goBack()} style={[styles.cleanBtn, { backgroundColor: colors.primary }]}>
-          <Text style={styles.cleanBtnText}>Quay lại</Text>
-        </Pressable>
-      </View>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              <View style={styles.iconCircle}>
+                <Ionicons name="information-circle-outline" size={36} color={colors.primary} />
+              </View>
+              <Text style={[styles.unavailableTitle, { color: colors.text }]}>
+                {isVietnamese ? 'Chưa hỗ trợ quét ảnh trùng' : 'Duplicate Scan Not Supported'}
+              </Text>
+              <Text style={[styles.statDesc, { color: colors.sub }]}>
+                {isVietnamese
+                  ? 'Ứng dụng chưa có khả năng quét và xóa ảnh trùng trên thiết bị. Không có ảnh hoặc dung lượng nào được báo giả.'
+                  : 'Duplicate photo scanning is currently not supported on this device. No fake mock data is shown.'}
+              </Text>
+              <Pressable onPress={() => navigation?.goBack()} style={[styles.cleanBtn, { backgroundColor: colors.primary }]}>
+                <Text style={styles.cleanBtnText}>{isVietnamese ? 'Quay lại' : 'Go Back'}</Text>
+              </Pressable>
+            </View>
           </>
         }
         style={{ flex: 1 }}

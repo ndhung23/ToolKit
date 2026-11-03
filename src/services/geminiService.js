@@ -1,80 +1,264 @@
 // src/services/geminiService.js
-// Service tích hợp Google Gemini AI (Miễn phí 100% qua Google AI Studio)
-// Hỗ trợ tự động gợi ý chu kỳ việc vặt sinh hoạt thông minh. Kèm fallback thông minh khi offline hoặc chưa có mạng.
+// Service tích hợp Google Gemini AI cho Trợ lý ảo ToolKit, Gợi ý trả lời & Chu kỳ việc vặt sinh hoạt
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const GEMINI_CUSTOM_KEY_STORAGE = '@toolkit_gemini_custom_key';
+const GEMINI_CHAT_HISTORY_STORAGE = '@toolkit_gemini_chat_history';
 
 const GEMINI_MODEL = 'gemini-3-flash-preview';
 const FALLBACK_MODEL = 'gemini-3.5-flash';
 const GEMINI_API_URL = process.env.EXPO_PUBLIC_GEMINI_API_URL;
 
 /**
- * Gọi API Google Gemini (Bản Free Tier)
+ * Lấy API Key đang hoạt động (Ưu tiên Custom Key của người dùng -> Fallback về .env)
+ * @returns {Promise<string>}
  */
-export async function callGemini(prompt, systemInstruction = '') {
-  if (!GEMINI_API_URL) {
-    throw new Error('AI_BACKEND_NOT_CONFIGURED');
+export async function getActiveGeminiKey() {
+  try {
+    const customKey = await AsyncStorage.getItem(GEMINI_CUSTOM_KEY_STORAGE);
+    if (customKey && customKey.trim().length > 0) {
+      return customKey.trim();
+    }
+  } catch (_e) {
+    // ignore
+  }
+  return process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+}
+
+/**
+ * Lưu Custom API Key do người dùng nhập
+ * @param {string} key
+ */
+export async function setCustomGeminiKey(key) {
+  if (!key || !key.trim()) {
+    await AsyncStorage.removeItem(GEMINI_CUSTOM_KEY_STORAGE);
+  } else {
+    await AsyncStorage.setItem(GEMINI_CUSTOM_KEY_STORAGE, key.trim());
+  }
+}
+
+/**
+ * Đọc Custom Key đã lưu (nếu có)
+ * @returns {Promise<string>}
+ */
+export async function getSavedCustomKey() {
+  try {
+    return (await AsyncStorage.getItem(GEMINI_CUSTOM_KEY_STORAGE)) || '';
+  } catch (_e) {
+    return '';
+  }
+}
+
+/**
+ * Lấy lịch sử trò chuyện đã lưu
+ * @returns {Promise<Array>}
+ */
+export async function getSavedChatHistory() {
+  try {
+    const raw = await AsyncStorage.getItem(GEMINI_CHAT_HISTORY_STORAGE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (_e) {
+    // ignore
+  }
+  return [];
+}
+
+/**
+ * Lưu lịch sử trò chuyện
+ * @param {Array} history
+ */
+export async function saveChatHistory(history) {
+  try {
+    // Giới hạn lưu tối đa 40 tin nhắn gần nhất để tối ưu dung lượng và tốc độ
+    const trimmed = (history || []).slice(-40);
+    await AsyncStorage.setItem(GEMINI_CHAT_HISTORY_STORAGE, JSON.stringify(trimmed));
+  } catch (_e) {
+    // ignore
+  }
+}
+
+/**
+ * Xóa sạch lịch sử trò chuyện
+ */
+export async function clearChatHistory() {
+  try {
+    await AsyncStorage.removeItem(GEMINI_CHAT_HISTORY_STORAGE);
+  } catch (_e) {
+    // ignore
+  }
+}
+
+/**
+ * Gửi tin nhắn đến Google Gemini 1.5 Flash cho Trợ lý ảo Bot và Trả lời tin nhắn
+ * @param {Array} messages - Danh sách tin nhắn [{ id, role: 'user'|'model', text, timestamp }]
+ * @param {string} promptText - Câu hỏi / tin nhắn mới của người dùng
+ * @returns {Promise<string>} - Nội dung phản hồi từ AI
+ */
+export async function sendToGemini(messages, promptText) {
+  const apiKey = await getActiveGeminiKey();
+
+  if (!apiKey) {
+    throw new Error(
+      'Chưa cấu hình Gemini API Key. Vui lòng bấm vào biểu tượng Cài đặt bánh răng trên khung chat để nhập API Key của bạn.'
+    );
   }
 
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  // Chuẩn hóa danh sách tin nhắn cho định dạng contents của Gemini API
+  // Chỉ lấy tối đa 10 lượt hội thoại gần nhất để tránh tràn context
+  const recentMessages = (messages || []).slice(-10);
+
+  const contents = recentMessages.map((msg) => ({
+    role: msg.role === 'model' ? 'model' : 'user',
+    parts: [{ text: msg.text || '' }],
+  }));
+
+  // Đính kèm câu hỏi mới của người dùng
+  contents.push({
+    role: 'user',
+    parts: [{ text: promptText }],
+  });
+
   const requestBody = {
-    contents: [
-      {
-        parts: [{ text: prompt }],
-      },
-    ],
+    system_instruction: {
+      parts: [
+        {
+          text:
+            'Bạn là Trợ lý AI ToolKit thông minh, hữu ích và thân thiện. Bạn hỗ trợ người dùng trò chuyện, trả lời câu hỏi, soạn thảo tin nhắn lịch sự, dịch thuật ngôn ngữ, và gợi ý phản hồi tin nhắn khách hàng / bạn bè. Luôn trả lời bằng tiếng Việt tự nhiên, súc tích, định dạng gạch đầu dòng rõ ràng khi cần thiết.',
+        },
+      ],
+    },
+    contents: contents,
     generationConfig: {
-      temperature: 0.4,
-      maxOutputTokens: 2048,
-      thinkingConfig: { thinkingBudget: 0 },
+      temperature: 0.7,
+      maxOutputTokens: 1000,
     },
   };
 
-  if (systemInstruction) {
-    requestBody.systemInstruction = {
-      parts: [{ text: systemInstruction }],
-    };
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const errorMsg = data?.error?.message || `Lỗi từ máy chủ Gemini (Mã: ${response.status})`;
+    if (response.status === 400 || response.status === 403) {
+      throw new Error(`API Key không hợp lệ hoặc đã hết hạn: ${errorMsg}`);
+    }
+    throw new Error(errorMsg);
   }
 
-  const tryCallModel = async (modelName) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 18000);
+  const candidate = data?.candidates?.[0];
+  const replyText = candidate?.content?.parts?.[0]?.text;
 
-    try {
-      const res = await fetch(GEMINI_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+  if (!replyText) {
+    throw new Error('AI không thể tạo câu trả lời cho yêu cầu này. Vui lòng thử lại.');
+  }
+
+  return replyText.trim();
+}
+
+/**
+ * Gọi API Google Gemini (hỗ trợ Backend Proxy URL hoặc gọi trực tiếp bằng API Key)
+ */
+export async function callGemini(prompt, systemInstruction = '') {
+  if (GEMINI_API_URL) {
+    const requestBody = {
+      contents: [
+        {
+          parts: [{ text: prompt }],
         },
-        body: JSON.stringify({ ...requestBody, model: modelName }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+      ],
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 2048,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    };
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        const msg = errData?.error?.message || `HTTP ${res.status}`;
-        throw new Error(msg);
-      }
-
-      const data = await res.json();
-      const candidate = data?.text;
-      if (!candidate) {
-        throw new Error('Không nhận được phản hồi từ Gemini AI.');
-      }
-      return candidate.trim();
-    } catch (err) {
-      clearTimeout(timeout);
-      throw err;
+    if (systemInstruction) {
+      requestBody.systemInstruction = {
+        parts: [{ text: systemInstruction }],
+      };
     }
-  };
 
-  try {
-    return await tryCallModel(GEMINI_MODEL);
-  } catch (err) {
+    const tryCallModel = async (modelName) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 18000);
+
+      try {
+        const res = await fetch(GEMINI_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ...requestBody, model: modelName }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          const msg = errData?.error?.message || `HTTP ${res.status}`;
+          throw new Error(msg);
+        }
+
+        const data = await res.json();
+        const candidate = data?.text;
+        if (!candidate) {
+          throw new Error('Không nhận được phản hồi từ Gemini AI.');
+        }
+        return candidate.trim();
+      } catch (err) {
+        clearTimeout(timeout);
+        throw err;
+      }
+    };
+
     try {
-      return await tryCallModel(FALLBACK_MODEL);
+      return await tryCallModel(GEMINI_MODEL);
     } catch {
-      throw err;
+      try {
+        return await tryCallModel(FALLBACK_MODEL);
+      } catch {
+        // Tiếp tục thử gọi qua Direct Key bên dưới
+      }
     }
   }
+
+  // Fallback: Thử gọi trực tiếp nếu có cấu hình Gemini Key
+  const directKey = await getActiveGeminiKey();
+  if (directKey) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${directKey}`;
+    const reqBody = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+    };
+    if (systemInstruction) {
+      reqBody.system_instruction = { parts: [{ text: systemInstruction }] };
+    }
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reqBody),
+    });
+    const data = await response.json();
+    if (response.ok) {
+      const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (replyText) return replyText.trim();
+    }
+  }
+
+  throw new Error('AI_BACKEND_NOT_CONFIGURED');
 }
 
 // ============================================================

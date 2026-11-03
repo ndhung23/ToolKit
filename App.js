@@ -10,6 +10,7 @@ import { LanguageProvider } from './src/context/LanguageContext';
 import { ScreenTimeProvider } from './src/features/screentime/ScreenTimeContext';
 import { ThemeProvider, useTheme } from './src/theme';
 import RootNavigator from './src/navigation';
+import AiFloatingBot from './src/components/AiFloatingBot';
 import TaskSheetHost from './src/features/micro-habit/TaskSheetHost';
 import { requestOpenTask } from './src/features/micro-habit/TaskSheetStore';
 
@@ -80,6 +81,7 @@ function MainApp() {
     <NavigationContainer ref={navigationRef} theme={navTheme} onReady={() => { setNavigationReady(true); Notifications.getLastNotificationResponseAsync().then(openHabitFromNotification).catch(() => {}); }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <RootNavigator />
+      <AiFloatingBot />
       <TaskSheetHost
         navigationReady={navigationReady}
         navigateToTask={(habitId) => navigationRef.navigate('AppStack', { screen: 'MicroHabit', params: { habitId } })}

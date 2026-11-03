@@ -16,8 +16,8 @@ export * from './image-to-pdf';
 // 5. Tiện ích dọn ảnh trùng lặp
 export * from './clean-photos';
 
-// 6. Quản lý đa tài khoản Facebook
-export * from './fb-multi';
+// 6. Quản lý đa tài khoản (Zalo, Messenger, Facebook, v.v.)
+export * from './multi';
 
 // 7. AI Gợi ý trả lời tin nhắn
 export * from './ai-reply';

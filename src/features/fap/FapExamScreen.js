@@ -16,33 +16,38 @@ import * as Notifications from 'expo-notifications';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 import * as SecureStore from '../../utils/storage';
 import {
   getExamTimeStatus,
   triggerExamNotification,
-} from './fapExamHelper';
+  scheduleAllExamRemindersNative,
+  FapExamListView,
+  FapExamFormModal,
+} from './exam';
 import {
   ATTENDANCE_STATUS,
   checkSlotAbsentAlert,
   extractTodaySlotsFromCourses,
   sanitizeSlots,
-} from './fapAttendanceHelper';
-import {
+  mergeSlotsWithNotifiedHistory,
   triggerAbsentNotification,
   scheduleAttendanceSlotReminders,
   findRecentlyEndedSlot,
   triggerTestSlotReminderNotification,
-} from './fapNotificationHelper';
+  FapAttendanceView,
+} from './attend';
 import {
   detectGradeUpdates,
   triggerGradeUpdateNotification,
   SAMPLE_GRADES,
-} from './fapGradeHelper';
-import { FapAuthFlowCard, FapExamFormModal, FapRealWebViewModal } from './FapLoginModals';
-import FapAttendanceView from './FapAttendanceView';
-import FapGradeView from './FapGradeView';
-import FapExamListView from './FapExamListView';
-import FapSilentAutoChecker from './FapSilentAutoChecker';
+  FapGradeView,
+} from './grade';
+import {
+  FapAuthFlowCard,
+  FapRealWebViewModal,
+  FapSilentAutoChecker,
+} from './auth';
 
 const STORAGE_FAP_SESSION = 'toolkit_fap_student_session_v1';
 const STORAGE_FAP_EXAMS = 'toolkit_fap_exam_list_v1';
@@ -54,6 +59,7 @@ const STORAGE_FAP_GRADES = 'toolkit_fap_grades_v1';
 
 export default function FapExamScreen({ navigation }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
 
   const [fapUser, setFapUser] = useState(null);
   const [exams, setExams] = useState([]);
@@ -136,7 +142,7 @@ export default function FapExamScreen({ navigation }) {
         if (savedSlots) {
           const parsedSlots = JSON.parse(savedSlots);
           if (Array.isArray(parsedSlots) && parsedSlots.length > 0) {
-            const clean = sanitizeSlots(parsedSlots);
+            const clean = mergeSlotsWithNotifiedHistory(parsedSlots, []);
             setTodaySlots(clean);
             if (JSON.stringify(clean) !== savedSlots) {
               await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(clean));
@@ -188,6 +194,10 @@ export default function FapExamScreen({ navigation }) {
           if (check.shouldAlert) {
             hasSlotTriggered = true;
             triggerAbsentNotification(slot);
+            return { ...slot, notified: true };
+          }
+          if (check.isExpiredPast) {
+            hasSlotTriggered = true;
             return { ...slot, notified: true };
           }
           return slot;
@@ -253,8 +263,15 @@ export default function FapExamScreen({ navigation }) {
     }
   }, [todaySlots, absentAlertEnabled]);
 
+  // 6. Tự động lên lịch hẹn thông báo lịch thi cấp OS (kể cả khi đóng app)
+  useEffect(() => {
+    if (Array.isArray(exams) && exams.length > 0) {
+      scheduleAllExamRemindersNative(exams, defaultReminderMins);
+    }
+  }, [exams, defaultReminderMins]);
+
   // Xử lý khi Silent Auto-Checker hoàn tất cào ngầm
-  const handleSilentCheckComplete = async ({ liveTodaySlots, newAbsents, newPresents, user }) => {
+  const handleSilentCheckComplete = async ({ liveTodaySlots, newAbsents, newPresents, user, grades: newGrades, exams: newExams }) => {
     setIsSilentChecking(false);
     setSilentCheckStatus('');
 
@@ -264,13 +281,13 @@ export default function FapExamScreen({ navigation }) {
     }
 
     if (Array.isArray(liveTodaySlots) && liveTodaySlots.length > 0) {
-      const clean = sanitizeSlots(liveTodaySlots);
+      const clean = mergeSlotsWithNotifiedHistory(liveTodaySlots, todaySlotsRef.current);
       setTodaySlots(clean);
       await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(clean));
       await scheduleAttendanceSlotReminders(clean, absentAlertEnabled);
     }
 
-    // 1. Nếu có ca học mới bị đánh ABSENT -> Báo động đỏ ngay lập tức!
+    // 1. CẢNH BÁO ABSENT: Nếu có ca học mới bị đánh VẮNG -> Báo động đỏ ngay lập tức!
     if (newAbsents && newAbsents.length > 0) {
       for (const abs of newAbsents) {
         triggerAbsentNotification(abs);
@@ -284,12 +301,38 @@ export default function FapExamScreen({ navigation }) {
         [{ text: 'Tuyệt vời', style: 'default' }]
       );
     }
+
+    // 2. CẬP NHẬT ĐIỂM SỐ MỚI: Tự động so sánh bảng điểm FAP
+    if (Array.isArray(newGrades) && newGrades.length > 0) {
+      const gradeUpdates = detectGradeUpdates(gradesRef.current, newGrades);
+      if (gradeUpdates.length > 0) {
+        triggerGradeUpdateNotification(gradeUpdates);
+      }
+      setGrades(newGrades);
+      await SecureStore.setItemAsync(STORAGE_FAP_GRADES, JSON.stringify(newGrades));
+    }
+
+    // 3. CẬP NHẬT LỊCH THI MỚI: Tự động lên lịch thông báo cấp OS
+    if (Array.isArray(newExams) && newExams.length > 0) {
+      setExams(newExams);
+      await SecureStore.setItemAsync(STORAGE_FAP_EXAMS, JSON.stringify(newExams));
+      await scheduleAllExamRemindersNative(newExams, defaultMinsRef.current);
+    }
   };
 
   const handleSilentCheckError = (errorMsg) => {
     setIsSilentChecking(false);
     setSilentCheckStatus('');
-    if (errorMsg) {
+    if (errorMsg === 'CLOUDFLARE_CHALLENGE_REQUIRED') {
+      Alert.alert(
+        'Xác minh bảo mật FAP 🛡️',
+        'Cổng FAP đang yêu cầu xác minh Cloudflare ("Xác minh bạn là con người"). Vui lòng bấm "Mở FAP ngay" để chạm xác nhận 1 lần.',
+        [
+          { text: 'Để sau', style: 'cancel' },
+          { text: 'Mở FAP ngay', onPress: () => setRealWebViewVisible(true) },
+        ]
+      );
+    } else if (errorMsg) {
       console.log('[FapSilentAutoChecker] Info/Error:', errorMsg);
     }
   };
@@ -309,6 +352,7 @@ export default function FapExamScreen({ navigation }) {
   const persistExams = async (nextList) => {
     setExams(nextList);
     await SecureStore.setItemAsync(STORAGE_FAP_EXAMS, JSON.stringify(nextList));
+    await scheduleAllExamRemindersNative(nextList, defaultReminderMins);
   };
 
   // Đồng bộ thành công Lịch thi thực tế từ WebView (fap.fpt.edu.vn/ExamSchedule)
@@ -319,20 +363,29 @@ export default function FapExamScreen({ navigation }) {
     }
     setExams(examList);
     await SecureStore.setItemAsync(STORAGE_FAP_EXAMS, JSON.stringify(examList));
+    await scheduleAllExamRemindersNative(examList, defaultReminderMins);
   };
 
   // Đồng bộ thành công Thời khóa biểu & Điểm danh thực tế từ WebView (fap.fpt.edu.vn/WeeklyTimetable)
   const handleTimetableSyncSuccess = async (userData, slotList) => {
-    if (userData) {
-      setFapUser((prev) => ({ ...(prev || {}), ...userData }));
-      await SecureStore.setItemAsync(STORAGE_FAP_SESSION, JSON.stringify(userData));
+    const userToSave = userData || (!fapUser ? {
+      name: 'Nguyễn Duy Hưng',
+      studentId: 'HE190591',
+      campus: 'Cơ sở Hà Nội (HN)',
+      status: 'HD',
+      email: 'he190591@fpt.edu.vn',
+    } : null);
+
+    if (userToSave) {
+      setFapUser((prev) => ({ ...(prev || {}), ...userToSave }));
+      await SecureStore.setItemAsync(STORAGE_FAP_SESSION, JSON.stringify(userToSave));
     }
 
     // Ghép nối ca học giữa các tuần để người dùng chuyển tuần không bị mất tuần cũ
     const prevSlots = todaySlotsRef.current || [];
     const newKeys = new Set(slotList.map((s) => `${s.date || ''}_${s.slot}_${s.subjectCode}`));
     const retainedSlots = prevSlots.filter((s) => !newKeys.has(`${s.date || ''}_${s.slot}_${s.subjectCode}`));
-    const nextSlots = sanitizeSlots([...retainedSlots, ...slotList]);
+    const nextSlots = mergeSlotsWithNotifiedHistory([...retainedSlots, ...slotList], prevSlots);
 
     setTodaySlots(nextSlots);
     await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(nextSlots));
@@ -361,8 +414,9 @@ export default function FapExamScreen({ navigation }) {
     // Tự động suy ra các ca học hôm nay từ toàn bộ các môn đã cào
     const derivedToday = extractTodaySlotsFromCourses(nextCourses);
     if (derivedToday.length > 0) {
-      setTodaySlots(derivedToday);
-      await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(derivedToday));
+      const clean = mergeSlotsWithNotifiedHistory(derivedToday, todaySlotsRef.current);
+      setTodaySlots(clean);
+      await SecureStore.setItemAsync(STORAGE_FAP_ATTENDANCE_SLOTS, JSON.stringify(clean));
     }
   };
 
@@ -559,7 +613,7 @@ export default function FapExamScreen({ navigation }) {
             { color: activeTab === 'attendance' ? '#121214' : colors.sub },
           ]}
         >
-          Điểm danh
+          {t('fap.tabAttendance') || 'Điểm danh'}
         </Text>
       </Pressable>
 
@@ -581,7 +635,7 @@ export default function FapExamScreen({ navigation }) {
             { color: activeTab === 'exam' ? '#121214' : colors.sub },
           ]}
         >
-          Lịch thi ({exams.length})
+          {t('fap.tabExam') || 'Lịch thi'} ({exams.length})
         </Text>
       </Pressable>
 
@@ -603,7 +657,7 @@ export default function FapExamScreen({ navigation }) {
             { color: activeTab === 'grade' ? '#121214' : colors.sub },
           ]}
         >
-          Bảng điểm ({grades.length})
+          {t('fap.tabGrade') || 'Bảng điểm'} ({grades.length})
         </Text>
       </Pressable>
     </View>
@@ -656,7 +710,7 @@ export default function FapExamScreen({ navigation }) {
             </Pressable>
           </View>
 
-          <View style={styles.studentMetaBadgesRow}>
+          {/* <View style={styles.studentMetaBadgesRow}>
             <View style={styles.studentMetaChip}>
               <Text style={styles.studentMetaChipLabel}>Trạng thái</Text>
               <Text style={styles.studentMetaChipVal}>{fapUser.status || 'HD'}</Text>
@@ -669,7 +723,7 @@ export default function FapExamScreen({ navigation }) {
               <Text style={styles.studentMetaChipLabel}>Khóa</Text>
               <Text style={styles.studentMetaChipVal}>{fapUser.cohort || '19'}</Text>
             </View>
-          </View>
+          </View> */}
 
           <View style={styles.studentSyncActions}>
             <Pressable
@@ -682,7 +736,7 @@ export default function FapExamScreen({ navigation }) {
             >
               <Ionicons name="flash" size={15} color="#FFFFFF" />
               <Text style={[styles.syncFapBtnText, { color: '#FFFFFF', fontWeight: '800' }]}>
-                Cào Full 17 tuần cả kỳ
+                Lấy lịch
               </Text>
             </Pressable>
 
@@ -808,7 +862,7 @@ export default function FapExamScreen({ navigation }) {
         editingExam={editingExam}
         onSaveExam={handleSaveExamItem}
         onImportExams={handleImportExams}
-        onImportTimetable={(slots) => handleTimetableSyncSuccess(null, slots)}
+        onImportTimetable={(slots, user) => handleTimetableSyncSuccess(user, slots)}
         onImportCourse={(course) => handleCourseAttendanceSyncSuccess(null, course)}
       />
 

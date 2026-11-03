@@ -32,9 +32,9 @@ export const FAP_SCRAPER_INJECTED_JS = `
   }
 
   // 1. Bóc tách Lịch thi từ https://fap.fpt.edu.vn/ExamSchedule
-  function parseExamsFromHtmlOrDOM() {
+  function parseExamsFromHtmlOrDOM(rootEl) {
     var results = [];
-    var tables = Array.from(document.querySelectorAll('table'));
+    var tables = Array.from((rootEl || document).querySelectorAll('table'));
 
     for (var t = 0; t < tables.length; t++) {
       var table = tables[t];
@@ -448,9 +448,9 @@ export const FAP_SCRAPER_INJECTED_JS = `
   }
 
   // 4. Bóc tách Bảng điểm môn học từ /Report/Grade hoặc /Grade/StudentTranscript.aspx
-  function parseGradeReportFromDOM() {
+  function parseGradeReportFromDOM(rootEl) {
     var results = [];
-    var tables = Array.from(document.querySelectorAll('table'));
+    var tables = Array.from((rootEl || document).querySelectorAll('table'));
 
     for (var t = 0; t < tables.length; t++) {
       var table = tables[t];
@@ -877,6 +877,7 @@ export const FAP_SCRAPER_INJECTED_JS = `
   window.doScrape = doScrape;
   window.doAutoOrManualScrape = doScrape;
   window.parseGradeReportFromDOM = parseGradeReportFromDOM;
+  window.parseExamsFromHtmlOrDOM = parseExamsFromHtmlOrDOM;
 
   // Chạy ngay khi tải xong
   doScrape();

@@ -1,0 +1,119 @@
+name: Build iOS IPA (Free Sideload)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'App.js'
+      - 'app.json'
+      - 'package.json'
+      - '.github/workflows/build-ios.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-ipa:
+    name: Compile iOS IPA (No $99 Apple Account)
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Prebuild iOS Native Project
+        run: npx expo prebuild --platform ios --clean --no-install
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Verify iOS Project Structure
+        run: |
+          ls -la ios
+          WORKSPACE=$(find ios -name "*.xcworkspace" | head -n 1)
+          echo "Found workspace: $WORKSPACE"
+          if [ -z "$WORKSPACE" ]; then
+            echo "Error: No .xcworkspace found in ios/"
+            exit 1
+          fi
+
+      - name: Build Unsigned iOS Archive
+        run: |
+          set -eo pipefail
+          # App project lives directly in ios/ (Pods.xcodeproj is inside ios/Pods/),
+          # so its name is the app scheme. Do NOT pick the first scheme from
+          # `xcodebuild -list`: that list includes Pod schemes (static libs, no .app).
+          XCODEPROJ=$(ls -d ios/*.xcodeproj | head -n 1)
+          APP_NAME=$(basename "$XCODEPROJ" .xcodeproj)
+          WORKSPACE="ios/${APP_NAME}.xcworkspace"
+          echo "Workspace: $WORKSPACE | Scheme: $APP_NAME"
+          xcodebuild -version
+          xcodebuild -workspace "$WORKSPACE" -list
+
+          xcodebuild archive \
+            -workspace "$WORKSPACE" \
+            -scheme "$APP_NAME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/ToolKit.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package into IPA format for Sideloadly / AltStore
+        run: |
+          set -eo pipefail
+          APPS_DIR="build/ToolKit.xcarchive/Products/Applications"
+          ls -la "$APPS_DIR"
+          APP_PATH=$(find "$APPS_DIR" -maxdepth 1 -type d -name "*.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: No .app bundle found in $APPS_DIR"
+            exit 1
+          fi
+          echo "Packaging: $APP_PATH"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qr ToolKit.ipa Payload
+          rm -rf Payload
+          ls -lh ToolKit.ipa
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ToolKit-iOS-IPA
+          path: ToolKit.ipa
+          retention-days: 14
+
+      - name: Create or Update GitHub Release with Direct IPA Download
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: ios-latest
+          name: "ToolKit iOS Latest (Unsigned IPA for Sideloadly)"
+          body: |
+            ## 📱 ToolKit iOS IPA (Cài đặt trên iPhone không cần tài khoản 99$)
+            - File IPA này dùng để cài vào iPhone cá nhân bằng **Sideloadly** trên máy tính Windows.
+            - Không cần mua tài khoản Apple Developer 99$.
+            - Tải file `ToolKit.ipa` bên dưới và làm theo hướng dẫn cài đặt.
+          files: ToolKit.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

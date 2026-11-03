@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 
 const FAVICON_ICON = require('../../../assets/favicon1.png');
 
@@ -36,6 +37,7 @@ const DURATIONS = [
 
 export default function FocusScreen({ navigation }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
 
   // Trạng thái chọn danh mục & thời lượng
   const [selectedCategory, setSelectedCategory] = useState('work');
@@ -136,7 +138,7 @@ export default function FocusScreen({ navigation }) {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]} edges={['top']}>
       {/* 1. Header chuẩn ảnh 2: "Phiên tập trung" + Loa + Settings */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.primary }]}>Phiên tập trung</Text>
+        <Text style={[styles.headerTitle, { color: colors.primary }]}>{t('statsScreen.focusTitle') || 'Phiên tập trung'}</Text>
         <View style={styles.headerActions}>
           <Pressable
             onPress={() => setSoundEnabled(!soundEnabled)}
@@ -174,7 +176,7 @@ export default function FocusScreen({ navigation }) {
           <View style={[styles.activeTimerCircle, { borderColor: colors.primary }]}>
             <Text style={styles.activeTimerText}>{formatTime(timeLeft)}</Text>
             <Text style={[styles.activeTimerSub, { color: colors.sub }]}>
-              {isPaused ? 'Đang tạm dừng' : 'Giữ tập trung cao độ'}
+              {isPaused ? (t('common.pause') || 'Đang tạm dừng') : 'Giữ tập trung cao độ'}
             </Text>
           </View>
 

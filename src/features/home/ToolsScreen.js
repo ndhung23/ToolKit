@@ -1,24 +1,36 @@
 import { useState } from 'react';
-import { View, TextInput, FlatList, Text, StyleSheet, Pressable, Alert } from 'react-native';
+import { View, TextInput, FlatList, Text, StyleSheet, Pressable, Image } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ToolRow, ScreenHeader, VipUpgradeModal } from '../../components/ui';
 import { TOOLS, openTool } from '../../tools';
 import { useTheme } from '../../theme';
 import { useAuth } from '../auth';
+import { useLanguage } from '../../context/LanguageContext';
 import { canAccessTool } from '../../constants/roles';
 
 export default function ToolsScreen({ navigation }) {
   const { colors } = useTheme();
   const { user, toolTiers } = useAuth();
+  const { t } = useLanguage();
   const [q, setQ] = useState('');
   const [focused, setFocused] = useState(false);
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false);
   const [selectedTool, setSelectedTool] = useState(null);
 
-  const data = TOOLS.filter((t) =>
-    t.title.toLowerCase().includes(q.trim().toLowerCase()) ||
-    t.desc.toLowerCase().includes(q.trim().toLowerCase())
-  );
+  const query = q.trim().toLowerCase();
+  const data = TOOLS.filter((item) => {
+    if (!query) return true;
+    const titleVi = (item.title || '').toLowerCase();
+    const descVi = (item.desc || '').toLowerCase();
+    const titleTrans = t(`tools.${item.id}.title`, {}, '').toLowerCase();
+    const descTrans = t(`tools.${item.id}.desc`, {}, '').toLowerCase();
+    return (
+      titleVi.includes(query) ||
+      descVi.includes(query) ||
+      titleTrans.includes(query) ||
+      descTrans.includes(query)
+    );
+  });
 
   const handleToolPress = (tool) => {
     openTool(navigation, tool, user, (lockedTool) => {
@@ -27,12 +39,11 @@ export default function ToolsScreen({ navigation }) {
     }, toolTiers);
   };
 
-
   return (
     <View style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       {/* Header né tai thỏ iPhone */}
       <ScreenHeader
-        title="Kho tiện ích"
+        title={t('toolsScreen.title')}
         rightAction={
           <Pressable
             onPress={() => navigation.navigate('Settings')}
@@ -50,22 +61,26 @@ export default function ToolsScreen({ navigation }) {
         style={[styles.featuredCard, { backgroundColor: colors.card, borderColor: colors.primary }]}
       >
         <View style={styles.featuredLeft}>
-          <View style={[styles.featuredIcon, { backgroundColor: 'rgba(255, 208, 0, 0.15)' }]}>
-            <Ionicons name="document-text" size={26} color={colors.primary} />
+          <View style={[styles.featuredIcon, { backgroundColor: 'transparent' }]}>
+            <Image
+              source={require('../../../assets/icon_pdf.png')}
+              style={{ width: '100%', height: '100%', borderRadius: 14 }}
+              resizeMode="cover"
+            />
           </View>
           <View style={{ flex: 1, marginLeft: 14 }}>
             <View style={styles.tagHot}>
-              <Text style={styles.tagHotText}>TIỆN ÍCH NỔI BẬT</Text>
+              <Text style={styles.tagHotText}>{t('toolsScreen.featuredBadge')}</Text>
             </View>
-            <Text style={styles.featuredTitle}>Chuyển ảnh thành PDF</Text>
+            <Text style={styles.featuredTitle}>{t('toolsScreen.featuredTitle')}</Text>
             <Text style={[styles.featuredSubtitle, { color: colors.sub }]}>
-              Chọn nhiều ảnh, sắp xếp thứ tự và xuất file PDF chất lượng cao
+              {t('toolsScreen.featuredDesc')}
             </Text>
           </View>
         </View>
 
         <View style={[styles.featuredAction, { backgroundColor: colors.primary }]}>
-          <Text style={styles.featuredActionText}>Mở công cụ ngay</Text>
+          <Text style={styles.featuredActionText}>{t('toolsScreen.featuredAction')}</Text>
           <Ionicons name="arrow-forward" size={16} color="#121214" />
         </View>
       </Pressable>
@@ -86,7 +101,7 @@ export default function ToolsScreen({ navigation }) {
           onChangeText={setQ}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder={`Tìm trong ${TOOLS.length} tiện ích...`}
+          placeholder={t('toolsScreen.searchPlaceholder', { count: TOOLS.length })}
           placeholderTextColor={colors.sub}
           style={[styles.searchInput, { color: colors.text }]}
         />
@@ -97,7 +112,7 @@ export default function ToolsScreen({ navigation }) {
         )}
       </View>
 
-      {/* Danh sách 8 tiện ích kèm trạng thái khóa */}
+      {/* Danh sách tiện ích kèm trạng thái khóa */}
       <FlatList
         data={data}
         keyExtractor={(t) => t.id}
@@ -117,7 +132,7 @@ export default function ToolsScreen({ navigation }) {
           <View style={styles.emptyContainer}>
             <Ionicons name="search-outline" size={48} color={colors.sub} />
             <Text style={[styles.emptyText, { color: colors.sub }]}>
-              Không tìm thấy tiện ích phù hợp.
+              {t('toolsScreen.empty')}
             </Text>
           </View>
         }

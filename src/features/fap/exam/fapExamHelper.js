@@ -552,11 +552,25 @@ export async function triggerExamNotification(exam, minutesBefore) {
       finalStatus = req.status;
     }
     if (finalStatus === 'granted') {
+      if (Platform.OS === 'android') {
+        try {
+          await Notifications.setNotificationChannelAsync('fap_alerts', {
+            name: 'FAP Cảnh báo & Lịch thi',
+            description: 'Thông báo nhắc lịch thi, cảnh báo vắng mặt và điểm số FAP',
+            importance: 5,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#FF231F7C',
+            sound: 'default',
+            enableVibrate: true,
+          });
+        } catch {}
+      }
       await Notifications.scheduleNotificationAsync({
         content: {
           title,
           body,
           sound: true,
+          channelId: 'fap_alerts',
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
         trigger: null, // Phát ngay lập tức
@@ -564,6 +578,146 @@ export async function triggerExamNotification(exam, minutesBefore) {
     }
   } catch (err) {
     console.warn('[FAP Reminder] Không thể phát Push Notification:', err?.message);
+  }
+}
+
+/**
+ * Hủy tất cả các thông báo nhắc thi đã lên lịch của hệ điều hành
+ */
+export async function cancelAllExamNativeNotifications() {
+  if (Platform.OS === 'web') return;
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const item of scheduled) {
+      if (item.content?.data?.type === 'FAP_EXAM_REMINDER') {
+        await Notifications.cancelScheduledNotificationAsync(item.identifier);
+      }
+    }
+  } catch (err) {
+    console.warn('[FAP Exam Reminder] Lỗi hủy thông báo cũ:', err?.message);
+  }
+}
+
+/**
+ * Lên lịch thông báo hệ thống Native cho TẤT CẢ các môn thi trong tương lai.
+ * Chạy ở cấp OS (dù tắt app hoàn toàn / restart máy vẫn đổ chuông chuẩn từng giây).
+ * 2 mốc nhắc:
+ * 1. Mốc tối hôm trước: 19h00 ngày hôm trước (t-1 day at 19:00).
+ * 2. Mốc trước giờ thi: trước X phút (mặc định defaultReminderMins).
+ */
+export async function scheduleAllExamRemindersNative(exams = [], defaultReminderMins = 60) {
+  if (Platform.OS === 'web' || !Array.isArray(exams) || exams.length === 0) {
+    return { scheduledCount: 0 };
+  }
+
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    let finalStatus = status;
+    if (status !== 'granted') {
+      const req = await Notifications.requestPermissionsAsync();
+      finalStatus = req.status;
+    }
+    if (finalStatus !== 'granted') {
+      return { scheduledCount: 0, reason: 'permission_denied' };
+    }
+
+    if (Platform.OS === 'android') {
+      try {
+        await Notifications.setNotificationChannelAsync('fap_alerts', {
+          name: 'FAP Cảnh báo & Lịch thi',
+          description: 'Thông báo nhắc lịch thi, cảnh báo vắng mặt và điểm số FAP',
+          importance: 5,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+          sound: 'default',
+          enableVibrate: true,
+        });
+      } catch {}
+    }
+
+    // Xóa lịch cũ trước khi tạo lại để tránh duplicate
+    await cancelAllExamNativeNotifications();
+
+    const now = new Date();
+    let scheduledCount = 0;
+
+    for (const exam of exams) {
+      if (exam.reminderEnabled === false) continue;
+
+      const startDate = parseExamStartTime(exam.date, exam.time);
+      if (!startDate || startDate.getTime() <= now.getTime()) continue;
+
+      const reminderMins =
+        exam.customReminderMinutes != null
+          ? Number(exam.customReminderMinutes)
+          : Number(defaultReminderMins) || 60;
+
+      // 1. Mốc 19h00 tối hôm trước ngày thi
+      const eveningBefore = new Date(startDate);
+      eveningBefore.setDate(eveningBefore.getDate() - 1);
+      eveningBefore.setHours(19, 0, 0, 0);
+
+      if (eveningBefore.getTime() > now.getTime()) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `🔔 Lịch thi ngày mai: ${exam.subjectCode} (${exam.examType || 'Thi'})`,
+            body: `Ngày mai (${exam.date}) bạn có lịch thi môn ${exam.subjectName || exam.subjectCode} lúc ${exam.time} tại phòng ${exam.room || '-'}. Chúc bạn làm bài thật tốt!`,
+            sound: true,
+            channelId: 'fap_alerts',
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+            vibrate: [0, 250, 250, 250],
+            data: {
+              type: 'FAP_EXAM_REMINDER',
+              examId: exam.id,
+              subjectCode: exam.subjectCode,
+              room: exam.room,
+              time: exam.time,
+              date: exam.date,
+              subType: 'evening_before',
+            },
+          },
+          trigger: {
+            type: 'date',
+            date: eveningBefore,
+          },
+        });
+        scheduledCount++;
+      }
+
+      // 2. Mốc trước giờ thi X phút
+      const beforeExam = new Date(startDate.getTime() - reminderMins * 60 * 1000);
+      if (beforeExam.getTime() > now.getTime()) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `⏳ Sắp đến giờ thi: ${exam.subjectCode} (${exam.room ? 'Phòng ' + exam.room : exam.time})`,
+            body: `Môn ${exam.subjectCode} sẽ bắt đầu lúc ${exam.time} (còn ${reminderMins} phút). Hãy mang theo thẻ sinh viên và có mặt trước cửa phòng thi!`,
+            sound: true,
+            channelId: 'fap_alerts',
+            priority: Notifications.AndroidNotificationPriority.MAX,
+            vibrate: [0, 500, 200, 500],
+            data: {
+              type: 'FAP_EXAM_REMINDER',
+              examId: exam.id,
+              subjectCode: exam.subjectCode,
+              room: exam.room,
+              time: exam.time,
+              date: exam.date,
+              subType: 'before_exam',
+            },
+          },
+          trigger: {
+            type: 'date',
+            date: beforeExam,
+          },
+        });
+        scheduledCount++;
+      }
+    }
+
+    return { scheduledCount };
+  } catch (err) {
+    console.warn('[FAP Exam Native Reminder] Lỗi lên lịch thi:', err?.message);
+    return { scheduledCount: 0, error: err?.message };
   }
 }
 

@@ -22,6 +22,27 @@ if (Platform.OS !== 'web') {
 }
 
 /**
+ * Tạo kênh thông báo chuẩn Android 8.0+ (Notification Channel) để hỗ trợ banner, rung và chuông
+ */
+export async function setupAndroidNotificationChannel() {
+  if (Platform.OS === 'android') {
+    try {
+      await Notifications.setNotificationChannelAsync('fap_alerts', {
+        name: 'FAP Cảnh báo & Lịch thi',
+        description: 'Thông báo nhắc lịch thi, cảnh báo vắng mặt và điểm số FAP',
+        importance: 5, // Android Importance MAX
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+        sound: 'default',
+        enableVibrate: true,
+      });
+    } catch (e) {
+      console.warn('[FapNotification] Android channel setup error:', e?.message);
+    }
+  }
+}
+
+/**
  * Hủy tất cả các thông báo hệ thống nhắc nhở điểm danh cuối ca (+10p) đã lên lịch
  */
 export async function cancelAttendanceSlotReminders() {
@@ -62,6 +83,7 @@ export async function scheduleAttendanceSlotReminders(slots = [], absentAlertEna
 
     // Xóa lịch cũ trước khi tạo mới để tránh trùng lặp
     await cancelAttendanceSlotReminders();
+    await setupAndroidNotificationChannel();
 
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -106,6 +128,7 @@ export async function scheduleAttendanceSlotReminders(slots = [], absentAlertEna
             title,
             body,
             sound: true,
+            channelId: 'fap_alerts',
             priority: Notifications.AndroidNotificationPriority.HIGH,
             vibrate: [0, 250, 250, 250],
             data: {
@@ -134,10 +157,23 @@ export async function scheduleAttendanceSlotReminders(slots = [], absentAlertEna
   }
 }
 
+// Tập hợp lưu các ca học đã bắn cảnh báo vắng trong phiên hiện tại để tránh trùng lặp
+const recentlyTriggeredAbsentSet = new Set();
+
 /**
  * Kích hoạt cảnh báo chuông và Push Notification khi sinh viên bị đánh Absent
  */
 export async function triggerAbsentNotification(slotItem) {
+  if (!slotItem) return;
+
+  const slotKey = `${slotItem.date || ''}_${slotItem.slot || ''}_${slotItem.subjectCode || ''}`;
+  if (slotKey && recentlyTriggeredAbsentSet.has(slotKey)) {
+    return; // Đã bắn thông báo cho ca học này rồi, không báo lại!
+  }
+  if (slotKey) {
+    recentlyTriggeredAbsentSet.add(slotKey);
+  }
+
   const cfg = FAP_TIMESLOTS.find((s) => s.slot === Number(slotItem.slot));
   const timeDesc = cfg ? cfg.time : slotItem.time || 'Ca học';
   const alertTimeStr = cfg ? cfg.alertTime : 'Cuối ca + 10 phút';
@@ -176,11 +212,13 @@ export async function triggerAbsentNotification(slotItem) {
       finalStatus = req.status;
     }
     if (finalStatus === 'granted') {
+      await setupAndroidNotificationChannel();
       await Notifications.scheduleNotificationAsync({
         content: {
           title,
           body,
           sound: true,
+          channelId: 'fap_alerts',
           priority: Notifications.AndroidNotificationPriority.MAX,
           vibrate: [0, 250, 250, 250],
         },

@@ -12,7 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useSafeTop } from '../../components/ui';
+import { useSafeTop } from '../../../components/ui';
 
 export default function FapCourseAttendanceCard({
   course,

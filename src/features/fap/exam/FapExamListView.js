@@ -10,6 +10,7 @@ import {
   TextInput,
   StyleSheet,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { REMINDER_PRESETS } from './fapExamHelper';
 import FapExamCard from './FapExamCard';
@@ -30,6 +31,7 @@ export default function FapExamListView({
   onOpenAddModal,
   headerComponent,
 }) {
+  const insets = useSafeAreaInsets();
   const renderExamItem = ({ item }) => (
     <FapExamCard
       item={item}
@@ -72,9 +74,9 @@ export default function FapExamListView({
                   </View>
                 </View>
 
-                <Text style={[styles.configSub, { color: colors.sub }]}>
+                {/* <Text style={[styles.configSub, { color: colors.sub }]}>
                   Chọn nhanh mốc thời gian hoặc tự nhập số phút bạn muốn hệ thống báo chuông trước khi vào phòng thi:
-                </Text>
+                </Text> */}
 
                 {/* Hàng nút chọn nhanh (Presets) */}
                 <View style={styles.presetRow}>
@@ -166,7 +168,7 @@ export default function FapExamListView({
           </View>
         ) : null
       }
-      ListFooterComponent={<View style={{ height: 60 }} />}
+      ListFooterComponent={<View style={{ height: Math.max(insets.bottom + 30, 60) }} />}
     />
   );
 }

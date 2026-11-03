@@ -1,255 +1,196 @@
-# 📱 ToolKit — Ứng Dụng Đa Tiện Ích Thông Minh
+# 📱 ToolKit — Ứng Dụng Đa Tiện Ích Thông Minh Toàn Diện
 
 <p align="center">
-  <img src="./assets/favicon1.png" alt="ToolKit Logo" width="100" height="100" style="border-radius: 20px;" />
+  <img src="./assets/favicon1.png" alt="ToolKit Logo" width="100" height="100" style="border-radius: 24px;" />
 </p>
 
 <p align="center">
-  <b>Giải pháp tích hợp tiện ích all-in-one dành cho sinh viên và người dùng hiện đại</b><br>
-  Xây dựng trên nền tảng <b>React Native (Expo SDK 58)</b>, hỗ trợ đa nền tảng <b>iOS</b>, <b>Android</b> và <b>Web</b>.
+  <b>Giải pháp tiện ích All-in-One hiện đại dành cho học tập, công việc và đời sống số</b><br>
+  Xây dựng trên nền tảng <b>React Native (Expo SDK 52)</b>, hỗ trợ đầy đủ <b>iOS</b>, <b>Android</b> và <b>Web</b>.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/React_Native-0.88.0-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React Native" />
-  <img src="https://img.shields.io/badge/Expo-SDK_58-000020?style=for-the-badge&logo=expo&logoColor=white" alt="Expo" />
-  <img src="https://img.shields.io/badge/Firebase-v13-FFCA28?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
-  <img src="https://img.shields.io/badge/Platform-iOS%20%7C%20Android%20%7C%20Web-4E73DF?style=for-the-badge" alt="Platforms" />
-  <img src="https://img.shields.io/badge/Architecture-Feature--First-10B981?style=for-the-badge" alt="Architecture" />
+  <img src="https://img.shields.io/badge/React_Native-0.76.7-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React Native" />
+  <img src="https://img.shields.io/badge/Expo-SDK_52-000020?style=for-the-badge&logo=expo&logoColor=white" alt="Expo" />
+  <img src="https://img.shields.io/badge/Firebase-v11-FFCA28?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
+  <img src="https://img.shields.io/badge/Google_Gemini-AI_1.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Gemini AI" />
+  <img src="https://img.shields.io/badge/Language-Tiếng_Việt_%7C_English-10B981?style=for-the-badge" alt="Bilingual" />
+  <img src="https://img.shields.io/badge/Platform-iOS_%7C_Android_%7C_Web-8B5CF6?style=for-the-badge" alt="Platforms" />
 </p>
 
 ---
 
 ## 📖 Giới Thiệu Tổng Quan
 
-**ToolKit** là ứng dụng di động đa chức năng được phát triển nhằm tối ưu hóa học tập, công việc và đời sống số hàng ngày. Ứng dụng cung cấp các công cụ mạnh mẽ: từ quản lý thời gian sử dụng thiết bị, quét dọn ảnh rác, chuyển đổi tài liệu PDF, đến tính năng chuyên sâu độc quyền kết nối **Cổng Đào tạo FPT (FAP)** để tự động cào lịch thi và theo dõi điểm danh.
-
-Dự án được thiết kế theo kiến trúc **Feature-First (1 tính năng = 1 thư mục độc lập)**, giúp cấu trúc code rõ ràng, tính năng đóng gói hoàn chỉnh và cực kỳ dễ bảo trì, mở rộng.
+**ToolKit** là ứng dụng di động tích hợp toàn diện các công cụ hỗ trợ người dùng và sinh viên trong sinh hoạt, học tập và quản lý công việc hàng ngày. Được thiết kế theo phong cách giao diện hiện đại **Derot Dark**, ứng dụng mang lại trải nghiệm mượt mà, tối ưu hóa Safe Area (Dynamic Island, tai thỏ, viền bo) và hỗ trợ chuyển đổi song ngữ **Tiếng Việt 🇻🇳 / English 🇬🇧** 100% trên toàn bộ màn hình.
 
 ---
 
-## ✨ Tính Năng Nổi Bật
+## 🚀 Danh Sách Tính Năng Nổi Bật
 
-### 🎓 1. Tích Hợp Cổng FPT FAP (`src/features/fap`)
-- **WebView Scraper Tự Động**: Đăng nhập cổng `fap.fpt.edu.vn` (hỗ trợ nút 1-chạm Google SSO / FeID) và tự động trích xuất bảng dữ liệu chuẩn HTML DOM.
-- **Lịch Thi & Đếm Ngược**: Tự động nhận diện môn thi PE/FE, phòng thi, ca thi; đồng hồ đếm ngược thời gian thực (Realtime Countdown).
-- **Nhắc Nhở Lịch Thi**: Cài đặt thông báo trước giờ thi linh hoạt (1 phút, 5 phút, 15 phút, 30 phút, 1 giờ, 1 ngày).
-- **Thời Khóa Biểu & Cảnh Báo Vắng (+10p)**: Theo dõi ca học hôm nay và tự động kích hoạt cảnh báo vắng sau khi kết thúc ca học 10 phút nếu sinh viên chưa điểm danh.
-- **Nhập Liệu Thủ Công**: Hỗ trợ copy/paste bảng raw từ FAP hoặc thêm/sửa từng môn thi bằng form tiện lợi.
+### 1. 🎓 FAP FPT Portal Integration (Lịch thi, Điểm danh & Điểm số)
+- **Cào dữ liệu tự động**: Đăng nhập trực tiếp Cổng Đào tạo FPT (`fap.fpt.edu.vn`) qua WebView an toàn, tự động bóc tách lịch thi, thời khóa biểu và bảng điểm môn học.
+- **Theo dõi điểm danh**: Cảnh báo số buổi vắng trên tổng số buổi cho phép của từng môn học (ngưỡng 20% cấm thi).
+- **Nhắc nhở thông minh**: Đặt lịch thông báo đẩy native trước giờ thi (15p, 30p, 60p, 120p) hoặc tùy chỉnh thời gian.
+- **Hỗ trợ đa cơ sở**: Hà Nội (HN), Hồ Chí Minh (HCM), Đà Nẵng (DN), Cần Thơ (CT), Quy Nhơn (QN).
 
-### ⏳ 2. Quản Lý Thời Gian & Tập Trung (`src/features/screentime`)
-- **Theo Dõi Thời Gian Sử Dụng**: Đếm thời gian sử dụng màn hình liên tục trong phiên và tổng thời gian trong ngày.
-- **Cảnh Báo Dùng Máy Quá Lâu**: Tùy chỉnh ngưỡng số phút báo động (mặc định 180 phút), phát âm thanh thông báo và Alert chống quá tải mắt.
-- **Pomodoro Focus Mode**: Bộ đếm thời gian tập trung làm việc, học tập, đọc sách với các mốc chu kỳ tùy chỉnh.
-- **Giới Hạn Ứng Dụng (App Limits)**: Thiết lập hạn mức thời gian dùng hàng ngày cho từng app giải trí (TikTok, Facebook, YouTube...).
-- **Biểu Đồ Thống Kê**: Trực quan hóa dữ liệu sử dụng theo từng ngày trong tuần.
+### 2. 🔄 Micro-Habit & Refill Tracker (Chu kỳ việc vặt & Sinh hoạt)
+- **Quản lý chu kỳ định kỳ**: Tự động tính toán và đếm ngược thời hạn cho các việc lặp lại:
+  - *Theo ngày*: Thay nhớt xe máy (60 ngày), đổi bình nước (14 ngày), lọc nước, đổi bàn chải...
+  - *Hàng tháng*: Đóng tiền trọ (ngày 5), đóng tiền điện nước, đóng tiền mạng (ngày cuối tháng)...
+  - *Trong ngày*: Uống nước (8 cốc), uống vitamin, tập thể dục...
+- **Cảnh báo màu sắc trực quan**: Xanh (an toàn) → Vàng (sắp đến hạn) → Đỏ (quá hạn).
+- **Gemini AI gợi ý việc vặt**: Tự động phân tích nhu cầu cá nhân (sinh viên ở trọ, chủ xe máy, nuôi thú cưng) để tạo danh sách việc tối ưu chỉ bằng 1 chạm.
+- **Lịch báo OS**: Thiết lập giờ báo thức cụ thể trong ngày bằng Native Time Picker cho iOS và Android.
 
-### 📄 3. Chuyển Đổi Ảnh Thành PDF (`src/features/image-to-pdf`)
-- Chọn nhiều ảnh từ thư viện thiết bị hoặc chụp trực tiếp từ máy ảnh.
-- Kéo thả sắp xếp thứ tự các trang ảnh, xoay chiều ảnh.
-- Nén ảnh thông minh tối ưu dung lượng và xuất file PDF chất lượng cao.
-- Lưu trữ lịch sử tạo file và hỗ trợ chia sẻ nhanh qua Zalo, Messenger, AirDrop, Google Drive.
+### 3. 📥 Snap Video Downloader (Tải Video & Âm thanh mạng xã hội)
+- Tải video không logo (No Watermark) từ **TikTok, YouTube, Facebook, Instagram**.
+- Tùy chọn chất lượng linh hoạt: **1080p FHD, 720p HD, 480p, 360p** hoặc chỉ trích xuất tệp âm thanh **Audio (MP3/M4A)**.
+- Tự động nhận diện link từ Clipboard, lưu trữ an toàn vào thư viện ảnh máy hoặc chia sẻ qua Share Sheet.
 
-### 🧹 4. Tìm & Dọn Ảnh Trùng Lặp (`src/features/clean-photos`)
-- Nhận diện các nhóm ảnh chụp liên tiếp (burst shots), ảnh tải về trùng lặp hoặc ảnh chụp màn hình tương tự.
-- Hiển thị dung lượng ước tính giải phóng được và hỗ trợ dọn dẹp hàng loạt chỉ với 1 chạm.
+### 4. 👥 Multi-Account Social (Đa tài khoản Mạng xã hội)
+- Đăng nhập và duy trì phiên độc lập cho nhiều tài khoản **Facebook, Messenger, Zalo**.
+- Chuyển đổi tài khoản 1 chạm cực nhanh (dưới 0.1s) không lo bị trùng cookie hoặc xung đột phiên làm việc.
+- Đặt tên gợi nhớ (Shop online, Nick cá nhân, Clone...) và bảo mật dữ liệu phiên cục bộ.
 
-### 👥 5. Quản Lý Đa Tài Khoản Facebook (`src/features/fb-multi`)
-- Lưu phiên làm việc cho nhiều nick Facebook khác nhau (tài khoản cá nhân, fanpage, shop online).
-- Hỗ trợ lưu mã xác thực 2 lớp (2FA) và chuyển đổi tài khoản tức thì mà không cần đăng nhập lại từ đầu.
+### 5. ⏱️ Screen Time, App Limits & Focus Mode
+- **Thống kê thời gian thực**: Theo dõi thời lượng sử dụng máy theo ngày, tuần, phân loại ứng dụng.
+- **Chế độ tập trung (Focus Mode)**: Đồng hồ đếm ngược Pomodoro (10p, 20p, 30p, 60p, tùy chỉnh) với âm thanh tích tắc tạo cảm hứng làm việc sâu.
+- **Giới hạn ứng dụng (App Limits)**: Đặt hạn mức thời gian cho từng app giải trí, tự động cảnh báo khi vượt ngưỡng.
 
-### 🤖 6. AI Gợi Ý Trả Lời Tin Nhắn (`src/features/ai-reply`)
-- Phân tích ngữ cảnh tin nhắn đến và tạo câu trả lời đề xuất theo nhiều phong cách:
-  - *Lịch sự & Chuyên nghiệp* (Giao tiếp với cấp trên, đối tác)
-  - *Thân thiện & Tự nhiên* (Trò chuyện cùng bạn bè, đồng nghiệp)
-  - *Thẳng thắn & Nhanh gọn* (Xử lý việc khẩn)
+### 6. 🧹 Clean Photos & Duplicate Cleaner
+- Quét thông minh thư viện thiết bị để tìm ảnh trùng lặp, ảnh tương tự (burst shots) và ảnh dung lượng lớn.
+- Phân loại rõ ràng, cho phép xem trước và chọn lọc xóa an toàn để giải phóng bộ nhớ máy.
 
-### 🔐 7. Xác Thực & Phân Quyền (`src/features/auth`)
-- Đăng nhập/Đăng ký tài khoản qua Email & Mật khẩu hoặc Google SSO.
-- Quên mật khẩu & gửi link đặt lại mật khẩu an toàn qua Email.
-- Hệ thống phân cấp tài khoản: **Free Member**, **VIP Member** và **Administrator**.
+### 7. 📄 Image to PDF Converter
+- Chọn hàng loạt ảnh từ thư viện hoặc chụp trực tiếp từ camera.
+- Tùy chỉnh chất lượng nén, căn lề chuẩn A4 và xuất file PDF chia sẻ nhanh chóng.
 
-### 🛡️ 8. Bảng Quản Trị Hệ Thống (`src/features/admin`)
-- Quản lý danh sách người dùng trong hệ thống (tra cứu, phân trang, lọc vai trò).
-- Nâng cấp / hạ cấp quyền tài khoản trực tiếp trên Cloud Firestore.
-- Bật / tắt phân quyền tính năng độc quyền (Tier Free / VIP) cho từng công cụ trong app.
+### 8. 🤖 Global Floating Gemini AI Assistant (Trợ lý AI Nổi)
+- Nút trợ lý AI bong bóng nổi hiển thị xuyên suốt ứng dụng, dễ dàng kéo thả di chuyển.
+- Trò chuyện thông minh, hỗ trợ giải toán, tóm tắt tài liệu, dịch thuật và phân tích hình ảnh.
+- Cho phép người dùng tùy chỉnh Gemini API Key cá nhân trong cài đặt hoặc sử dụng cấu hình mặc định.
 
-### 🎨 9. Giao Diện & Trải Nghiệm Người Dùng (`src/features/home`, `src/features/settings`)
-- **Theme Hệ Thống**: Hỗ trợ chuyển đổi chế độ Sáng / Tối (Dark Mode / Light Mode).
-- **Đa Ngôn Ngữ**: Song ngữ Tiếng Việt & English, chuyển đổi tức thì không cần reload app.
-- **Draggable Grid Trang Chủ**: Người dùng có thể kéo thả để tự sắp xếp vị trí các icon tiện ích theo ý thích cá nhân.
-- **Floating Tab Bar**: Thanh điều hướng nổi bo góc hiện đại, tích hợp Drawer Menu vuốt cạnh mượt mà.
+### 9. 💬 Context AI Reply
+- Gợi ý câu trả lời tin nhắn theo ngữ cảnh (Lịch sự, Hài hước, Trang trọng, Ngắn gọn).
+- Tiết kiệm thời gian giao tiếp hàng ngày trên mạng xã hội.
+
+### 10. 🌐 Hệ Thống Đa Ngôn Ngữ Song Ngữ (VI / EN)
+- Hỗ trợ chuyển đổi nhanh Tiếng Việt 🇻🇳 và English 🇬🇧 trong Cài đặt.
+- Đồng bộ ngôn ngữ trên tất cả màn hình, tiêu đề, modal, thông báo lỗi và thông điệp hệ thống.
+
+### 11. 🔐 Phân Quyền Người Dùng (RBAC) & Quản Trị Hệ Thống
+- Phân cấp 3 cấp bậc tài khoản: **Thành viên Thường (Free)**, **Thành viên VIP** và **Quản trị viên (Admin)**.
+- Trang **Admin Dashboard**: Quản lý danh sách người dùng, bật/tắt tính năng theo thời gian thực (Feature Toggles) đồng bộ qua Firebase Firestore.
 
 ---
 
-## 🏗️ Cấu Trúc Thư Mục (Feature-First Architecture)
+## 🛠️ Kiến Trúc & Cấu Trúc Thư Mục
 
-Mã nguồn được cấu trúc theo mô hình **1 Tính năng = 1 Thư mục riêng biệt** trong `src/features/`:
-
-```text
+```
 ToolKit/
-├── App.js                         # Entry point cấp cao nhất của ứng dụng
-├── app.json                       # Cấu hình dự án Expo
-├── babel.config.js                # Cấu hình Babel & Reanimated
-├── package.json                   # Danh sách thư viện & scripts
-│
-├── assets/                        # Hình ảnh, biểu tượng, logo app
-│
-└── src/
-    ├── features/                  # === TẬP TRUNG TẤT CẢ CÁC TÍNH NĂNG ===
-    │   ├── fap/                   # Tính năng Cổng FAP FPT (Lịch thi, TKB, Điểm danh) [10 files]
-    │   │   ├── FapExamScreen.js
-    │   │   ├── FapAttendanceView.js
-    │   │   ├── FapExamCard.js
-    │   │   ├── FapAuthFlowCard.js
-    │   │   ├── FapRealWebViewModal.js
-    │   │   ├── FapExamFormModal.js
-    │   │   ├── FapLoginModals.js
-    │   │   ├── fapExamHelper.js
-    │   │   ├── fapAttendanceHelper.js
-    │   │   └── index.js
-    │   │
-    │   ├── screentime/            # Tính năng Quản lý Thời gian & Tập trung [6 files]
-    │   │   ├── ScreenTimeScreen.js
-    │   │   ├── StatsScreen.js
-    │   │   ├── FocusScreen.js
-    │   │   ├── LimitsScreen.js
-    │   │   ├── ScreenTimeContext.js
-    │   │   └── index.js
-    │   │
-    │   ├── auth/                  # Tính năng Xác thực & Tài khoản [4 files]
-    │   │   ├── LoginScreen.js
-    │   │   ├── RegisterScreen.js
-    │   │   ├── AuthContext.js
-    │   │   └── index.js
-    │   │
-    │   ├── home/                  # Màn hình Chính & Danh mục Tiện ích [4 files]
-    │   │   ├── HomeScreen.js
-    │   │   ├── ToolsScreen.js
-    │   │   ├── ComingSoonScreen.js
-    │   │   └── index.js
-    │   │
-    │   ├── settings/              # Cài đặt Ứng dụng & Hồ sơ Cá nhân [3 files]
-    │   │   ├── SettingsScreen.js
-    │   │   ├── AccountScreen.js
-    │   │   └── index.js
-    │   │
-    │   ├── admin/                 # Bảng Quản trị Hệ thống [2 files]
-    │   │   ├── AdminScreen.js
-    │   │   └── index.js
-    │   │
-    │   ├── image-to-pdf/          # Tiện ích Chuyển Ảnh sang PDF [2 files]
-    │   │   ├── ImageToPdfScreen.js
-    │   │   └── index.js
-    │   │
-    │   ├── clean-photos/          # Tiện ích Dọn Ảnh Trùng Lặp [2 files]
-    │   │   ├── CleanPhotosScreen.js
-    │   │   └── index.js
-    │   │
-    │   ├── fb-multi/              # Tiện ích Quản lý Đa Tài khoản Facebook [2 files]
-    │   │   ├── FbMultiScreen.js
-    │   │   └── index.js
-    │   │
-    │   ├── ai-reply/              # Tiện ích AI Gợi ý Trả lời Tin nhắn [2 files]
-    │   │   ├── AiReplyScreen.js
-    │   │   └── index.js
-    │   │
-    │   └── index.js               # Điểm xuất tập trung toàn bộ 10 features
-    │
-    ├── components/                # UI Components dùng chung (FloatingTabBar, DraggableGrid, ui.js)
-    ├── constants/                 # Hằng số hệ thống, phân quyền (roles.js)
-    ├── context/                   # Context dùng chung toàn ứng dụng (LanguageContext.js)
-    ├── i18n/                      # Từ điển đa ngôn ngữ (translations.js)
-    ├── navigation/                # Router điều hướng (Drawer, Tab, Native Stack)
-    ├── services/                  # Kết nối Firebase Auth, Firestore
-    ├── utils/                     # Tiện ích lưu trữ bảo mật (storage.js)
-    ├── theme.js                   # Hệ màu giao diện Sáng / Tối
-    └── tools.js                   # Cấu hình danh sách tiện ích & phân quyền VIP
+├── assets/                     # Tài nguyên hình ảnh, logo, biểu tượng
+├── src/
+│   ├── components/             # UI components dùng chung (DerotHeader, ToolCard, Row...)
+│   │   └── AiFloatingBot/      # Trợ lý AI bong bóng nổi toàn cục
+│   ├── constants/              # Cấu hình hằng số, phân quyền RBAC, theme màu
+│   ├── context/                # React Contexts (LanguageContext, ThemeContext...)
+│   ├── features/               # Các module chức năng (Feature-First Architecture)
+│   │   ├── admin/              # Module Quản trị viên (Admin Dashboard)
+│   │   ├── ai-reply/           # Module Gợi ý trả lời thông minh
+│   │   ├── auth/               # Module Xác thực (Login, Register, Session)
+│   │   ├── clean-photos/       # Module Quét dọn ảnh trùng lặp
+│   │   ├── fap/                # Module Cổng đào tạo FPT FAP (Lịch thi, Điểm danh)
+│   │   ├── home/               # Màn hình Trang chủ & Danh mục tiện ích
+│   │   ├── image-to-pdf/       # Module Chuyển ảnh sang PDF
+│   │   ├── micro-habit/        # Module Chu kỳ việc vặt & Refill Tracker
+│   │   │   ├── components/     # Modals: Form, AI Coach, History, Debug Notif
+│   │   │   ├── microHabitService.js
+│   │   │   └── microHabitStyles.js
+│   │   ├── multi/              # Module Đa tài khoản MXH (WebView Switcher)
+│   │   ├── screentime/         # Module Screen Time, Focus Pomodoro, App Limits
+│   │   ├── settings/           # Module Cài đặt tài khoản, ngôn ngữ, bản quyền
+│   │   └── snap-video/         # Module Tải video MXH không watermark
+│   ├── i18n/                   # Từ điển bản dịch song ngữ (Tiếng Việt & English)
+│   ├── navigation/             # Expo Navigation Stacks & Bottom Tabs
+│   ├── services/               # Kết nối API bên thứ ba (Firebase, Gemini AI)
+│   └── utils/                  # Hàm tiện ích (Storage, DateFormatter...)
+├── app.json                    # Cấu hình Expo, Permissions (Camera, Media, Notification)
+├── eas.json                    # Cấu hình Expo Application Services (EAS Build APK)
+└── package.json                # Danh sách thư viện và dependencies
 ```
 
 ---
 
-## 🚀 Hướng Dẫn Cài Đặt & Chạy Ứng Dụng
+## ⚙️ Cài Đặt & Chạy Môi Trường Phát Triển
 
-### 1. Yêu Cầu Môi Trường
-- **Node.js**: Phiên bản 18.x trở lên.
-- **npm** (hoặc **bun** / **yarn**).
-- Thiết bị cài đặt ứng dụng **Expo Go** (trên App Store hoặc Google Play), hoặc Android Emulator / iOS Simulator.
+### Yêu Cầu Cài Đặt Trước
+- **Node.js**: Phiên bản 18.x trở lên
+- **Trình quản lý gói**: `npm` hoặc `yarn`
+- **Thiết bị chạy**: Expo Go trên điện thoại (iOS / Android) hoặc Android Emulator / iOS Simulator.
 
-### 2. Cài Đặt Thư Viện
+### Các Bước Cài Đặt
 
-```bash
-# Clone dự án từ GitHub
-git clone https://github.com/ndhung23/ToolKit.git
-cd ToolKit
+1. **Clone repository về máy**:
+   ```bash
+   git clone https://github.com/<your-username>/ToolKit.git
+   cd ToolKit
+   ```
 
-# Cài đặt các dependencies tương thích với Expo SDK 58
-npm install
-```
+2. **Cài đặt các gói phụ thuộc (Dependencies)**:
+   ```bash
+   npm install
+   ```
 
-### 3. Cấu Hình Biến Môi Trường (`.env`)
+3. **Cấu hình biến môi trường (`.env`)**:
+   Tạo file `.env` tại thư mục gốc của dự án với các thông số:
+   ```env
+   EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+   EXPO_PUBLIC_GEMINI_API_KEY=your_gemini_api_key
+   EXPO_PUBLIC_ADMIN_EMAIL=admin@toolkit.com
+   EXPO_PUBLIC_ADMIN_PASSWORD=your_admin_password
+   ```
 
-Tạo file `.env` tại thư mục gốc (tham khảo từ file `.env.example`):
+4. **Khởi chạy ứng dụng với Metro Bundler**:
+   ```bash
+   npm start
+   # hoặc
+   npx expo start -c
+   ```
+   - Quét mã QR bằng ứng dụng **Expo Go** trên Android hoặc Camera trên iPhone để mở ứng dụng.
 
-```env
-# Cấu hình Firebase Web App (Auth & Cloud Firestore)
-EXPO_PUBLIC_FIREBASE_API_KEY=your_api_key_here
-EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
-```
-
-### 4. Khởi Chạy Ứng Dụng
-
-```bash
-# Bắt đầu máy chủ Expo Dev Server
-npx expo start
-```
-
-Sau khi chạy lệnh:
-- Nhấn phím `a` để mở trên thiết bị **Android Emulator** (hoặc quét mã QR qua Expo Go).
-- Nhấn phím `i` để mở trên thiết bị **iOS Simulator**.
-- Nhấn phím `w` để mở giao diện trên **Trình duyệt Web**.
-
----
-
-## 🧪 Kiểm Tra & Đảm Bảo Chất Lượng Mã Nguồn
-
-Dự án áp dụng bộ kiểm tra chất lượng code nghiêm ngặt:
-
-```bash
-# 1. Kiểm tra linter và quy tắc cú pháp React Hooks
-npm run lint
-
-# 2. Kiểm tra tính tương thích của dependencies và cấu hình Expo
-npx expo-doctor
-
-# 3. Sửa nhanh các cảnh báo có thể tự động khắc phục
-npx expo lint --fix
-```
+5. **Kiểm tra sức khỏe dự án (Diagnostics)**:
+   ```bash
+   npx expo-doctor
+   ```
 
 ---
 
-## 🛠️ Công Nghệ Sử Dụng (Tech Stack)
+## 📦 Hướng Dẫn Đóng Gói File APK (Expo EAS Build)
 
-| Thành phần | Thư viện / Công nghệ | Phiên bản |
-| :--- | :--- | :--- |
-| **Framework** | [React Native](https://reactnative.dev/) | `0.88.0` |
-| **Platform** | [Expo SDK](https://expo.dev/) | `~58.0.0` |
-| **Navigation** | [@react-navigation](https://reactnavigation.org/) (Stack, Bottom Tabs, Drawer) | `^7.x` |
-| **Backend / DB** | [Firebase](https://firebase.google.com/) (Auth, Cloud Firestore) | `^13.1.0` |
-| **Secure Storage** | `expo-secure-store` | `~58.0.2` |
-| **Notifications** | `expo-notifications` | `~58.1.6` |
-| **PDF Generation** | `expo-print`, `expo-sharing` | `~58.0.x` |
-| **In-App Browser** | `react-native-webview` | `14.0.1` |
-| **Animations** | `react-native-reanimated`, `react-native-gesture-handler` | `~4.7.1` |
-| **Icons** | `@expo/vector-icons` (Ionicons, MaterialCommunityIcons) | `^15.0.2` |
+Dự án đã được cấu hình sẵn profile `preview` để tạo trực tiếp file `.apk` cài đặt trực tiếp trên các thiết bị Android:
+
+1. **Đăng nhập tài khoản Expo EAS**:
+   ```bash
+   npx eas-cli login
+   ```
+
+2. **Khởi chạy lệnh build APK trên đám mây EAS**:
+   ```bash
+   npx eas-cli build -p android --profile preview
+   ```
+
+3. **Tải file APK**:
+   Sau khi EAS Build hoàn thành, hệ thống sẽ cung cấp đường link tải file APK trực tiếp hoặc quét mã QR trên màn hình terminal để tải về điện thoại.
 
 ---
 
-## 👨‍💻 Tác Giả & Bản Quyền
+## 🔒 Bản Quyền & Giấy Phép
 
-- **Dự án**: Project môn **MMA301** — Mobile App Development
-- **Đại diện phát triển**: [ndhung23](https://github.com/ndhung23)
-- **Giấy phép**: Phát hành theo chuẩn giấy phép mã nguồn mở [MIT License](LICENSE).
+Dự án được phát triển phục vụ mục đích học tập môn **MMA301** và phát triển công cụ phần mềm tiện ích chất lượng cao.  
+Mọi quyền sở hữu trí tuệ thuộc về nhóm phát triển dự án ToolKit.

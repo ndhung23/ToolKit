@@ -2,19 +2,28 @@ import { View, Text, Alert, FlatList, Image, StyleSheet, Platform } from 'react-
 import { useAuth } from '../auth';
 import { Row, RoleBadge } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 import { ROLE_CONFIG } from '../../constants/roles';
 
 const FAVICON_ICON = require('../../../assets/favicon1.png');
 
 export default function AccountScreen() {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   const { user, signOut } = useAuth();
-  const roleName = user?.role ? (ROLE_CONFIG[user.role]?.name || user.role) : 'Thành viên Thường';
+
+  const roleName = user?.role === 'admin'
+    ? (t('roles.admin') || 'Quản trị viên')
+    : user?.role === 'vip'
+    ? (t('roles.vip') || 'Thành viên VIP')
+    : (t('roles.free') || ROLE_CONFIG[user?.role]?.name || 'Thành viên Thường');
 
   const confirmLogout = () => {
+    const title = t('accountScreen.logout') || 'Đăng xuất';
+    const msg = t('accountScreen.logoutConfirm') || 'Bạn muốn đăng xuất khỏi tài khoản?';
     if (Platform.OS === 'web') {
       const ok = typeof window !== 'undefined'
-        ? window.confirm('Đăng xuất\nBạn muốn đăng xuất khỏi tài khoản?')
+        ? window.confirm(`${title}\n${msg}`)
         : true;
       if (ok) {
         signOut();
@@ -22,9 +31,9 @@ export default function AccountScreen() {
       return;
     }
 
-    Alert.alert('Đăng xuất', 'Bạn muốn đăng xuất khỏi tài khoản?', [
-      { text: 'Hủy', style: 'cancel' },
-      { text: 'Đăng xuất', style: 'destructive', onPress: signOut },
+    Alert.alert(title, msg, [
+      { text: t('common.cancel') || 'Hủy', style: 'cancel' },
+      { text: t('accountScreen.logout') || 'Đăng xuất', style: 'destructive', onPress: signOut },
     ]);
   };
 
@@ -46,10 +55,10 @@ export default function AccountScreen() {
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Row icon="shield-checkmark-outline" label="Cấp bậc tài khoản" value={roleName} />
+            <Row icon="shield-checkmark-outline" label={t('accountScreen.memberTier') || 'Cấp bậc tài khoản'} value={roleName} />
             <Row icon="mail-outline" label="Email" value={user?.email} />
-            <Row icon="moon-outline" label="Giao diện" value="Tối (Derot)" />
-            <Row icon="log-out-outline" label="Đăng xuất" onPress={confirmLogout} danger />
+            <Row icon="moon-outline" label={t('settings.theme') || 'Giao diện'} value="Derot Dark" />
+            <Row icon="log-out-outline" label={t('accountScreen.logout') || 'Đăng xuất'} onPress={confirmLogout} danger />
           </View>
         </>
       }

@@ -8,19 +8,14 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   Alert,
   FlatList,
-  Modal,
-  Switch,
   Platform,
-  KeyboardAvoidingView,
   Keyboard,
   ActivityIndicator,
   BackHandler,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
 import runAfterUi from '../../utils/runAfterUi';
@@ -38,7 +33,6 @@ import {
   validateCategoryName,
   loadCustomCategories,
   saveCustomCategories,
-  HABIT_ATTRIBUTE_COLORS,
   validateHabitTitle,
 } from './microHabitService';
 import {
@@ -51,14 +45,12 @@ import {
 } from './NotificationService';
 import { requestOpenTask } from './TaskSheetStore';
 import { ensureHabitsLoaded, setHabits as saveSharedHabits, subscribeHabits, recordHabitCompletion, undoHabitCompletion } from './HabitStore';
-
-const FILTER_TABS = [
-  { id: 'all', label: 'Tất cả' },
-  { id: 'urgent', label: 'Khẩn cấp 🚨' },
-  { id: 'interval', label: 'Theo ngày 🔄' },
-  { id: 'monthly', label: 'Hàng tháng 📅' },
-  { id: 'daily', label: 'Trong ngày 🎯' },
-];
+import { styles } from './microHabitStyles';
+import HabitCard from './components/HabitCard';
+import HabitFormModal from './components/HabitFormModal';
+import HabitAiModal from './components/HabitAiModal';
+import HabitHistoryModal from './components/HabitHistoryModal';
+import HabitDebugNotifModal from './components/HabitDebugNotifModal';
 
 const INTERVAL_PRESETS = [7, 14, 30, 60, 90, 180, 365];
 const DAILY_PRESETS = [1, 2, 4, 8, 10];
@@ -109,6 +101,7 @@ export function serializeHabitFormState({
 
 export default function MicroHabitScreen({ navigation, route }) {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   const [habits, setHabits] = useState([]);
   const [activeFilter, setActiveFilter] = useState('all');
   const [activeStatusFilter, setActiveStatusFilter] = useState(null);
@@ -122,11 +115,11 @@ export default function MicroHabitScreen({ navigation, route }) {
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [selectedHabitForHistory, setSelectedHabitForHistory] = useState(null);
 
-  // Debug Thông báo OS (VIỆC 5)
+  // Debug Thông báo OS
   const [debugNotifModalVisible, setDebugNotifModalVisible] = useState(false);
   const [scheduledNotifs, setScheduledNotifs] = useState([]);
 
-  // Gemini AI Gợi ý việc vặt
+  // Gemini AI Suggestion State
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState([]);
@@ -177,6 +170,14 @@ export default function MicroHabitScreen({ navigation, route }) {
   // Native Time Picker (VIỆC 1)
   const [showTimePicker, setShowTimePicker] = useState(false);
 
+  const filterTabs = useMemo(() => [
+    { id: 'all', label: t('microHabit.tabAll') || 'Tất cả' },
+    { id: 'urgent', label: t('microHabit.tabUrgent') || 'Khẩn cấp 🚨' },
+    { id: 'interval', label: t('microHabit.tabInterval') || 'Theo ngày 🔄' },
+    { id: 'monthly', label: t('microHabit.tabMonthly') || 'Hàng tháng 📅' },
+    { id: 'daily', label: t('microHabit.tabDaily') || 'Trong ngày 🎯' },
+  ], [t]);
+
   // Giờ và phút dạng Date cho DateTimePicker
   const pickerDate = useMemo(() => {
     const parts = (formReminderTime || '08:00').split(':');
@@ -196,7 +197,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     }
   }, []);
 
-  // Mở modal xem danh sách thông báo OS (VIỆC 5)
+  // Mở modal xem danh sách thông báo OS
   const handleOpenDebugNotifs = useCallback(async () => {
     const list = await getAllScheduledHabitReminders();
     setScheduledNotifs(list);
@@ -221,32 +222,93 @@ export default function MicroHabitScreen({ navigation, route }) {
         `${formTitle.trim() || 'Thay nhớt xe máy'}\nĐã đến giờ kiểm tra và hoàn thành chu kỳ sinh hoạt!`
       );
       Alert.alert(
-        'Đã bắn thông báo thử nghiệm! 🎉',
-        'Thông báo sẽ hiển thị trên thanh thông báo trong 2 giây. Bạn có thể vuốt lên màn hình chính để thấy banner & chuông.'
+        'Đã gửi thông báo thử',
+        'Vui lòng vuốt từ mép trên màn hình hoặc khóa màn hình trong 2 giây để thấy banner thông báo.'
       );
     } catch (err) {
-      Alert.alert('Không thể gửi thông báo', err.message || 'Hãy kiểm tra quyền thông báo trong Cài đặt máy.');
+      Alert.alert('Lỗi', err.message || 'Không thể gửi thông báo thử nghiệm.');
     }
-  }, [editingId, formTitle, habits]);
+  }, [editingId, habits, formTitle]);
 
-  const handleSimulateNotificationTap = useCallback((taskId) => {
-    requestOpenTask(taskId, 'debug-simulation');
+  // Khởi tạo danh sách & đồng bộ
+  useEffect(() => {
+    let unsubscribe = () => {};
+    const init = async () => {
+      const loaded = await ensureHabitsLoaded();
+      setHabits(loaded);
+      const loadedCustomCats = await loadCustomCategories();
+      setCustomCategories(loadedCustomCats);
+      unsubscribe = subscribeHabits((freshHabits) => {
+        setHabits(freshHabits);
+      });
+      reconcileHabitReminders(loaded).catch(() => {});
+    };
+    init();
+    return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const updateHabitsList = useCallback((newList) => {
+    setHabits(newList);
+    saveSharedHabits(newList);
+  }, []);
+
+  // Xử lý deep link / notification click
+  useEffect(() => {
+    const targetId = route.params?.targetHabitId;
+    if (!targetId || habits.length === 0 || handledRouteHabitId.current === targetId) return;
+    handledRouteHabitId.current = targetId;
+
+    const targetIndex = habits.findIndex((h) => h.id === targetId);
+    if (targetIndex !== -1) {
+      setActiveFilter('all');
+      setActiveStatusFilter(null);
+      setSearchInput('');
+      setHighlightHabitId(targetId);
+
+      setTimeout(() => {
+        try {
+          listRef.current?.scrollToIndex({ index: targetIndex, animated: true, viewPosition: 0.3 });
+        } catch {
+          listRef.current?.scrollToOffset({ offset: targetIndex * 180, animated: true });
+        }
+      }, 350);
+
+      setTimeout(() => {
+        setHighlightHabitId(null);
+      }, 3000);
+    }
+  }, [route.params?.targetHabitId, habits]);
+
+  // AI Habit Generation
   const handleOpenAiModal = useCallback(() => {
-    setAiSuggestions([]);
     setAiPrompt('');
+    setAiSuggestions([]);
     setAiModalVisible(true);
   }, []);
 
   const handleGenerateAiHabits = useCallback(async (customPrompt) => {
-    const text = (customPrompt || aiPrompt || '').trim() || 'Sinh hoạt cá nhân';
+    const query = customPrompt || aiPrompt;
+    if (!query || !query.trim()) {
+      Alert.alert('Thiếu thông tin', 'Vui lòng chọn chủ đề nhanh hoặc nhập nhu cầu sinh hoạt của bạn.');
+      return;
+    }
     setIsGeneratingAi(true);
     try {
-      const results = await generateHabitsWithAi(text);
-      setAiSuggestions(results);
+      const result = await generateHabitsWithAi(query.trim());
+      if (!result || result.length === 0) {
+        Alert.alert('Thông báo', 'Gemini AI không tìm thấy gợi ý phù hợp. Vui lòng thử lại với mô tả chi tiết hơn.');
+      } else {
+        setAiSuggestions(result);
+      }
     } catch (err) {
-      Alert.alert('Lỗi', err.message || 'Không thể tạo gợi ý việc vặt bằng AI.');
+      Alert.alert('Lỗi AI', err.message || 'Không thể tạo việc vặt từ AI vào lúc này.');
     } finally {
       setIsGeneratingAi(false);
     }
@@ -254,145 +316,100 @@ export default function MicroHabitScreen({ navigation, route }) {
 
   const handleApplyAiHabits = useCallback(async () => {
     if (!aiSuggestions || aiSuggestions.length === 0) return;
-    const today = getTodayDateString();
-
-    const newHabits = [...habits];
-    for (const item of aiSuggestions) {
-      const id = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+    const newItems = aiSuggestions.map((item) => {
       const newHabit = {
-        id,
+        id: `habit-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         title: item.title,
-        type: item.type,
+        type: item.type || HABIT_TYPES.INTERVAL,
         intervalDays: item.intervalDays || 30,
-        dayOfMonth: item.dayOfMonth || 5,
+        dayOfMonth: item.dayOfMonth || 1,
         targetCount: item.targetCount || 1,
         unit: item.unit || 'lần',
-        category: 'AI Gợi ý',
-        note: 'Được tạo bởi Gemini AI',
-        icon: 'sparkles',
+        category: item.category || 'Sinh hoạt',
+        note: item.note || '',
+        icon: item.icon || 'repeat',
         color: item.color || '#3B82F6',
-        lastCompletedDate: today,
-        dailyCurrentCount: 0,
-        dailyLastUpdatedDate: today,
-        completionHistory: [
-          {
-            timestamp: Date.now(),
-            date: today,
-            note: 'Tạo mới từ gợi ý Gemini AI',
-          },
-        ],
-        reminderEnabled: Boolean(item.reminderTime),
+        lastCompletedDate: new Date().toISOString(),
+        currentCount: 0,
+        lastDailyDate: getTodayDateString(),
+        reminderEnabled: !!item.reminderEnabled,
         reminderTime: item.reminderTime || '08:00',
         notificationId: null,
+        history: [],
       };
+      return newHabit;
+    });
 
-      if (newHabit.reminderEnabled) {
-        newHabit.notificationId = await scheduleHabitReminder(newHabit);
+    for (const h of newItems) {
+      if (h.reminderEnabled) {
+        const notifId = await scheduleHabitReminder(h);
+        h.notificationId = notifId;
       }
-      newHabits.unshift(newHabit);
     }
 
-    setHabits(newHabits);
-    await saveSharedHabits(newHabits);
+    const merged = [...newItems, ...habits];
+    updateHabitsList(merged);
     setAiModalVisible(false);
-    Alert.alert('Thành công! 🎉', `Đã thêm ${aiSuggestions.length} việc vặt & chu kỳ sinh hoạt vào danh sách.`);
-  }, [aiSuggestions, habits]);
-  useEffect(() => {
-    let isMounted = true;
-    (async () => {
-      const data = await ensureHabitsLoaded();
-      const storedCategories = await loadCustomCategories();
-      const synchronized = await reconcileHabitReminders(data);
-      if (isMounted) {
-        await saveSharedHabits(synchronized);
-        setCustomCategories(storedCategories);
-      }
-    })();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    setAiSuggestions([]);
+    Alert.alert('Thành công', `Đã thêm ${newItems.length} việc vặt thông minh vào danh sách theo dõi của bạn! 🎉`);
+  }, [aiSuggestions, habits, updateHabitsList]);
 
-  useEffect(() => subscribeHabits(setHabits), []);
+  // Hoàn thành việc / Reset chu kỳ
+  const handleCompleteHabit = (id) => {
+    const updated = recordHabitCompletion(habits, id);
+    updateHabitsList(updated);
+    const target = updated.find((h) => h.id === id);
+    if (!target) return;
 
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchInput.trim()), 200);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    if (target.reminderEnabled) {
+      scheduleHabitReminder(target).catch(() => {});
+    }
 
-  const clearFilters = useCallback(() => {
-    setSearchInput('');
-    setDebouncedSearch('');
-    setActiveFilter('all');
-    setActiveStatusFilter(null);
-  }, []);
-
-  const showHabitFromNotification = useCallback((habitId) => {
-    if (!habitId) return;
-    clearFilters();
-    setHighlightHabitId(habitId);
-    setTimeout(() => {
-      const index = habits.findIndex((habit) => habit.id === habitId);
-      if (index >= 0) listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.35 });
-    }, 250);
-  }, [clearFilters, habits]);
-
-  useEffect(() => {
-    const habitId = route?.params?.habitId;
-    if (!habitId || handledRouteHabitId.current === habitId) return undefined;
-    handledRouteHabitId.current = habitId;
-    const timer = setTimeout(() => showHabitFromNotification(habitId), 0);
-    return () => clearTimeout(timer);
-  }, [route?.params?.habitId, showHabitFromNotification]);
-
-  // Tính toán trạng thái cho từng item
-  const habitsWithStatus = useMemo(() => {
-    return habits.map((item) => {
-      const status = calculateHabitStatus(item);
-      return {
-        ...item,
-        status,
-      };
-    });
-  }, [habits]);
-
-  // Thống kê tổng quan
-  const stats = useMemo(() => getHabitStats(habitsWithStatus), [habitsWithStatus]);
-
-  // Lọc theo tab
-  const filteredHabits = useMemo(() => filterHabits(habitsWithStatus, {
-    typeFilter: activeFilter,
-    statusFilter: activeStatusFilter,
-    search: debouncedSearch,
-  }), [habitsWithStatus, activeFilter, activeStatusFilter, debouncedSearch]);
-
-  const hasActiveFilters = activeFilter !== 'all' || activeStatusFilter || normalizeHabitSearch(debouncedSearch);
-
-  // Lưu danh sách và cập nhật state
-  const updateHabitsList = useCallback(async (newHabits) => {
-    await saveSharedHabits(newHabits);
-  }, []);
-
-  // 1. Reset chu kỳ: Vừa làm xong (cho Interval & Monthly)
-  const handleCompleteHabit = useCallback(async (id) => {
-    await recordHabitCompletion(id);
-  }, []);
-
-  // 2. Tăng/Giảm tiến độ trong ngày (cho Daily Counter)
-  const handleStepDaily = useCallback(async (id, delta) => {
-    if (delta > 0) await recordHabitCompletion(id);
-    else await undoHabitCompletion(id);
-  }, []);
-
-  // 3. Xóa việc vặt
-  const handleDeleteHabit = useCallback((id, title) => {
-    Alert.alert(
-      'Xóa việc vặt',
-      `Bạn có chắc chắn muốn xóa "${title}" không?`,
-      [
-        { text: 'Hủy', style: 'cancel' },
+    if (Platform.OS !== 'web') {
+      Alert.alert('Đã hoàn thành! 🎉', `Đã reset chu kỳ cho "${target.title}".`, [
         {
-          text: 'Xóa vĩnh viễn',
+          text: 'Hoàn tác',
+          style: 'destructive',
+          onPress: () => {
+            const restored = undoHabitCompletion(updated, id);
+            updateHabitsList(restored);
+            const restoredTarget = restored.find((h) => h.id === id);
+            if (restoredTarget?.reminderEnabled) {
+              scheduleHabitReminder(restoredTarget).catch(() => {});
+            }
+          },
+        },
+        { text: 'OK' },
+      ]);
+    }
+  };
+
+  const handleStepDaily = (id, delta) => {
+    const updated = habits.map((h) => {
+      if (h.id === id) {
+        const today = getTodayDateString();
+        const baseCount = h.lastDailyDate === today ? h.currentCount || 0 : 0;
+        const nextCount = Math.max(0, baseCount + delta);
+        return {
+          ...h,
+          currentCount: nextCount,
+          lastDailyDate: today,
+          lastCompletedDate: nextCount > 0 ? new Date().toISOString() : h.lastCompletedDate,
+        };
+      }
+      return h;
+    });
+    updateHabitsList(updated);
+  };
+
+  const handleDeleteHabit = (id, title) => {
+    Alert.alert(
+      t('microHabit.deleteHabit') || 'Xóa việc vặt',
+      `${t('microHabit.deleteConfirm') || 'Bạn có chắc muốn xóa việc này không?'}\n"${title}"`,
+      [
+        { text: t('common.cancel') || 'Hủy', style: 'cancel' },
+        {
+          text: t('common.confirm') || 'Xóa',
           style: 'destructive',
           onPress: async () => {
             await cancelHabitRemindersForTask(id);
@@ -402,9 +419,8 @@ export default function MicroHabitScreen({ navigation, route }) {
         },
       ]
     );
-  }, [habits, updateHabitsList]);
+  };
 
-  // 4. Mở Modal Thêm mới
   const handleOpenAddModal = () => {
     setEditingId(null);
     setFormTitle('');
@@ -447,7 +463,6 @@ export default function MicroHabitScreen({ navigation, route }) {
     setModalVisible(true);
   };
 
-  // 5. Mở Modal Chỉnh sửa
   const handleOpenEditModal = (item) => {
     setEditingId(item.id);
     setFormTitle(item.title || '');
@@ -490,7 +505,6 @@ export default function MicroHabitScreen({ navigation, route }) {
     setModalVisible(true);
   };
 
-  // 6. Bật/Tắt nhanh nhắc nhở trên thẻ
   const handleQuickToggleReminder = async (item) => {
     const newEnabled = !item.reminderEnabled;
     let newNotifId = null;
@@ -509,58 +523,50 @@ export default function MicroHabitScreen({ navigation, route }) {
         ? `Thông báo sẽ nhắc lúc ${item.reminderTime || '08:00'} mỗi ngày.`
         : `Thông báo sẽ nhắc vào kỳ đến hạn lúc ${item.reminderTime || '08:00'}.`);
     } else {
-      await cancelHabitReminder(item.notificationId);
-      Alert.alert('Đã tắt nhắc nhở', `Đã hủy lịch nhắc cho "${item.title}".`);
+      if (item.notificationId) {
+        await cancelHabitReminder(item.notificationId);
+      }
     }
 
-    const updated = habits.map((h) => {
-      if (h.id === item.id) {
-        return {
-          ...h,
-          reminderEnabled: newEnabled,
-          notificationId: newNotifId,
-        };
-      }
-      return h;
-    });
+    const updated = habits.map((h) =>
+      h.id === item.id
+        ? { ...h, reminderEnabled: newEnabled, notificationId: newNotifId }
+        : h
+    );
     updateHabitsList(updated);
   };
 
-  // ============================================
-  // VALIDATE FORM — Kiểm tra toàn bộ input trước khi lưu
-  // ============================================
-  const validateHabitForm = useCallback(() => {
+  const handleSimulateNotificationTap = useCallback((taskId) => {
+    setDebugNotifModalVisible(false);
+    requestOpenTask(taskId);
+  }, []);
+
+  const handleSaveForm = async () => {
     const errors = {};
     const trimmedTitle = formTitle.trim();
-
-    // Validate tên
     const titleError = validateHabitTitle(trimmedTitle);
     if (titleError) errors.title = titleError;
 
-    // Validate theo loại
-    if (formType === HABIT_TYPES.INTERVAL) {
-      const val = parseInt(formIntervalDays, 10);
-      if (!formIntervalDays.trim() || isNaN(val)) {
-        errors.intervalDays = 'Vui lòng nhập số ngày.';
-      } else if (val < 1) {
-        errors.intervalDays = 'Tối thiểu là 1 ngày.';
-      } else if (val > 3650) {
-        errors.intervalDays = 'Tối đa là 3650 ngày (~10 năm).';
-      } else if (!Number.isInteger(Number(formIntervalDays))) {
-        errors.intervalDays = 'Chỉ nhập số nguyên.';
+    let selectedCategory = formCategory;
+    if (formCategory === 'Khác') {
+      const customError = validateCategoryName(formCustomCategory);
+      if (customError) {
+        errors.category = customError;
+      } else {
+        selectedCategory = formCustomCategory.trim();
+        if (!customCategories.includes(selectedCategory)) {
+          const nextCustomCats = [...customCategories, selectedCategory];
+          setCustomCategories(nextCustomCats);
+          await saveCustomCategories(nextCustomCats);
+        }
       }
     }
 
+    let parsedDayOfMonth = 1;
     if (formType === HABIT_TYPES.MONTHLY) {
-      const val = parseInt(formDayOfMonth, 10);
-      if (!formDayOfMonth.trim() || isNaN(val)) {
-        errors.dayOfMonth = 'Vui lòng nhập ngày (1-31).';
-      } else if (val < 1) {
-        errors.dayOfMonth = 'Tối thiểu là ngày 1.';
-      } else if (val > 31) {
-        errors.dayOfMonth = 'Tối đa là ngày 31.';
-      } else if (!Number.isInteger(Number(formDayOfMonth))) {
-        errors.dayOfMonth = 'Chỉ nhập số nguyên.';
+      parsedDayOfMonth = parseInt(formDayOfMonth, 10);
+      if (isNaN(parsedDayOfMonth) || parsedDayOfMonth < 1 || parsedDayOfMonth > 31) {
+        errors.dayOfMonth = 'Ngày trong tháng phải từ 1 đến 31';
       }
     }
 
@@ -602,6 +608,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     const errors = validateHabitForm();
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
       return;
     }
 
@@ -862,194 +869,34 @@ export default function MicroHabitScreen({ navigation, route }) {
     return sub;
   }, [navigation, modalVisible, isFormDirty, requestCloseModal]);
 
-  // Màu sắc theo urgency
-  const getUrgencyColor = (urgency) => {
-    if (urgency === 'overdue') return '#EF4444'; // Đỏ
-    if (urgency === 'warning') return '#F59E0B'; // Vàng
-    return '#10B981'; // Xanh
-  };
+  const isFormValid = useMemo(() => {
+    return formTitle.trim().length > 0;
+  }, [formTitle]);
 
-  // Render từng thẻ việc vặt (Đã tối ưu bố cục 2 hàng rõ ràng, không tràn mép viền)
-  const renderHabitItem = ({ item }) => {
-    const { status } = item;
-    const urgencyColor = getUrgencyColor(status.urgency);
+  const habitsWithStatus = useMemo(() => {
+    return habits.map((h) => ({
+      ...h,
+      status: calculateHabitStatus(h),
+    }));
+  }, [habits]);
 
-    return (
-      <View style={[styles.habitCard, { backgroundColor: colors.card, borderColor: item.id === highlightHabitId ? colors.primary : colors.cardBorder, borderWidth: item.id === highlightHabitId ? 2 : 1 }]}>
-        {/* Header thẻ: Icon, Tên (tối đa 2 dòng không bị che), Nút Sửa, Nút Xóa */}
-        <View style={styles.cardHeader}>
-          <View style={[styles.cardIconBox, { backgroundColor: (item.color || colors.primary) + '20' }]}>
-            <Ionicons name={item.icon || 'repeat'} size={22} color={item.color || colors.primary} />
-          </View>
-          <View style={styles.cardTitleBox}>
-            <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
-              {item.title}
-            </Text>
-            {item.note ? (
-              <Text style={[styles.cardNote, { color: colors.sub }]} numberOfLines={1}>
-                {item.note}
-              </Text>
-            ) : null}
-          </View>
+  const filteredHabits = useMemo(() => {
+    return filterHabits(habitsWithStatus, {
+      activeFilter,
+      activeStatusFilter,
+      debouncedSearch: normalizeHabitSearch(debouncedSearch),
+    });
+  }, [habitsWithStatus, activeFilter, activeStatusFilter, debouncedSearch]);
 
-          {/* Nút Sửa */}
-          <Pressable
-            onPress={() => handleOpenEditModal(item)}
-            hitSlop={8}
-            style={styles.cardHeaderBtn}
-          >
-            <Ionicons name="pencil-outline" size={18} color={colors.sub} />
-          </Pressable>
+  const stats = useMemo(() => {
+    return getHabitStats(habitsWithStatus);
+  }, [habitsWithStatus]);
 
-          {/* Nút Xóa */}
-          <Pressable
-            onPress={() => handleDeleteHabit(item.id, item.title)}
-            hitSlop={8}
-            style={styles.cardHeaderBtn}
-          >
-            <Ionicons name="trash-outline" size={18} color={colors.sub} />
-          </Pressable>
-        </View>
-
-        {/* HÀNG 1: Trạng thái đến hạn (Urgency status rõ ràng, chỉ thông tin hạn chót) */}
-        <View style={styles.cardRow1}>
-          <View style={[styles.urgencyBadge, { backgroundColor: urgencyColor + '20', borderColor: urgencyColor }]}>
-            <View style={[styles.urgencyDot, { backgroundColor: urgencyColor }]} />
-            <Text style={[styles.urgencyText, { color: urgencyColor }]}>
-              {status.statusText}
-            </Text>
-          </View>
-        </View>
-
-        {/* HÀNG 2: Thông tin phụ (Wrap linh hoạt, gap đều, maxWidth an toàn không bao giờ tràn viền) */}
-        <View style={styles.cardRow2}>
-          {/* Badge Chu kỳ lặp */}
-          <View style={[styles.infoChip, { backgroundColor: HABIT_ATTRIBUTE_COLORS.cycle.background, borderColor: HABIT_ATTRIBUTE_COLORS.cycle.border }]}>
-            <Ionicons
-              name={item.type === HABIT_TYPES.MONTHLY ? 'calendar-outline' : item.type === HABIT_TYPES.DAILY ? 'trophy-outline' : 'repeat-outline'}
-              size={13}
-              color={HABIT_ATTRIBUTE_COLORS.cycle.text}
-            />
-            <Text style={[styles.infoChipText, { color: HABIT_ATTRIBUTE_COLORS.cycle.text }]}>
-              {status.cycleInfo}
-            </Text>
-          </View>
-
-          {/* Huy hiệu nhắc nhở theo giờ (bấm để bật/tắt nhanh) */}
-          <Pressable
-            onPress={() => handleQuickToggleReminder(item)}
-            hitSlop={6}
-            style={[
-              styles.infoChip,
-              {
-                backgroundColor: item.reminderEnabled ? HABIT_ATTRIBUTE_COLORS.reminder.background : colors.cardElevated,
-                borderColor: item.reminderEnabled ? HABIT_ATTRIBUTE_COLORS.reminder.border : colors.cardBorder,
-              },
-            ]}
-          >
-            <Ionicons
-              name={item.reminderEnabled ? 'notifications' : 'notifications-off-outline'}
-              size={13}
-              color={item.reminderEnabled ? HABIT_ATTRIBUTE_COLORS.reminder.text : colors.sub}
-            />
-            <Text
-              style={[
-                styles.infoChipText,
-                { color: item.reminderEnabled ? HABIT_ATTRIBUTE_COLORS.reminder.text : colors.sub, fontWeight: item.reminderEnabled ? '700' : '500' },
-              ]}
-            >
-              {item.reminderEnabled ? item.reminderTime || '08:00' : 'Tắt'}
-            </Text>
-          </Pressable>
-
-          {/* Huy hiệu số lần đã hoàn thành (nhãn rõ ràng: Đã làm X lần) */}
-          {item.history && item.history.length > 0 && (
-            <Pressable
-              onPress={() => {
-                setSelectedHabitForHistory(item);
-                setHistoryModalVisible(true);
-              }}
-              hitSlop={6}
-              style={[styles.infoChip, { backgroundColor: HABIT_ATTRIBUTE_COLORS.count.background, borderColor: HABIT_ATTRIBUTE_COLORS.count.border }]}
-            >
-              <Ionicons name="time-outline" size={13} color={HABIT_ATTRIBUTE_COLORS.count.text} />
-              <Text style={[styles.infoChipText, { color: HABIT_ATTRIBUTE_COLORS.count.text }]}>
-                Đã làm {item.history.length} lần
-              </Text>
-            </Pressable>
-          )}
-
-          {/* Badge Danh mục */}
-          {item.category ? (
-            <View style={[styles.infoChip, { backgroundColor: `${item.color || '#64748B'}26`, borderColor: `${item.color || '#64748B'}80` }]}>
-              <Ionicons name="pricetag-outline" size={12} color={item.color || '#94A3B8'} />
-              <Text style={[styles.infoChipText, { color: item.color || '#94A3B8' }]}>{item.category}</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Thanh tiến trình chu kỳ */}
-        <View style={[styles.progressBarBg, { backgroundColor: colors.cardElevated }]}>
-          <View
-            style={[
-              styles.progressBarFill,
-              {
-                backgroundColor: urgencyColor,
-                width: `${Math.round(status.progress * 100)}%`,
-              },
-            ]}
-          />
-        </View>
-
-        {/* Nút bấm hành động Reset vòng lặp */}
-        <View style={styles.actionRow}>
-          {item.type === HABIT_TYPES.INTERVAL && (
-            <Pressable
-              onPress={() => handleCompleteHabit(item.id)}
-              style={[styles.resetBtn, { backgroundColor: urgencyColor }]}
-            >
-              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-              <Text style={styles.resetBtnText}>
-                Vừa làm xong · Reset {item.intervalDays} ngày
-              </Text>
-            </Pressable>
-          )}
-
-          {item.type === HABIT_TYPES.MONTHLY && (
-            <Pressable
-              onPress={() => handleCompleteHabit(item.id)}
-              style={[styles.resetBtn, { backgroundColor: urgencyColor }]}
-            >
-              <Ionicons name="calendar" size={18} color="#FFFFFF" />
-              <Text style={styles.resetBtnText}>
-                Đã hoàn thành · Chuyển tháng tới
-              </Text>
-            </Pressable>
-          )}
-
-          {item.type === HABIT_TYPES.DAILY && (
-            <View style={styles.dailyCounterRow}>
-              <Pressable
-                onPress={() => handleStepDaily(item.id, -1)}
-                style={[styles.stepBtnMinus, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
-              >
-                <Ionicons name="remove" size={18} color={colors.sub} />
-              </Pressable>
-
-              <Pressable
-                onPress={() => handleStepDaily(item.id, 1)}
-                style={[styles.stepBtnPlus, { backgroundColor: urgencyColor }]}
-              >
-                <Ionicons name="add" size={20} color="#FFFFFF" />
-                <Text style={styles.stepBtnPlusText}>
-                  {status.isCompleted ? 'Đã đạt mục tiêu' : `Tăng 1 ${item.unit || 'lần'} (${status.currentCount}/${status.targetCount})`}
-                </Text>
-              </Pressable>
-            </View>
-          )}
-        </View>
-      </View>
-    );
+  const hasActiveFilters = activeFilter !== 'all' || activeStatusFilter !== null || debouncedSearch.trim().length > 0;
+  const clearFilters = () => {
+    setActiveFilter('all');
+    setActiveStatusFilter(null);
+    setSearchInput('');
   };
 
   return (
@@ -1061,7 +908,7 @@ export default function MicroHabitScreen({ navigation, route }) {
         </View>
       ) : null}
       <ScreenHeader
-        title="Chu kỳ việc vặt"
+        title={t('microHabit.title') || 'Chu kỳ việc vặt'}
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
 
@@ -1069,7 +916,23 @@ export default function MicroHabitScreen({ navigation, route }) {
         ref={listRef}
         data={filteredHabits}
         keyExtractor={(item) => item.id}
-        renderItem={renderHabitItem}
+        renderItem={({ item }) => (
+          <HabitCard
+            item={item}
+            highlightHabitId={highlightHabitId}
+            colors={colors}
+            onOpenEditModal={handleOpenEditModal}
+            onDeleteHabit={handleDeleteHabit}
+            onQuickToggleReminder={handleQuickToggleReminder}
+            onOpenHistory={(habit) => {
+              setSelectedHabitForHistory(habit);
+              setHistoryModalVisible(true);
+            }}
+            onCompleteHabit={handleCompleteHabit}
+            onStepDaily={handleStepDaily}
+            t={t}
+          />
+        )}
         keyboardShouldPersistTaps="handled"
         onScrollBeginDrag={Keyboard.dismiss}
         onScrollToIndexFailed={({ index, averageItemLength }) => listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })}
@@ -1093,14 +956,14 @@ export default function MicroHabitScreen({ navigation, route }) {
                     style={[styles.aiSuggestTopBtn, { backgroundColor: '#7C3AED' }]}
                   >
                     <Ionicons name="sparkles" size={13} color="#FFFFFF" />
-                    <Text style={styles.aiSuggestTopBtnText}>AI Gợi ý</Text>
+                    <Text style={styles.aiSuggestTopBtnText}>{t('microHabit.aiSuggest') || 'AI Gợi ý'}</Text>
                   </Pressable>
                   <Pressable
                     onPress={handleOpenAddModal}
                     style={[styles.addTopBtn, { backgroundColor: '#10B981' }]}
                   >
                     <Ionicons name="add" size={16} color="#FFFFFF" />
-                    <Text style={styles.addTopBtnText}>Thêm việc</Text>
+                    <Text style={styles.addTopBtnText}>{t('microHabit.addHabit') || 'Thêm việc'}</Text>
                   </Pressable>
                 </View>
               </View>
@@ -1112,7 +975,7 @@ export default function MicroHabitScreen({ navigation, route }) {
                   style={[styles.statBox, { backgroundColor: activeStatusFilter === 'overdue' ? 'rgba(239, 68, 68, 0.24)' : 'rgba(239, 68, 68, 0.1)', borderColor: activeStatusFilter === 'overdue' ? '#EF4444' : 'transparent' }]}
                 >
                   <Text style={[styles.statNumber, { color: '#EF4444' }]}>{stats.overdue}</Text>
-                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>Quá hạn</Text>
+                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>{t('microHabit.urgent') || 'Quá hạn'}</Text>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -1120,7 +983,7 @@ export default function MicroHabitScreen({ navigation, route }) {
                   style={[styles.statBox, { backgroundColor: activeStatusFilter === 'warning' ? 'rgba(245, 158, 11, 0.24)' : 'rgba(245, 158, 11, 0.1)', borderColor: activeStatusFilter === 'warning' ? '#F59E0B' : 'transparent' }]}
                 >
                   <Text style={[styles.statNumber, { color: '#F59E0B' }]}>{stats.warning}</Text>
-                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>Sắp đến hạn</Text>
+                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>{t('microHabit.dueSoon') || 'Sắp đến hạn'}</Text>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -1128,7 +991,7 @@ export default function MicroHabitScreen({ navigation, route }) {
                   style={[styles.statBox, { backgroundColor: activeStatusFilter === 'safe' ? 'rgba(16, 185, 129, 0.24)' : 'rgba(16, 185, 129, 0.1)', borderColor: activeStatusFilter === 'safe' ? '#10B981' : 'transparent' }]}
                 >
                   <Text style={[styles.statNumber, { color: '#10B981' }]}>{stats.safe}</Text>
-                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>Chưa đến hạn</Text>
+                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>{t('microHabit.safe') || 'Chưa đến hạn'}</Text>
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
@@ -1136,7 +999,7 @@ export default function MicroHabitScreen({ navigation, route }) {
                   style={[styles.statBox, { backgroundColor: activeStatusFilter === 'completed' ? 'rgba(99, 102, 241, 0.24)' : colors.cardElevated, borderColor: activeStatusFilter === 'completed' ? '#818CF8' : 'transparent' }]}
                 >
                   <Text style={[styles.statNumber, { color: '#A5B4FC' }]}>{stats.completed}</Text>
-                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>Đã xong</Text>
+                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>{t('microHabit.todayDone') || 'Đã xong'}</Text>
                 </Pressable>
               </View>
             </View>
@@ -1146,7 +1009,7 @@ export default function MicroHabitScreen({ navigation, route }) {
               <TextInput
                 value={searchInput}
                 onChangeText={setSearchInput}
-                placeholder="Tìm tên việc..."
+                placeholder={t('microHabit.searchPlaceholder') || 'Tìm kiếm việc vặt...'}
                 placeholderTextColor={colors.sub}
                 style={[styles.searchInput, { color: colors.text }]}
                 returnKeyType="search"
@@ -1157,7 +1020,7 @@ export default function MicroHabitScreen({ navigation, route }) {
 
             {/* Bộ lọc Tab */}
             <View style={styles.filterRow}>
-              {FILTER_TABS.map((tab) => {
+              {filterTabs.map((tab) => {
                 const isActive = activeFilter === tab.id;
                 return (
                   <Pressable
@@ -1186,9 +1049,9 @@ export default function MicroHabitScreen({ navigation, route }) {
             {hasActiveFilters ? (
               <View style={styles.filterSummaryRow}>
                 <Text style={[styles.filterSummaryText, { color: colors.sub }]} numberOfLines={1}>
-                  {[activeStatusFilter === 'overdue' ? 'Quá hạn' : activeStatusFilter === 'warning' ? 'Sắp đến hạn' : activeStatusFilter === 'safe' ? 'Chưa đến hạn' : null, activeFilter !== 'all' ? FILTER_TABS.find((tab) => tab.id === activeFilter)?.label : null, debouncedSearch ? `“${debouncedSearch}”` : null, `${filteredHabits.length} việc`].filter(Boolean).join(' · ')}
+                  {[activeStatusFilter === 'overdue' ? 'Quá hạn' : activeStatusFilter === 'warning' ? 'Sắp đến hạn' : activeStatusFilter === 'safe' ? 'Chưa đến hạn' : null, activeFilter !== 'all' ? filterTabs.find((tab) => tab.id === activeFilter)?.label : null, debouncedSearch ? `“${debouncedSearch}”` : null, `${filteredHabits.length} việc`].filter(Boolean).join(' · ')}
                 </Text>
-                <Pressable onPress={clearFilters} hitSlop={8}><Text style={{ color: colors.primary, fontWeight: '800' }}>Xóa lọc</Text></Pressable>
+                <Pressable onPress={clearFilters} hitSlop={8}><Text style={{ color: colors.primary, fontWeight: '800' }}>{t('microHabit.clearFilter') || 'Xóa lọc'}</Text></Pressable>
               </View>
             ) : null}
           </>
@@ -1197,16 +1060,20 @@ export default function MicroHabitScreen({ navigation, route }) {
           <View style={styles.emptyBox}>
             <Ionicons name="checkmark-done-circle-outline" size={56} color={colors.sub} />
             <Text style={[styles.emptyText, { color: colors.sub }]}>
-              Không có việc nào phù hợp
+              {t('microHabit.noHabits') || 'Không có việc nào phù hợp'}
             </Text>
-            {hasActiveFilters ? <Pressable onPress={clearFilters} style={[styles.emptyClearButton, { borderColor: colors.primary }]}><Text style={{ color: colors.primary, fontWeight: '800' }}>Xóa lọc</Text></Pressable> : null}
+            {hasActiveFilters ? (
+              <Pressable onPress={clearFilters} style={[styles.emptyClearButton, { borderColor: colors.primary }]}>
+                <Text style={{ color: colors.primary, fontWeight: '800' }}>{t('microHabit.clearFilter') || 'Xóa lọc'}</Text>
+              </Pressable>
+            ) : null}
           </View>
         }
         ListFooterComponent={<View style={{ height: 100 }} />}
       />
 
-      {/* Modal Thêm / Chỉnh sửa việc vặt (Sử dụng FlatList cuộn chuẩn - CẤM ScrollView) */}
-      <Modal
+      {/* Modal Thêm / Chỉnh sửa việc vặt */}
+      <HabitFormModal
         visible={modalVisible}
         animationType="slide"
         transparent
@@ -2064,182 +1931,30 @@ export default function MicroHabitScreen({ navigation, route }) {
       </Modal>
 
       {/* Modal Xem lịch sử lần hoàn thành */}
-      <Modal
+      <HabitHistoryModal
         visible={historyModalVisible}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setHistoryModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                Lịch sử: {selectedHabitForHistory?.title}
-              </Text>
-              <Pressable onPress={() => setHistoryModalVisible(false)} hitSlop={8}>
-                <Ionicons name="close" size={24} color={colors.sub} />
-              </Pressable>
-            </View>
+        onClose={() => setHistoryModalVisible(false)}
+        habit={selectedHabitForHistory}
+        colors={colors}
+        t={t}
+      />
 
-            <FlatList
-              data={selectedHabitForHistory?.history || []}
-              keyExtractor={(h, idx) => h.id || String(idx)}
-              style={{ maxHeight: 320, marginVertical: 12 }}
-              renderItem={({ item: h }) => (
-                <View style={[styles.historyRow, { borderBottomColor: colors.cardBorder }]}>
-                  <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                  <Text style={[styles.historyDateText, { color: colors.text }]}>
-                    {new Date(h.timestamp).toLocaleDateString('vi-VN')} {new Date(h.timestamp).toLocaleTimeString('vi-VN')}
-                  </Text>
-                  <Text style={[styles.historyNoteText, { color: colors.sub }]}>{h.note}</Text>
-                </View>
-              )}
-              ListEmptyComponent={
-                <Text style={[styles.emptyText, { color: colors.sub, textAlign: 'center', marginVertical: 20 }]}>
-                  Chưa có lịch sử.
-                </Text>
-              }
-            />
-
-            <Pressable
-              onPress={() => setHistoryModalVisible(false)}
-              style={[styles.saveBtn, { backgroundColor: colors.cardElevated }]}
-            >
-              <Text style={[styles.saveBtnText, { color: colors.text }]}>Đóng</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Modal Gợi ý chu kỳ việc vặt bằng Gemini AI */}
-      <Modal
+      {/* Modal Gemini AI Gợi ý việc vặt */}
+      <HabitAiModal
         visible={aiModalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setAiModalVisible(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalOverlay}
-        >
-          <View style={[styles.aiModalCard, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="sparkles" size={22} color="#7C3AED" />
-                <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  Gemini AI Gợi ý việc vặt
-                </Text>
-              </View>
-              <Pressable onPress={() => setAiModalVisible(false)} hitSlop={8}>
-                <Ionicons name="close" size={24} color={colors.sub} />
-              </Pressable>
-            </View>
+        onClose={() => setAiModalVisible(false)}
+        aiPrompt={aiPrompt}
+        setAiPrompt={setAiPrompt}
+        isGeneratingAi={isGeneratingAi}
+        aiSuggestions={aiSuggestions}
+        onGenerateAiHabits={handleGenerateAiHabits}
+        onApplyAiHabits={handleApplyAiHabits}
+        colors={colors}
+        t={t}
+      />
 
-            <FlatList
-              data={[1]}
-              keyExtractor={() => 'ai-content'}
-              showsVerticalScrollIndicator={false}
-              renderItem={() => (
-                <View style={{ paddingBottom: 16 }}>
-                  <Text style={[styles.aiIntroText, { color: colors.sub }]}>
-                    Chọn chủ đề nhanh hoặc nhập nhu cầu sinh hoạt thực tế của bạn để Gemini AI tự động lên lịch chu kỳ tối ưu (100% miễn phí).
-                  </Text>
-
-                  {/* Nhóm chủ đề nhanh */}
-                  <View style={styles.aiTopicChipsRow}>
-                    {[
-                      { label: '🎓 Sinh viên ở trọ', prompt: 'Sinh viên ở trọ phòng riêng' },
-                      { label: '🛵 Bảo dưỡng xe máy', prompt: 'Bảo dưỡng xe máy tay ga định kỳ' },
-                      { label: '🩺 Sức khỏe sinh hoạt', prompt: 'Sức khỏe, uống nước, tập thể dục' },
-                      { label: '🐾 Nuôi thú cưng', prompt: 'Nuôi mèo và chó trong nhà' },
-                      { label: '🏠 Nhà cửa & Gas', prompt: 'Gia đình, nhà cửa, đổi gas, lọc nước' },
-                    ].map((topic) => (
-                      <Pressable
-                        key={topic.label}
-                        onPress={() => {
-                          setAiPrompt(topic.prompt);
-                          handleGenerateAiHabits(topic.prompt);
-                        }}
-                        style={[styles.aiTopicChip, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}
-                      >
-                        <Text style={[styles.aiTopicChipText, { color: colors.text }]}>{topic.label}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  {/* Ô nhập tùy biến */}
-                  <View style={styles.aiInputRow}>
-                    <TextInput
-                      style={[styles.aiCustomInput, { color: colors.text, borderColor: colors.cardBorder }]}
-                      value={aiPrompt}
-                      onChangeText={setAiPrompt}
-                      placeholder="VD: Người mới mua xe tay ga, sống 1 mình..."
-                      placeholderTextColor={colors.sub}
-                      returnKeyType="done"
-                      onSubmitEditing={() => handleGenerateAiHabits()}
-                    />
-                    <Pressable
-                      onPress={() => handleGenerateAiHabits()}
-                      disabled={isGeneratingAi}
-                      style={[styles.aiGenerateBtn, { backgroundColor: '#7C3AED', opacity: isGeneratingAi ? 0.6 : 1 }]}
-                    >
-                      {isGeneratingAi ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                      ) : (
-                        <Ionicons name="sparkles" size={18} color="#FFFFFF" />
-                      )}
-                    </Pressable>
-                  </View>
-
-                  {/* Danh sách gợi ý từ Gemini AI */}
-                  {aiSuggestions.length > 0 && (
-                    <View style={styles.aiResultsContainer}>
-                      <Text style={[styles.aiResultsTitle, { color: colors.text }]}>
-                        Đã tạo {aiSuggestions.length} việc vặt thông minh:
-                      </Text>
-
-                      {aiSuggestions.map((item, idx) => (
-                        <View
-                          key={idx}
-                          style={[
-                            styles.aiSuggestionCard,
-                            { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder },
-                          ]}
-                        >
-                          <View style={[styles.aiCardColorBar, { backgroundColor: item.color || '#3B82F6' }]} />
-                          <View style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 12 }}>
-                            <Text style={[styles.aiCardTitle, { color: colors.text }]}>{item.title}</Text>
-                            <Text style={[styles.aiCardSubtitle, { color: colors.sub }]}>
-                              {item.type === 'interval' && `Lặp lại mỗi ${item.intervalDays} ngày`}
-                              {item.type === 'monthly' && `Ngày ${item.dayOfMonth} hàng tháng`}
-                              {item.type === 'daily' && `Mỗi ngày ${item.targetCount} ${item.unit || 'lần'}`}
-                              {item.reminderTime ? ` • Nhắc lúc ${item.reminderTime}` : ''}
-                            </Text>
-                          </View>
-                        </View>
-                      ))}
-
-                      {/* Nút áp dụng tất cả */}
-                      <Pressable
-                        onPress={handleApplyAiHabits}
-                        style={[styles.applyAiBtn, { backgroundColor: '#10B981' }]}
-                      >
-                        <Ionicons name="checkmark-done" size={20} color="#FFFFFF" />
-                        <Text style={styles.applyAiBtnText}>
-                          Thêm tất cả vào danh sách (+{aiSuggestions.length})
-                        </Text>
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
-              )}
-            />
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Modal Debug Toàn Bộ Thông Báo OS Đã Lên Lịch (VIỆC 5) */}
-      <Modal
+      {/* Modal Debug Toàn Bộ Thông Báo OS Đã Lên Lịch */}
+      <HabitDebugNotifModal
         visible={debugNotifModalVisible}
         animationType="slide"
         transparent

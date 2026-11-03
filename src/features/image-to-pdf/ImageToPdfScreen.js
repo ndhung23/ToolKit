@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '../../components/ui';
 import { radius, useTheme } from '../../theme';
 import { useAuth } from '../auth';
+import { useLanguage } from '../../context/LanguageContext';
 
 const MAX_WIDTH = 1600;
 const STORAGE_KEY = 'toolkit_pdf_history';
@@ -38,6 +39,7 @@ export default function ImageToPdfScreen({ navigation }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { t, isVietnamese } = useLanguage();
 
   // Tab: 'create' | 'history'
   const [activeTab, setActiveTab] = useState('create');
@@ -311,7 +313,7 @@ export default function ImageToPdfScreen({ navigation }) {
           <View style={styles.historyMetaRow}>
             <View style={[styles.pagesPill, { backgroundColor: colors.primary + '1F' }]}>
               <Text style={[styles.pagesPillText, { color: colors.primary }]}>
-                {item.pageCount} trang
+                {item.pageCount} {isVietnamese ? 'trang' : 'pages'}
               </Text>
             </View>
             <Text style={[styles.historyDate, { color: colors.sub }]}>
@@ -328,7 +330,7 @@ export default function ImageToPdfScreen({ navigation }) {
           style={[styles.historyActionBtn, { backgroundColor: colors.bg }]}
         >
           <Ionicons name="eye-outline" size={17} color={colors.primary} />
-          <Text style={[styles.historyActionText, { color: colors.primary }]}>Xem / In</Text>
+          <Text style={[styles.historyActionText, { color: colors.primary }]}>{isVietnamese ? 'Xem / In' : 'View / Print'}</Text>
         </Pressable>
 
         <Pressable
@@ -336,7 +338,7 @@ export default function ImageToPdfScreen({ navigation }) {
           style={[styles.historyActionBtn, { backgroundColor: colors.bg }]}
         >
           <Ionicons name="share-outline" size={17} color="#10B981" />
-          <Text style={[styles.historyActionText, { color: '#10B981' }]}>Chia sẻ</Text>
+          <Text style={[styles.historyActionText, { color: '#10B981' }]}>{isVietnamese ? 'Chia sẻ' : 'Share'}</Text>
         </Pressable>
 
         <Pressable
@@ -344,7 +346,7 @@ export default function ImageToPdfScreen({ navigation }) {
           style={[styles.historyActionBtn, { backgroundColor: colors.bg }]}
         >
           <Ionicons name="trash-outline" size={17} color={colors.danger} />
-          <Text style={[styles.historyActionText, { color: colors.danger }]}>Xóa</Text>
+          <Text style={[styles.historyActionText, { color: colors.danger }]}>{isVietnamese ? 'Xóa' : 'Delete'}</Text>
         </Pressable>
       </View>
     </View>
@@ -353,12 +355,14 @@ export default function ImageToPdfScreen({ navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScreenHeader
-        title="Ghép ảnh PDF"
+        title={isVietnamese ? 'Ghép ảnh PDF' : 'Image to PDF'}
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
         rightAction={
           activeTab === 'history' && history.length > 0 ? (
             <Pressable onPress={clearAllHistory} hitSlop={8}>
-              <Text style={{ color: colors.danger, fontWeight: '700', fontSize: 13 }}>Xóa hết</Text>
+              <Text style={{ color: colors.danger, fontWeight: '700', fontSize: 13 }}>
+                {isVietnamese ? 'Xóa hết' : 'Clear All'}
+              </Text>
             </Pressable>
           ) : null
         }
@@ -384,7 +388,7 @@ export default function ImageToPdfScreen({ navigation }) {
               { color: activeTab === 'create' ? colors.primary : colors.sub },
             ]}
           >
-            Ghép ảnh mới
+            {isVietnamese ? 'Ghép ảnh mới' : 'Create PDF'}
           </Text>
         </Pressable>
 
@@ -406,7 +410,7 @@ export default function ImageToPdfScreen({ navigation }) {
               { color: activeTab === 'history' ? colors.primary : colors.sub },
             ]}
           >
-            Lịch sử ghép
+            {isVietnamese ? 'Lịch sử ghép' : 'PDF History'}
           </Text>
           {history.length > 0 && (
             <View style={[styles.badgeCount, { backgroundColor: colors.primary }]}>
@@ -430,7 +434,7 @@ export default function ImageToPdfScreen({ navigation }) {
                   <TextInput
                     value={pdfName}
                     onChangeText={setPdfName}
-                    placeholder="Tên file PDF (tùy chọn)..."
+                    placeholder={isVietnamese ? 'Tên file PDF (tùy chọn)...' : 'PDF document title (optional)...'}
                     placeholderTextColor={colors.sub}
                     style={[styles.nameInput, { color: colors.text }]}
                   />
@@ -442,9 +446,13 @@ export default function ImageToPdfScreen({ navigation }) {
                 <View style={[styles.emptyIconCircle, { backgroundColor: colors.primary + '1A' }]}>
                   <Ionicons name="images-outline" size={44} color={colors.primary} />
                 </View>
-                <Text style={[styles.emptyTitle, { color: colors.text }]}>Chưa chọn ảnh nào</Text>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  {isVietnamese ? 'Chưa chọn ảnh nào' : 'No photos selected'}
+                </Text>
                 <Text style={[styles.emptySub, { color: colors.sub }]}>
-                  Bấm nút "+ Chọn ảnh" bên dưới để tải ảnh từ thư viện
+                  {isVietnamese
+                    ? 'Bấm nút "+ Chọn ảnh" bên dưới để tải ảnh từ thư viện'
+                    : 'Tap "+ Select Photos" below to pick images from your gallery'}
                 </Text>
               </View>
             }
@@ -468,7 +476,9 @@ export default function ImageToPdfScreen({ navigation }) {
               style={[styles.btnOutline, { borderColor: colors.primary }]}
             >
               <Ionicons name="add" size={20} color={colors.primary} style={{ marginRight: 4 }} />
-              <Text style={[styles.btnOutlineText, { color: colors.primary }]}>Chọn ảnh</Text>
+              <Text style={[styles.btnOutlineText, { color: colors.primary }]}>
+                {isVietnamese ? 'Chọn ảnh' : 'Select Photos'}
+              </Text>
             </Pressable>
 
             <Pressable
@@ -485,7 +495,9 @@ export default function ImageToPdfScreen({ navigation }) {
               {loading ? (
                 <ActivityIndicator color="#121214" />
               ) : (
-                <Text style={styles.btnPrimaryText}>Tạo PDF ({images.length})</Text>
+                <Text style={styles.btnPrimaryText}>
+                  {isVietnamese ? `Tạo PDF (${images.length})` : `Convert to PDF (${images.length})`}
+                </Text>
               )}
             </Pressable>
           </View>
@@ -510,16 +522,20 @@ export default function ImageToPdfScreen({ navigation }) {
                     <Ionicons name="document-text-outline" size={44} color="#EF4444" />
                   </View>
                   <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                    Chưa có lịch sử ghép PDF
+                    {isVietnamese ? 'Chưa có lịch sử ghép PDF' : 'No PDF history yet'}
                   </Text>
                   <Text style={[styles.emptySub, { color: colors.sub }]}>
-                    Các file PDF bạn đã tạo sẽ được lưu lại đầy đủ tại đây
+                    {isVietnamese
+                      ? 'Các file PDF bạn đã tạo sẽ được lưu lại đầy đủ tại đây'
+                      : 'PDF files created will be safely preserved here'}
                   </Text>
                   <Pressable
                     onPress={() => setActiveTab('create')}
                     style={[styles.btnBackToCreate, { backgroundColor: colors.primary }]}
                   >
-                    <Text style={styles.btnBackToCreateText}>Ghép tài liệu ngay</Text>
+                    <Text style={styles.btnBackToCreateText}>
+                      {isVietnamese ? 'Ghép tài liệu ngay' : 'Create a PDF now'}
+                    </Text>
                   </Pressable>
                 </View>
               }

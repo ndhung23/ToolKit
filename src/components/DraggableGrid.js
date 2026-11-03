@@ -280,16 +280,15 @@ export default function DraggableGrid({
                     {
                       backgroundColor: isLocked ? 'rgba(255, 208, 0, 0.12)' : toolItem.color + '1F',
                     },
+                    toolItem.imageIcon && { backgroundColor: 'transparent' },
                   ]}
                 >
                   {toolItem.imageIcon ? (
-                    <View style={{ width: 28, height: 28, borderRadius: 8, overflow: 'hidden' }}>
-                      <Image
-                        source={toolItem.imageIcon}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
-                      />
-                    </View>
+                    <Image
+                      source={toolItem.imageIcon}
+                      style={{ width: '100%', height: '100%' }}
+                      resizeMode="cover"
+                    />
                   ) : (
                     <Ionicons
                       name={toolItem.icon}
@@ -410,6 +409,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,

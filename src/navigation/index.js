@@ -19,7 +19,7 @@ import { ScreenTimeScreen, StatsScreen } from '../features/screentime';
 import { FapExamScreen } from '../features/fap';
 import { ImageToPdfScreen } from '../features/image-to-pdf';
 import { CleanPhotosScreen } from '../features/clean-photos';
-import { FbMultiScreen } from '../features/fb-multi';
+import { FbMultiScreen } from '../features/multi';
 import { AiReplyScreen } from '../features/ai-reply';
 import { SnapVideoScreen } from '../features/snap-video';
 import { MicroHabitScreen } from '../features/micro-habit';
@@ -66,6 +66,7 @@ function Tabs() {
 /* ---------- 3. APP STACK (Tab + các tính năng chi tiết) ---------- */
 function AppStack() {
   const { colors } = useTheme();
+  const { t } = useLanguage();
   return (
     <AppStackNav.Navigator
       screenOptions={{
@@ -77,62 +78,62 @@ function AppStack() {
       <AppStackNav.Screen
         name="FapExam"
         component={FapExamScreen}
-        options={{ title: 'Nhắc nhở lịch thi FAP' }}
+        options={{ title: t('tools.fap_exam.title') }}
       />
       <AppStackNav.Screen
         name="ImageToPdf"
         component={ImageToPdfScreen}
-        options={{ title: 'Chuyển ảnh thành PDF' }}
+        options={{ title: t('tools.pdf.title') }}
       />
       <AppStackNav.Screen
         name="ScreenTime"
         component={ScreenTimeScreen}
-        options={{ title: 'Thời gian sử dụng' }}
+        options={{ title: t('tools.screentime.title') }}
       />
       <AppStackNav.Screen
         name="CleanPhotos"
         component={CleanPhotosScreen}
-        options={{ title: 'Dọn ảnh trùng lặp' }}
+        options={{ title: t('tools.clean_photos.title') }}
       />
       <AppStackNav.Screen
         name="FbMulti"
         component={FbMultiScreen}
-        options={{ title: 'Quản lý tài khoản Facebook' }}
+        options={{ title: t('tools.fb_multi.title') }}
       />
       <AppStackNav.Screen
         name="AiReply"
         component={AiReplyScreen}
-        options={{ title: 'AI gợi ý trả lời tin nhắn' }}
+        options={{ title: t('tools.ai_reply.title') }}
       />
       <AppStackNav.Screen
         name="SnapVideo"
         component={SnapVideoScreen}
-        options={{ title: 'Snap Video' }}
+        options={{ title: t('tools.snap_video.title') }}
       />
       <AppStackNav.Screen
         name="MicroHabit"
         component={MicroHabitScreen}
-        options={{ title: 'Chu kỳ việc vặt' }}
+        options={{ title: t('tools.micro_habit.title') }}
       />
       <AppStackNav.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: 'Cài đặt' }}
+        options={{ title: t('settings.title') }}
       />
       <AppStackNav.Screen
         name="AdminScreen"
         component={AdminScreen}
-        options={{ title: 'Quản trị hệ thống' }}
+        options={{ title: t('nav.admin') }}
       />
       <AppStackNav.Screen
         name="Login"
         component={LoginScreen}
-        options={{ title: 'Đăng nhập', headerShown: false }}
+        options={{ title: t('nav.login'), headerShown: false }}
       />
       <AppStackNav.Screen
         name="Register"
         component={RegisterScreen}
-        options={{ title: 'Đăng ký tài khoản', headerShown: false }}
+        options={{ title: t('nav.register'), headerShown: false }}
       />
     </AppStackNav.Navigator>
   );

@@ -3,6 +3,8 @@ import { View, Text, Pressable, StyleSheet, TextInput, Alert, FlatList } from 'r
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../context/LanguageContext';
+import { sendToGemini } from '../../services/geminiService';
 
 const SAMPLES = [
   'Báo cáo dự án hôm nay tiến độ đến đâu rồi em?',
@@ -12,6 +14,7 @@ const SAMPLES = [
 
 export default function AiReplyScreen({ navigation }) {
   const { colors } = useTheme();
+  const { isVietnamese } = useLanguage();
   const [incomingMsg, setIncomingMsg] = useState(SAMPLES[0]);
   const [analyzing, setAnalyzing] = useState(false);
   const [replies, setReplies] = useState([
@@ -35,16 +38,71 @@ export default function AiReplyScreen({ navigation }) {
     },
   ]);
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!incomingMsg.trim()) {
       Alert.alert('Chưa có tin nhắn', 'Hãy nhập hoặc dán nội dung tin nhắn bạn vừa nhận được.');
       return;
     }
     setAnalyzing(true);
-    setTimeout(() => {
+    try {
+      const prompt = `Phân tích tin nhắn sau của người khác gửi cho tôi: "${incomingMsg.trim()}".
+Hãy tạo 3 câu gợi ý phản hồi hay nhất bằng tiếng Việt theo 3 phong cách:
+1. Lịch sự & Chuyên nghiệp
+2. Thân thiện & Tự nhiên
+3. Ngắn gọn & Nhanh
+Trả về định dạng JSON thuần túy (không bọc trong markdown code block) theo cấu trúc:
+[
+  {"tone": "Lịch sự & Chuyên nghiệp", "text": "..."},
+  {"tone": "Thân thiện & Tự nhiên", "text": "..."},
+  {"tone": "Ngắn gọn & Nhanh", "text": "..."}
+]`;
+
+      const aiResponse = await sendToGemini([], prompt);
+      let parsed = null;
+      try {
+        const cleanJson = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(cleanJson);
+      } catch (_err) {
+        // Fallback nếu AI trả về text thường
+      }
+
+      if (Array.isArray(parsed) && parsed.length >= 3) {
+        setReplies([
+          {
+            tone: parsed[0].tone || 'Lịch sự & Chuyên nghiệp',
+            icon: 'briefcase',
+            color: '#3B82F6',
+            text: parsed[0].text,
+          },
+          {
+            tone: parsed[1].tone || 'Thân thiện & Tự nhiên',
+            icon: 'happy',
+            color: '#10B981',
+            text: parsed[1].text,
+          },
+          {
+            tone: parsed[2].tone || 'Ngắn gọn & Nhanh',
+            icon: 'flash',
+            color: '#F59E0B',
+            text: parsed[2].text,
+          },
+        ]);
+      } else {
+        // Cập nhật câu trả lời từ AI
+        setReplies((prev) => [
+          {
+            ...prev[0],
+            text: aiResponse.slice(0, 150),
+          },
+          ...prev.slice(1),
+        ]);
+      }
+      Alert.alert('AI Phân tích xong! ✨', 'Đã dùng Gemini 1.5 Flash tạo các gợi ý phản hồi phù hợp nhất.');
+    } catch (err) {
+      Alert.alert('Lỗi kết nối Gemini', err.message || 'Không thể tạo câu trả lời.');
+    } finally {
       setAnalyzing(false);
-      Alert.alert('AI Phân tích xong! ✨', 'Đã đọc ngữ cảnh và tạo 3 gợi ý phản hồi phù hợp nhất.');
-    }, 800);
+    }
   };
 
   const copyReply = (text) => {
@@ -54,7 +112,7 @@ export default function AiReplyScreen({ navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScreenHeader
-        title="AI Gợi ý trả lời"
+        title={isVietnamese ? 'AI Gợi ý trả lời' : 'AI Reply Assistant'}
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
       />
       <FlatList
@@ -66,19 +124,19 @@ export default function AiReplyScreen({ navigation }) {
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.cardHeaderRow}>
           <Ionicons name="chatbubbles" size={20} color={colors.primary} />
-          <Text style={styles.cardTitle}>Tin nhắn bạn nhận được</Text>
+          <Text style={styles.cardTitle}>{isVietnamese ? 'Tin nhắn bạn nhận được' : 'Incoming Message'}</Text>
         </View>
 
         <TextInput
           value={incomingMsg}
           onChangeText={setIncomingMsg}
           multiline
-          placeholder="Dán hoặc gõ tin nhắn nhận được vào đây..."
+          placeholder={isVietnamese ? 'Dán hoặc gõ tin nhắn nhận được vào đây...' : 'Paste or type message here...'}
           placeholderTextColor={colors.sub}
           style={[styles.msgInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.bg }]}
         />
 
-        <Text style={[styles.sampleLabel, { color: colors.sub }]}>Gợi ý tin nhắn mẫu:</Text>
+        <Text style={[styles.sampleLabel, { color: colors.sub }]}>{isVietnamese ? 'Gợi ý tin nhắn mẫu:' : 'Sample messages:'}</Text>
         <View style={styles.samplesRow}>
           {SAMPLES.map((s, idx) => (
             <Pressable
@@ -100,13 +158,15 @@ export default function AiReplyScreen({ navigation }) {
         >
           <Ionicons name="sparkles" size={18} color="#121214" />
           <Text style={styles.analyzeBtnText}>
-            {analyzing ? 'AI đang phân tích ngữ cảnh...' : 'AI phân tích & gợi ý trả lời'}
+            {analyzing
+              ? (isVietnamese ? 'AI đang phân tích ngữ cảnh...' : 'AI analyzing context...')
+              : (isVietnamese ? 'AI phân tích & gợi ý trả lời' : 'Analyze & Suggest Replies')}
           </Text>
         </Pressable>
       </View>
 
       {/* Danh sách 3 gợi ý trả lời từ AI */}
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Gợi ý phản hồi thông minh</Text>
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>{isVietnamese ? 'Gợi ý phản hồi thông minh' : 'Smart Reply Suggestions'}</Text>
 
       {replies.map((reply, idx) => (
         <View
@@ -124,7 +184,7 @@ export default function AiReplyScreen({ navigation }) {
               style={[styles.copyBtn, { backgroundColor: 'rgba(255, 208, 0, 0.12)' }]}
             >
               <Ionicons name="copy-outline" size={14} color={colors.primary} />
-              <Text style={[styles.copyText, { color: colors.primary }]}>Sao chép</Text>
+              <Text style={[styles.copyText, { color: colors.primary }]}>{isVietnamese ? 'Sao chép' : 'Copy'}</Text>
             </Pressable>
           </View>
 
