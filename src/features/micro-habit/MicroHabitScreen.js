@@ -6,18 +6,17 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   Alert,
   FlatList,
   Platform,
   Keyboard,
-  ActivityIndicator,
   BackHandler,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import { useLanguage } from '../../i18n';
 import runAfterUi from '../../utils/runAfterUi';
 import { generateHabitsWithAi } from '../../services/geminiService';
 import {
@@ -39,7 +38,6 @@ import {
   scheduleHabitReminder,
   cancelHabitReminder,
   cancelHabitRemindersForTask,
-  testInstantNotification,
   getAllScheduledHabitReminders,
   reconcileHabitReminders,
 } from './NotificationService';
@@ -51,6 +49,10 @@ import HabitFormModal from './components/HabitFormModal';
 import HabitAiModal from './components/HabitAiModal';
 import HabitHistoryModal from './components/HabitHistoryModal';
 import HabitDebugNotifModal from './components/HabitDebugNotifModal';
+import HabitStatsHeader from './components/HabitStatsHeader';
+import { serializeHabitFormState } from './components/habitFormUtils';
+
+export { serializeHabitFormState };
 
 const INTERVAL_PRESETS = [7, 14, 30, 60, 90, 180, 365];
 const DAILY_PRESETS = [1, 2, 4, 8, 10];
@@ -58,46 +60,6 @@ const DAILY_UNITS = ['lần', 'cốc', 'viên', 'km'];
 const CATEGORIES = [...DEFAULT_CATEGORIES, 'Khác'];
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => i + 1);
 const PRESET_COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#06B6D4', '#64748B'];
-
-export function serializeHabitFormState({
-  title = '',
-  type = HABIT_TYPES.INTERVAL,
-  intervalDays = '30',
-  dayOfMonth = '5',
-  targetCount = '2',
-  unit = 'lần',
-  category = 'Sinh hoạt',
-  customCategory = '',
-  note = '',
-  icon = 'repeat',
-  color = '#10B981',
-  reminderEnabled = false,
-  reminderTime = '08:00',
-  reminderIntervalHours = '0',
-  reminderIntervalMinutes = '0',
-  reminderEndTime = '',
-  startDate = null,
-} = {}) {
-  return JSON.stringify({
-    title: String(title || '').trim(),
-    type: String(type || HABIT_TYPES.INTERVAL),
-    intervalDays: String(parseInt(intervalDays || '30', 10)),
-    dayOfMonth: String(parseInt(dayOfMonth || '5', 10)),
-    targetCount: String(parseInt(targetCount || '2', 10)),
-    unit: String(unit || 'lần').trim(),
-    category: String(category || 'Sinh hoạt').trim(),
-    customCategory: String(customCategory || '').trim(),
-    note: String(note || '').trim(),
-    icon: String(icon || 'repeat'),
-    color: String(color || '#10B981'),
-    reminderEnabled: Boolean(reminderEnabled),
-    reminderTime: String(reminderTime || '08:00').trim(),
-    reminderIntervalHours: String(parseInt(reminderIntervalHours || '0', 10)),
-    reminderIntervalMinutes: String(parseInt(reminderIntervalMinutes || '0', 10)),
-    reminderEndTime: String(reminderEndTime || '').trim(),
-    startDate: startDate ? String(startDate).slice(0, 10) : null,
-  });
-}
 
 export default function MicroHabitScreen({ navigation, route }) {
   const { colors } = useTheme();
@@ -119,7 +81,7 @@ export default function MicroHabitScreen({ navigation, route }) {
   const [debugNotifModalVisible, setDebugNotifModalVisible] = useState(false);
   const [scheduledNotifs, setScheduledNotifs] = useState([]);
 
-  // Gemini AI Suggestion State
+  // Gemini AI Gợi ý việc vặt
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState([]);
@@ -149,12 +111,23 @@ export default function MicroHabitScreen({ navigation, route }) {
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [formErrors, setFormErrors] = useState({});
 
-  // Cảnh báo thoát khi chưa lưu (VIỆC AG) & Trạng thái lưu an toàn không đơ UI (VIỆC AH)
+  // Cảnh báo thoát khi chưa lưu & Trạng thái lưu an toàn
   const initialFormSnapshot = useRef(null);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const pendingExitActionRef = useRef(null);
   const [isSaving, setIsSaving] = useState(false);
   const isBypassingUnsavedCheck = useRef(false);
+
+  // Native Time Picker
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  const filterTabs = useMemo(() => [
+    { id: 'all', label: t('microHabit.tabAll') || 'Tất cả' },
+    { id: 'urgent', label: t('microHabit.tabUrgent') || 'Khẩn cấp 🚨' },
+    { id: 'interval', label: t('microHabit.tabInterval') || 'Theo ngày 🔄' },
+    { id: 'monthly', label: t('microHabit.tabMonthly') || 'Hàng tháng 📅' },
+    { id: 'daily', label: t('microHabit.tabDaily') || 'Trong ngày 🎯' },
+  ], [t]);
 
   const occurrencePreview = useMemo(() => {
     return computeNextOccurrence({
@@ -167,18 +140,6 @@ export default function MicroHabitScreen({ navigation, route }) {
     }, new Date(), formStartDate);
   }, [formType, formIntervalDays, formDayOfMonth, formTargetCount, formReminderTime, formStartDate]);
 
-  // Native Time Picker (VIỆC 1)
-  const [showTimePicker, setShowTimePicker] = useState(false);
-
-  const filterTabs = useMemo(() => [
-    { id: 'all', label: t('microHabit.tabAll') || 'Tất cả' },
-    { id: 'urgent', label: t('microHabit.tabUrgent') || 'Khẩn cấp 🚨' },
-    { id: 'interval', label: t('microHabit.tabInterval') || 'Theo ngày 🔄' },
-    { id: 'monthly', label: t('microHabit.tabMonthly') || 'Hàng tháng 📅' },
-    { id: 'daily', label: t('microHabit.tabDaily') || 'Trong ngày 🎯' },
-  ], [t]);
-
-  // Giờ và phút dạng Date cho DateTimePicker
   const pickerDate = useMemo(() => {
     const parts = (formReminderTime || '08:00').split(':');
     const d = new Date();
@@ -197,7 +158,6 @@ export default function MicroHabitScreen({ navigation, route }) {
     }
   }, []);
 
-  // Mở modal xem danh sách thông báo OS
   const handleOpenDebugNotifs = useCallback(async () => {
     const list = await getAllScheduledHabitReminders();
     setScheduledNotifs(list);
@@ -205,32 +165,19 @@ export default function MicroHabitScreen({ navigation, route }) {
   }, []);
 
   const handleSelfHealNotifications = useCallback(async () => {
-    const synchronized = await reconcileHabitReminders(habits);
-    await saveSharedHabits(synchronized);
-    const list = await getAllScheduledHabitReminders();
-    setScheduledNotifs(list);
-    Alert.alert('Đã tự đối chiếu & đồng bộ', `Hệ thống đã kiểm tra ${habits.length} việc vặt và cập nhật lại toàn bộ lịch hẹn thông báo trong OS.`);
-  }, [habits]);
-
-  // Thử nghiệm gửi thông báo tức thì (2 giây)
-  const handleTestNotification = useCallback(async () => {
     try {
-      const taskId = editingId || habits[0]?.id;
-      await testInstantNotification(
-        taskId,
-        '🔔 Nhắc việc',
-        `${formTitle.trim() || 'Thay nhớt xe máy'}\nĐã đến giờ kiểm tra và hoàn thành chu kỳ sinh hoạt!`
-      );
+      const result = await reconcileHabitReminders(habits);
+      const list = await getAllScheduledHabitReminders();
+      setScheduledNotifs(list);
       Alert.alert(
-        'Đã gửi thông báo thử',
-        'Vui lòng vuốt từ mép trên màn hình hoặc khóa màn hình trong 2 giây để thấy banner thông báo.'
+        'Đã đối chiếu thông báo',
+        `Đã kiểm tra lại thông báo hệ thống (${result?.scheduledCount || list.length} thông báo hợp lệ).`
       );
     } catch (err) {
-      Alert.alert('Lỗi', err.message || 'Không thể gửi thông báo thử nghiệm.');
+      Alert.alert('Lỗi', err.message || 'Không thể tự đối chiếu thông báo.');
     }
-  }, [editingId, habits, formTitle]);
+  }, [habits]);
 
-  // Khởi tạo danh sách & đồng bộ
   useEffect(() => {
     let unsubscribe = () => {};
     const init = async () => {
@@ -259,7 +206,6 @@ export default function MicroHabitScreen({ navigation, route }) {
     saveSharedHabits(newList);
   }, []);
 
-  // Xử lý deep link / notification click
   useEffect(() => {
     const targetId = route.params?.targetHabitId;
     if (!targetId || habits.length === 0 || handledRouteHabitId.current === targetId) return;
@@ -286,7 +232,6 @@ export default function MicroHabitScreen({ navigation, route }) {
     }
   }, [route.params?.targetHabitId, habits]);
 
-  // AI Habit Generation
   const handleOpenAiModal = useCallback(() => {
     setAiPrompt('');
     setAiSuggestions([]);
@@ -354,7 +299,6 @@ export default function MicroHabitScreen({ navigation, route }) {
     Alert.alert('Thành công', `Đã thêm ${newItems.length} việc vặt thông minh vào danh sách theo dõi của bạn! 🎉`);
   }, [aiSuggestions, habits, updateHabitsList]);
 
-  // Hoàn thành việc / Reset chu kỳ
   const handleCompleteHabit = (id) => {
     const updated = recordHabitCompletion(habits, id);
     updateHabitsList(updated);
@@ -412,16 +356,19 @@ export default function MicroHabitScreen({ navigation, route }) {
           text: t('common.confirm') || 'Xóa',
           style: 'destructive',
           onPress: async () => {
-            await cancelHabitRemindersForTask(id);
-            const remaining = habits.filter((h) => h.id !== id);
-            updateHabitsList(remaining);
+            const target = habits.find((h) => h.id === id);
+            if (target?.notificationId) {
+              await cancelHabitReminder(target.notificationId);
+            }
+            updateHabitsList(habits.filter((h) => h.id !== id));
           },
         },
       ]
     );
   };
 
-  const handleOpenAddModal = () => {
+  const handleOpenAddModal = useCallback(() => {
+    isBypassingUnsavedCheck.current = false;
     setEditingId(null);
     setFormTitle('');
     setFormType(HABIT_TYPES.INTERVAL);
@@ -441,6 +388,9 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormReminderEndTime('');
     setFormStartDate(null);
     setFormErrors({});
+    setShowUnsavedConfirm(false);
+    setIsSaving(false);
+
     initialFormSnapshot.current = serializeHabitFormState({
       title: '',
       type: HABIT_TYPES.INTERVAL,
@@ -460,10 +410,12 @@ export default function MicroHabitScreen({ navigation, route }) {
       reminderEndTime: '',
       startDate: null,
     });
-    setModalVisible(true);
-  };
 
-  const handleOpenEditModal = (item) => {
+    setModalVisible(true);
+  }, []);
+
+  const handleOpenEditModal = useCallback((item) => {
+    isBypassingUnsavedCheck.current = false;
     setEditingId(item.id);
     setFormTitle(item.title || '');
     setFormType(item.type || HABIT_TYPES.INTERVAL);
@@ -483,6 +435,9 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormReminderEndTime(item.reminderEndTime || '');
     setFormStartDate(item.startDate || null);
     setFormErrors({});
+    setShowUnsavedConfirm(false);
+    setIsSaving(false);
+
     initialFormSnapshot.current = serializeHabitFormState({
       title: item.title || '',
       type: item.type || HABIT_TYPES.INTERVAL,
@@ -502,8 +457,9 @@ export default function MicroHabitScreen({ navigation, route }) {
       reminderEndTime: item.reminderEndTime || '',
       startDate: item.startDate || null,
     });
+
     setModalVisible(true);
-  };
+  }, []);
 
   const handleQuickToggleReminder = async (item) => {
     const newEnabled = !item.reminderEnabled;
@@ -541,7 +497,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     requestOpenTask(taskId);
   }, []);
 
-  const handleSaveForm = async () => {
+  const validateHabitForm = useCallback(() => {
     const errors = {};
     const trimmedTitle = formTitle.trim();
     const titleError = validateHabitTitle(trimmedTitle);
@@ -552,13 +508,6 @@ export default function MicroHabitScreen({ navigation, route }) {
       const customError = validateCategoryName(formCustomCategory);
       if (customError) {
         errors.category = customError;
-      } else {
-        selectedCategory = formCustomCategory.trim();
-        if (!customCategories.includes(selectedCategory)) {
-          const nextCustomCats = [...customCategories, selectedCategory];
-          setCustomCategories(nextCustomCats);
-          await saveCustomCategories(nextCustomCats);
-        }
       }
     }
 
@@ -581,40 +530,87 @@ export default function MicroHabitScreen({ navigation, route }) {
       }
     }
 
-    // Validate giờ nhắc nhở
     if (formReminderEnabled) {
       const validTime = (formReminderTime || '').trim();
       if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(validTime)) {
         errors.reminderTime = 'Giờ không hợp lệ (VD: 08:00, 19:30).';
       }
     }
-    if (formCategory === 'Khác') {
-      const categoryError = validateCategoryName(formCustomCategory);
-      if (categoryError) errors.category = categoryError;
-    }
 
     return errors;
   }, [formTitle, formType, formIntervalDays, formDayOfMonth, formTargetCount, formReminderEnabled, formReminderTime, formCategory, formCustomCategory]);
 
-  // Kiểm tra form có hợp lệ không (dùng để disable nút Lưu)
   const isFormValid = useMemo(() => {
     const errors = validateHabitForm();
     return Object.keys(errors).length === 0;
   }, [validateHabitForm]);
 
-  // 7. Lưu việc vặt từ Modal (Thêm hoặc Sửa) — Thiết kế 2 giai đoạn không đơ giao diện (VIỆC AH)
-  const handleSaveForm = async () => {
-    if (isSaving) return; // Chống bấm đúp (anti double-click)
-    const errors = validateHabitForm();
-    setFormErrors(errors);
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
+  const isFormDirty = useCallback(() => {
+    if (isBypassingUnsavedCheck.current || !initialFormSnapshot.current) return false;
+    const currentSnapshot = serializeHabitFormState({
+      title: formTitle,
+      type: formType,
+      intervalDays: formIntervalDays,
+      dayOfMonth: formDayOfMonth,
+      targetCount: formTargetCount,
+      unit: formUnit,
+      category: formCategory,
+      customCategory: formCustomCategory,
+      note: formNote,
+      icon: formIcon,
+      color: formColor,
+      reminderEnabled: formReminderEnabled,
+      reminderTime: formReminderTime,
+      reminderIntervalHours: formReminderIntervalHours,
+      reminderIntervalMinutes: formReminderIntervalMinutes,
+      reminderEndTime: formReminderEndTime,
+      startDate: formStartDate,
+    });
+    return currentSnapshot !== initialFormSnapshot.current;
+  }, [formTitle, formType, formIntervalDays, formDayOfMonth, formTargetCount, formUnit, formCategory, formCustomCategory, formNote, formIcon, formColor, formReminderEnabled, formReminderTime, formReminderIntervalHours, formReminderIntervalMinutes, formReminderEndTime, formStartDate]);
+
+  const requestCloseModal = useCallback((onConfirmed) => {
+    Keyboard.dismiss();
+    if (isBypassingUnsavedCheck.current || !isFormDirty()) {
+      setShowUnsavedConfirm(false);
+      setModalVisible(false);
+      setEditingId(null);
+      setFormErrors({});
+      initialFormSnapshot.current = null;
+      if (typeof onConfirmed === 'function') onConfirmed();
       return;
     }
+    pendingExitActionRef.current = typeof onConfirmed === 'function' ? onConfirmed : null;
+    setShowUnsavedConfirm(true);
+  }, [isFormDirty]);
+
+  const handleContinueEditing = useCallback(() => {
+    setShowUnsavedConfirm(false);
+    pendingExitActionRef.current = null;
+  }, []);
+
+  const handleDiscardAndExit = useCallback(() => {
+    isBypassingUnsavedCheck.current = true;
+    setShowUnsavedConfirm(false);
+    setModalVisible(false);
+    setEditingId(null);
+    setFormErrors({});
+    initialFormSnapshot.current = null;
+    if (pendingExitActionRef.current) {
+      pendingExitActionRef.current();
+      pendingExitActionRef.current = null;
+    }
+  }, []);
+
+  const handleSaveForm = useCallback(async () => {
+    if (isSaving) return;
+    const errors = validateHabitForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
 
     setIsSaving(true);
-    isBypassingUnsavedCheck.current = true; // Bỏ qua chặn thoát khi người dùng đã bấm lưu
-    const wasEditing = Boolean(editingId);
+    isBypassingUnsavedCheck.current = true;
+    const wasEditing = !!editingId;
 
     const trimmedTitle = formTitle.trim();
     const validTime = (formReminderTime || '08:00').trim();
@@ -630,7 +626,6 @@ export default function MicroHabitScreen({ navigation, route }) {
     const parsedTargetCount = Math.min(1000, Math.max(1, parseInt(formTargetCount || 1, 10)));
     const parsedReminderIntervalHours = Math.min(24, Math.max(0, parseInt(formReminderIntervalHours || 0, 10)));
     const parsedReminderIntervalMinutes = Math.min(55, Math.max(0, parseInt(formReminderIntervalMinutes || 0, 10)));
-    // Total interval in minutes (for custom: hours * 60 + minutes); min 15 min if interval > 0
     const totalIntervalMinutes = parsedReminderIntervalHours * 60 + parsedReminderIntervalMinutes;
     const effectiveIntervalMinutes = totalIntervalMinutes > 0 ? Math.max(15, totalIntervalMinutes) : 0;
 
@@ -690,12 +685,9 @@ export default function MicroHabitScreen({ navigation, route }) {
       updatedList = [savedItem, ...habits];
     }
 
-    // GIAI ĐOẠN (a) NHANH, ĐỒNG BỘ (< 50ms):
-    // 1. Cập nhật state và store ngay lập tức
     setHabits(updatedList);
     saveSharedHabits(updatedList).catch((err) => console.warn('[HabitStore] Save error:', err));
 
-    // 2. Đóng Modal ngay lập tức, giải phóng UI và bàn phím
     setModalVisible(false);
     setShowUnsavedConfirm(false);
     setEditingId(null);
@@ -703,10 +695,8 @@ export default function MicroHabitScreen({ navigation, route }) {
     setIsSaving(false);
     initialFormSnapshot.current = null;
 
-    // GIAI ĐOẠN (b) NỀN: Chạy sau khi modal đóng hoàn toàn (không chặn JS thread)
     runAfterUi(async () => {
       try {
-        // 1. Đồng bộ thông báo hệ điều hành (có timeout 6s)
         if (savedItem.reminderEnabled) {
           const schedulePromise = scheduleHabitReminder(savedItem);
           const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000));
@@ -728,7 +718,6 @@ export default function MicroHabitScreen({ navigation, route }) {
           cancelHabitRemindersForTask(savedItem.id).catch(() => {});
         }
 
-        // 2. Auto-routing về đúng tab bộ lọc và highlight (VIỆC AF)
         const targetStatus = calculateHabitStatus(savedItem);
         const targetGroup = getHabitStatusGroup(targetStatus);
         const STATUS_GROUP_NAMES = {
@@ -755,7 +744,6 @@ export default function MicroHabitScreen({ navigation, route }) {
         setHighlightHabitId(savedItem.id);
         setTimeout(() => setHighlightHabitId(null), 2500);
 
-        // 3. Cuộn: Chỉ cuộn lên đầu khi tạo việc mới; nếu chỉnh sửa việc thì giữ nguyên vị trí ban đầu
         if (!wasEditing) {
           setTimeout(() => {
             listRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -767,50 +755,8 @@ export default function MicroHabitScreen({ navigation, route }) {
         isBypassingUnsavedCheck.current = false;
       }
     });
-  };
+  }, [isSaving, validateHabitForm, editingId, formTitle, formReminderTime, formCategory, formCustomCategory, customCategories, formDayOfMonth, formIntervalDays, formTargetCount, formReminderIntervalHours, formReminderIntervalMinutes, formReminderEndTime, formStartDate, habits, formType, formUnit, formNote, formIcon, formColor, formReminderEnabled, activeStatusFilter, activeFilter, debouncedSearch]);
 
-  // Xác định "có thay đổi" bằng cách so sánh giá trị đã chuẩn hóa với bản gốc lúc mở (VIỆC AG & VIỆC AI)
-  const isFormDirty = useCallback(() => {
-    if (isBypassingUnsavedCheck.current || !initialFormSnapshot.current) return false;
-    const currentSnapshot = serializeHabitFormState({
-      title: formTitle,
-      type: formType,
-      intervalDays: formIntervalDays,
-      dayOfMonth: formDayOfMonth,
-      targetCount: formTargetCount,
-      unit: formUnit,
-      category: formCategory,
-      customCategory: formCustomCategory,
-      note: formNote,
-      icon: formIcon,
-      color: formColor,
-      reminderEnabled: formReminderEnabled,
-      reminderTime: formReminderTime,
-      reminderIntervalHours: formReminderIntervalHours,
-      reminderIntervalMinutes: formReminderIntervalMinutes,
-      reminderEndTime: formReminderEndTime,
-      startDate: formStartDate,
-    });
-    return currentSnapshot !== initialFormSnapshot.current;
-  }, [formTitle, formType, formIntervalDays, formDayOfMonth, formTargetCount, formUnit, formCategory, formCustomCategory, formNote, formIcon, formColor, formReminderEnabled, formReminderTime, formReminderIntervalHours, formReminderIntervalMinutes, formReminderEndTime, formStartDate]);
-
-  // Chặn mọi đường thoát khi có thay đổi chưa lưu (VIỆC AG & VIỆC AI)
-  const requestCloseModal = useCallback((onConfirmed) => {
-    Keyboard.dismiss();
-    if (isBypassingUnsavedCheck.current || !isFormDirty()) {
-      setShowUnsavedConfirm(false);
-      setModalVisible(false);
-      setEditingId(null);
-      setFormErrors({});
-      initialFormSnapshot.current = null;
-      if (typeof onConfirmed === 'function') onConfirmed();
-      return;
-    }
-    pendingExitActionRef.current = typeof onConfirmed === 'function' ? onConfirmed : null;
-    setShowUnsavedConfirm(true);
-  }, [isFormDirty]);
-
-  // Lựa chọn 1: Lưu và thoát (validate trước; có lỗi ở lại form; hợp lệ thì lưu và đóng)
   const handleSaveAndExit = useCallback(async () => {
     const errors = validateHabitForm();
     setFormErrors(errors);
@@ -825,53 +771,14 @@ export default function MicroHabitScreen({ navigation, route }) {
     }
   }, [validateHabitForm, handleSaveForm]);
 
-  // Lựa chọn 2: Không lưu (đóng và bỏ thay đổi, không động đến thông báo)
-  const handleDiscardAndExit = useCallback(() => {
-    isBypassingUnsavedCheck.current = true;
-    setShowUnsavedConfirm(false);
-    setModalVisible(false);
-    setEditingId(null);
-    setFormErrors({});
-    initialFormSnapshot.current = null;
-    if (pendingExitActionRef.current) {
-      pendingExitActionRef.current();
-      pendingExitActionRef.current = null;
-    }
-    setTimeout(() => {
-      isBypassingUnsavedCheck.current = false;
-    }, 300);
-  }, []);
-
-  // Lựa chọn 3: Tiếp tục chỉnh sửa (đóng hộp thoại, giữ nguyên toàn bộ nội dung, scroll, bàn phím)
-  const handleContinueEditing = useCallback(() => {
-    setShowUnsavedConfirm(false);
-    pendingExitActionRef.current = null;
-  }, []);
-
-  // Chặn Back button phần cứng trên Android khi có thay đổi chưa lưu (VIỆC AG)
   useEffect(() => {
     if (!modalVisible) return undefined;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       requestCloseModal();
       return true;
     });
-    return () => sub.remove();
+    return () => subscription.remove();
   }, [modalVisible, requestCloseModal]);
-
-  // Chặn điều hướng navigation sang màn hình khác khi có thay đổi chưa lưu (VIỆC AG)
-  useEffect(() => {
-    if (!navigation) return undefined;
-    const sub = navigation.addListener('beforeRemove', (e) => {
-      if (!modalVisible || !isFormDirty()) return;
-      e.preventDefault();
-      requestCloseModal(() => navigation.dispatch(e.data.action));
-    });
-    return sub;
-  }, [navigation, modalVisible, isFormDirty, requestCloseModal]);
-
-  const isFormValid = useMemo(() => {
-    return formTitle.trim().length > 0;
-  }, [formTitle]);
 
   const habitsWithStatus = useMemo(() => {
     return habits.map((h) => ({
@@ -899,14 +806,26 @@ export default function MicroHabitScreen({ navigation, route }) {
     setSearchInput('');
   };
 
+  const renderHabitItem = useCallback(({ item }) => (
+    <HabitCard
+      item={item}
+      highlightHabitId={highlightHabitId}
+      colors={colors}
+      onOpenEditModal={handleOpenEditModal}
+      onDeleteHabit={handleDeleteHabit}
+      onQuickToggleReminder={handleQuickToggleReminder}
+      onOpenHistory={(habit) => {
+        setSelectedHabitForHistory(habit);
+        setHistoryModalVisible(true);
+      }}
+      onCompleteHabit={handleCompleteHabit}
+      onStepDaily={handleStepDaily}
+      t={t}
+    />
+  ), [highlightHabitId, colors, handleOpenEditModal, handleDeleteHabit, handleQuickToggleReminder, handleCompleteHabit, handleStepDaily, t]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {toastMessage ? (
-        <View style={styles.toastPill}>
-          <Ionicons name="information-circle" size={16} color="#FFFFFF" />
-          <Text style={styles.toastPillText}>{toastMessage}</Text>
-        </View>
-      ) : null}
       <ScreenHeader
         title={t('microHabit.title') || 'Chu kỳ việc vặt'}
         onBack={navigation?.canGoBack() ? () => navigation.goBack() : undefined}
@@ -916,145 +835,32 @@ export default function MicroHabitScreen({ navigation, route }) {
         ref={listRef}
         data={filteredHabits}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <HabitCard
-            item={item}
-            highlightHabitId={highlightHabitId}
-            colors={colors}
-            onOpenEditModal={handleOpenEditModal}
-            onDeleteHabit={handleDeleteHabit}
-            onQuickToggleReminder={handleQuickToggleReminder}
-            onOpenHistory={(habit) => {
-              setSelectedHabitForHistory(habit);
-              setHistoryModalVisible(true);
-            }}
-            onCompleteHabit={handleCompleteHabit}
-            onStepDaily={handleStepDaily}
-            t={t}
-          />
-        )}
+        renderItem={renderHabitItem}
         keyboardShouldPersistTaps="handled"
         onScrollBeginDrag={Keyboard.dismiss}
         onScrollToIndexFailed={({ index, averageItemLength }) => listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: true })}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
-          <>
-            {/* Thẻ Thống kê Tổng quan */}
-            <View style={[styles.statsCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-              <View style={styles.statsHeader}>
-                <View style={styles.statsActionsRow}>
-                  <Pressable
-                    onPress={handleOpenDebugNotifs}
-                    style={[styles.debugNotifTopBtn, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}
-                    accessibilityLabel="Kiểm tra lịch báo hệ điều hành"
-                  >
-                    <Ionicons name="notifications-outline" size={13} color={colors.sub} />
-                  </Pressable>
-                  <Pressable
-                    onPress={handleOpenAiModal}
-                    style={[styles.aiSuggestTopBtn, { backgroundColor: '#7C3AED' }]}
-                  >
-                    <Ionicons name="sparkles" size={13} color="#FFFFFF" />
-                    <Text style={styles.aiSuggestTopBtnText}>{t('microHabit.aiSuggest') || 'AI Gợi ý'}</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={handleOpenAddModal}
-                    style={[styles.addTopBtn, { backgroundColor: '#10B981' }]}
-                  >
-                    <Ionicons name="add" size={16} color="#FFFFFF" />
-                    <Text style={styles.addTopBtnText}>{t('microHabit.addHabit') || 'Thêm việc'}</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={styles.statsGrid}>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setActiveStatusFilter((current) => current === 'overdue' ? null : 'overdue')}
-                  style={[styles.statBox, { backgroundColor: activeStatusFilter === 'overdue' ? 'rgba(239, 68, 68, 0.24)' : 'rgba(239, 68, 68, 0.1)', borderColor: activeStatusFilter === 'overdue' ? '#EF4444' : 'transparent' }]}
-                >
-                  <Text style={[styles.statNumber, { color: '#EF4444' }]}>{stats.overdue}</Text>
-                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>{t('microHabit.urgent') || 'Quá hạn'}</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setActiveStatusFilter((current) => current === 'warning' ? null : 'warning')}
-                  style={[styles.statBox, { backgroundColor: activeStatusFilter === 'warning' ? 'rgba(245, 158, 11, 0.24)' : 'rgba(245, 158, 11, 0.1)', borderColor: activeStatusFilter === 'warning' ? '#F59E0B' : 'transparent' }]}
-                >
-                  <Text style={[styles.statNumber, { color: '#F59E0B' }]}>{stats.warning}</Text>
-                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>{t('microHabit.dueSoon') || 'Sắp đến hạn'}</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setActiveStatusFilter((current) => current === 'safe' ? null : 'safe')}
-                  style={[styles.statBox, { backgroundColor: activeStatusFilter === 'safe' ? 'rgba(16, 185, 129, 0.24)' : 'rgba(16, 185, 129, 0.1)', borderColor: activeStatusFilter === 'safe' ? '#10B981' : 'transparent' }]}
-                >
-                  <Text style={[styles.statNumber, { color: '#10B981' }]}>{stats.safe}</Text>
-                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>{t('microHabit.safe') || 'Chưa đến hạn'}</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setActiveStatusFilter((current) => current === 'completed' ? null : 'completed')}
-                  style={[styles.statBox, { backgroundColor: activeStatusFilter === 'completed' ? 'rgba(99, 102, 241, 0.24)' : colors.cardElevated, borderColor: activeStatusFilter === 'completed' ? '#818CF8' : 'transparent' }]}
-                >
-                  <Text style={[styles.statNumber, { color: '#A5B4FC' }]}>{stats.completed}</Text>
-                  <Text style={[styles.statLabel, { color: colors.sub }]} numberOfLines={1} adjustsFontSizeToFit>{t('microHabit.todayDone') || 'Đã xong'}</Text>
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={[styles.searchBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-              <Ionicons name="search-outline" size={19} color={colors.sub} />
-              <TextInput
-                value={searchInput}
-                onChangeText={setSearchInput}
-                placeholder={t('microHabit.searchPlaceholder') || 'Tìm kiếm việc vặt...'}
-                placeholderTextColor={colors.sub}
-                style={[styles.searchInput, { color: colors.text }]}
-                returnKeyType="search"
-                accessibilityLabel="Tìm tên việc hoặc danh mục"
-              />
-              {searchInput ? <Pressable onPress={() => setSearchInput('')} hitSlop={8}><Ionicons name="close-circle" size={19} color={colors.sub} /></Pressable> : null}
-            </View>
-
-            {/* Bộ lọc Tab */}
-            <View style={styles.filterRow}>
-              {filterTabs.map((tab) => {
-                const isActive = activeFilter === tab.id;
-                return (
-                  <Pressable
-                    key={tab.id}
-                    onPress={() => setActiveFilter(tab.id)}
-                    style={[
-                      styles.filterTab,
-                      {
-                        backgroundColor: isActive ? '#10B981' : colors.card,
-                        borderColor: isActive ? '#10B981' : colors.cardBorder,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.filterTabText,
-                        { color: isActive ? '#FFFFFF' : colors.sub },
-                      ]}
-                    >
-                      {tab.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {hasActiveFilters ? (
-              <View style={styles.filterSummaryRow}>
-                <Text style={[styles.filterSummaryText, { color: colors.sub }]} numberOfLines={1}>
-                  {[activeStatusFilter === 'overdue' ? 'Quá hạn' : activeStatusFilter === 'warning' ? 'Sắp đến hạn' : activeStatusFilter === 'safe' ? 'Chưa đến hạn' : null, activeFilter !== 'all' ? filterTabs.find((tab) => tab.id === activeFilter)?.label : null, debouncedSearch ? `“${debouncedSearch}”` : null, `${filteredHabits.length} việc`].filter(Boolean).join(' · ')}
-                </Text>
-                <Pressable onPress={clearFilters} hitSlop={8}><Text style={{ color: colors.primary, fontWeight: '800' }}>{t('microHabit.clearFilter') || 'Xóa lọc'}</Text></Pressable>
-              </View>
-            ) : null}
-          </>
+          <HabitStatsHeader
+            colors={colors}
+            t={t}
+            stats={stats}
+            activeStatusFilter={activeStatusFilter}
+            setActiveStatusFilter={setActiveStatusFilter}
+            searchInput={searchInput}
+            setSearchInput={setSearchInput}
+            activeFilter={activeFilter}
+            setActiveFilter={setActiveFilter}
+            filterTabs={filterTabs}
+            hasActiveFilters={hasActiveFilters}
+            clearFilters={clearFilters}
+            filteredHabitsCount={filteredHabits.length}
+            debouncedSearch={debouncedSearch}
+            onOpenDebugNotifs={handleOpenDebugNotifs}
+            onOpenAiModal={handleOpenAiModal}
+            onOpenAddModal={handleOpenAddModal}
+          />
         }
         ListEmptyComponent={
           <View style={styles.emptyBox}>
@@ -1075,860 +881,70 @@ export default function MicroHabitScreen({ navigation, route }) {
       {/* Modal Thêm / Chỉnh sửa việc vặt */}
       <HabitFormModal
         visible={modalVisible}
-        animationType="slide"
-        transparent
         onRequestClose={() => requestCloseModal()}
-      >
-        <View style={{ flex: 1 }}>
-          <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalOverlay}
-        >
-          <Pressable
-            style={StyleSheet.absoluteFillObject}
-            onPress={() => requestCloseModal()}
-          />
-          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                {editingId ? 'Chỉnh sửa việc vặt' : 'Thêm việc vặt & Chu kỳ mới'}
-              </Text>
-              <Pressable onPress={() => requestCloseModal()} hitSlop={8}>
-                <Ionicons name="close" size={24} color={colors.sub} />
-              </Pressable>
-            </View>
-
-            <FlatList
-              data={[{ key: 'form-body' }]}
-              keyExtractor={(item) => item.key}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              renderItem={() => (
-                <View style={styles.formContainer}>
-                  {/* Chọn loại chu kỳ */}
-                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Loại chu kỳ lặp</Text>
-                  <View style={styles.typeSelectorRow}>
-                    {[
-                      { type: HABIT_TYPES.INTERVAL, label: 'Theo ngày 🔄' },
-                      { type: HABIT_TYPES.MONTHLY, label: 'Hàng tháng 📅' },
-                      { type: HABIT_TYPES.DAILY, label: 'Trong ngày 🎯' },
-                    ].map((t) => (
-                      <Pressable
-                        key={t.type}
-                        onPress={() => setFormType(t.type)}
-                        style={[
-                          styles.typeBtn,
-                          {
-                            backgroundColor: formType === t.type ? '#10B981' : colors.cardElevated,
-                            borderColor: formType === t.type ? '#10B981' : colors.cardBorder,
-                          },
-                        ]}
-                      >
-                        <Text style={[styles.typeBtnText, { color: formType === t.type ? '#FFFFFF' : colors.text }]}>
-                          {t.label}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  {/* Tên việc */}
-                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Tên việc vặt / Thói quen</Text>
-                  <TextInput
-                    style={[styles.input, { color: colors.text, borderColor: formErrors.title ? '#EF4444' : colors.border }]}
-                    value={formTitle}
-                    onChangeText={(t) => { setFormTitle(t); setFormErrors((e) => ({ ...e, title: undefined })); }}
-                    placeholder="VD: Thay nhớt xe, Đóng tiền trọ, Uống thuốc..."
-                    placeholderTextColor={colors.sub}
-                    autoCapitalize="sentences"
-                    maxLength={60}
-                  />
-                  <Text style={[styles.charCount, { color: colors.sub }]}>{formTitle.length}/60</Text>
-                  {formErrors.title ? <Text style={styles.errorText}>{formErrors.title}</Text> : null}
-
-                  {/* Thiết lập tham số chu kỳ tương ứng (Toàn bộ bộ chọn trực quan - CẤM nhập tay số) */}
-                  {formType === HABIT_TYPES.INTERVAL && (
-                    <View style={styles.formSectionBox}>
-                      <Text style={[styles.fieldLabel, { color: colors.text }]}>Chu kỳ lặp lại (Chọn hoặc Tăng/Giảm)</Text>
-                      {/* Chips chọn nhanh */}
-                      <View style={styles.chipRow}>
-                        {INTERVAL_PRESETS.map((days) => {
-                          const isSelected = parseInt(formIntervalDays, 10) === days;
-                          return (
-                            <Pressable
-                              key={days}
-                              onPress={() => {
-                                setFormIntervalDays(String(days));
-                                setFormErrors((e) => ({ ...e, intervalDays: undefined }));
-                              }}
-                              style={[
-                                styles.presetChip,
-                                {
-                                  backgroundColor: isSelected ? '#10B981' : colors.cardElevated,
-                                  borderColor: isSelected ? '#10B981' : colors.cardBorder,
-                                },
-                              ]}
-                            >
-                              <Text style={[styles.presetChipText, { color: isSelected ? '#FFFFFF' : colors.text }]}>
-                                {days} ngày
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-
-                      {/* Bộ Stepper Tinh Chỉnh [-5] [-1] [Hiển thị] [+1] [+5] */}
-                      <View style={styles.stepperContainer}>
-                        <Pressable
-                          onPress={() => setFormIntervalDays((prev) => String(Math.max(1, parseInt(prev || '1', 10) - 5)))}
-                          style={[styles.stepperMiniBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
-                        >
-                          <Text style={[styles.stepperMiniBtnText, { color: colors.text }]}>-5</Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => setFormIntervalDays((prev) => String(Math.max(1, parseInt(prev || '1', 10) - 1)))}
-                          style={[styles.stepperMiniBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
-                        >
-                          <Ionicons name="remove" size={18} color={colors.text} />
-                        </Pressable>
-
-                        <View style={[styles.stepperDisplay, { backgroundColor: colors.card, borderColor: '#10B981' }]}>
-                          <Text style={[styles.stepperDisplayText, { color: colors.text }]}>
-                            {formIntervalDays} <Text style={{ fontSize: 13, color: colors.sub }}>ngày</Text>
-                          </Text>
-                        </View>
-
-                        <Pressable
-                          onPress={() => setFormIntervalDays((prev) => String(Math.min(3650, parseInt(prev || '1', 10) + 1)))}
-                          style={[styles.stepperMiniBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
-                        >
-                          <Ionicons name="add" size={18} color={colors.text} />
-                        </Pressable>
-                        <Pressable
-                          onPress={() => setFormIntervalDays((prev) => String(Math.min(3650, parseInt(prev || '1', 10) + 5)))}
-                          style={[styles.stepperMiniBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
-                        >
-                          <Text style={[styles.stepperMiniBtnText, { color: colors.text }]}>+5</Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  )}
-
-                  {formType === HABIT_TYPES.MONTHLY && (
-                    <View style={styles.formSectionBox}>
-                      <Text style={[styles.fieldLabel, { color: colors.text }]}>
-                        Ngày đến hạn hàng tháng (Chọn 1 trong 31 ngày)
-                      </Text>
-                      {/* Lưới 31 ô chọn ngày (1–31) */}
-                      <View style={styles.daysGrid}>
-                        {DAYS_OF_MONTH.map((d) => {
-                          const isSelected = parseInt(formDayOfMonth, 10) === d;
-                          return (
-                            <Pressable
-                              key={d}
-                              onPress={() => {
-                                setFormDayOfMonth(String(d));
-                                setFormErrors((e) => ({ ...e, dayOfMonth: undefined }));
-                              }}
-                              style={[
-                                styles.dayGridCell,
-                                {
-                                  backgroundColor: isSelected ? '#10B981' : colors.cardElevated,
-                                  borderColor: isSelected ? '#10B981' : colors.cardBorder,
-                                },
-                              ]}
-                            >
-                              <Text style={[styles.dayGridCellText, { color: isSelected ? '#FFFFFF' : colors.text }]}>
-                                {d}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                      <View style={[styles.noteBox, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}>
-                        <Ionicons name="information-circle-outline" size={16} color="#10B981" />
-                        <Text style={[styles.noteBoxText, { color: colors.sub }]}>
-                          Với tháng ngắn (tháng 2, 4, 6, 9, 11), hệ thống sẽ tự động chọn ngày cuối cùng của tháng đó (VD: ngày 31 tháng 2 tự chuyển thành 28/29).
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  {formType === HABIT_TYPES.DAILY && (
-                    <View style={styles.formSectionBox}>
-                      <Text style={[styles.fieldLabel, { color: colors.text }]}>Mục tiêu số lần mỗi ngày</Text>
-                      {/* Chips chọn nhanh */}
-                      <View style={styles.chipRow}>
-                        {DAILY_PRESETS.map((cnt) => {
-                          const isSelected = parseInt(formTargetCount, 10) === cnt;
-                          return (
-                            <Pressable
-                              key={cnt}
-                              onPress={() => {
-                                setFormTargetCount(String(cnt));
-                                setFormErrors((e) => ({ ...e, targetCount: undefined }));
-                              }}
-                              style={[
-                                styles.presetChip,
-                                {
-                                  backgroundColor: isSelected ? '#10B981' : colors.cardElevated,
-                                  borderColor: isSelected ? '#10B981' : colors.cardBorder,
-                                },
-                              ]}
-                            >
-                              <Text style={[styles.presetChipText, { color: isSelected ? '#FFFFFF' : colors.text }]}>
-                                {cnt} lần
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-
-                      {/* Stepper điều chỉnh số lần */}
-                      <View style={styles.stepperContainer}>
-                        <Pressable
-                          onPress={() => setFormTargetCount((prev) => String(Math.max(1, parseInt(prev || '1', 10) - 1)))}
-                          style={[styles.stepperMiniBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
-                        >
-                          <Ionicons name="remove" size={18} color={colors.text} />
-                        </Pressable>
-                        <View style={[styles.stepperDisplay, { backgroundColor: colors.card, borderColor: '#10B981' }]}>
-                          <Text style={[styles.stepperDisplayText, { color: colors.text }]}>
-                            {formTargetCount} <Text style={{ fontSize: 13, color: colors.sub }}>{formUnit || 'lần'}</Text>
-                          </Text>
-                        </View>
-                        <Pressable
-                          onPress={() => setFormTargetCount((prev) => String(Math.min(9999, parseInt(prev || '1', 10) + 1)))}
-                          style={[styles.stepperMiniBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
-                        >
-                          <Ionicons name="add" size={18} color={colors.text} />
-                        </Pressable>
-                      </View>
-
-                      {/* Đơn vị tính */}
-                      <Text style={[styles.fieldLabel, { color: colors.text, marginTop: 8 }]}>Đơn vị tính</Text>
-                      <View style={styles.chipWrap}>
-                        {DAILY_UNITS.map((unit) => (
-                          <Pressable key={unit} onPress={() => setFormUnit(unit)} style={[styles.choiceChip, { borderColor: formUnit === unit ? '#10B981' : colors.border, backgroundColor: formUnit === unit ? 'rgba(16,185,129,0.15)' : colors.card }]}>
-                            <Text style={{ color: formUnit === unit ? '#10B981' : colors.sub, fontWeight: '700' }}>{unit}</Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* THIẾT LẬP THÔNG BÁO NHẮC NHỞ THEO GIỜ (BỘ CHỌN NATIVE TIME PICKER) */}
-                  <View style={[styles.reminderSection, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}>
-                    <View style={styles.reminderHeader}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Ionicons name="notifications" size={18} color="#10B981" />
-                        <Text style={[styles.reminderSectionTitle, { color: colors.text }]}>
-                          Nhắc nhở theo giờ (Tùy chọn)
-                        </Text>
-                      </View>
-                      <Switch
-                        value={formReminderEnabled}
-                        onValueChange={setFormReminderEnabled}
-                        trackColor={{ false: colors.cardBorder, true: '#10B981' }}
-                        thumbColor="#FFFFFF"
-                      />
-                    </View>
-
-                    {formReminderEnabled && (
-                      <View style={styles.reminderBody}>
-                        {/* Nút hiển thị giờ nhắc - Bấm để mở Native Time Picker */}
-                        <Text style={[styles.subPickerTitle, { color: colors.text }]}>Khung giờ báo thức</Text>
-                        <Pressable
-                          onPress={() => setShowTimePicker(true)}
-                          style={[styles.timePickerBtn, { backgroundColor: colors.card, borderColor: '#10B981' }]}
-                        >
-                          <Ionicons name="alarm-outline" size={26} color="#10B981" />
-                          <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={[styles.timePickerVal, { color: colors.text }]}>
-                              {formReminderTime}
-                            </Text>
-                            <Text style={[styles.timePickerSub, { color: colors.sub }]}>
-                              {formType === HABIT_TYPES.DAILY ? 'Báo mỗi ngày lúc giờ này' : 'Báo vào ngày đến hạn lúc giờ này'}
-                            </Text>
-                          </View>
-                          <View style={[styles.changeTimeBadge, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                            <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '700' }}>Đổi giờ</Text>
-                          </View>
-                        </Pressable>
-
-                        {/* Native DateTimePicker cho iOS và Android */}
-                        {showTimePicker && (
-                          Platform.OS === 'ios' ? (
-                            <Modal visible={showTimePicker} transparent animationType="fade">
-                              <View style={styles.timePickerModalOverlay}>
-                                <View style={[styles.timePickerModalBox, { backgroundColor: colors.card }]}>
-                                  <View style={styles.timePickerModalHeader}>
-                                    <Text style={[styles.timePickerModalTitle, { color: colors.text }]}>Chọn giờ nhắc</Text>
-                                    <Pressable onPress={() => setShowTimePicker(false)}>
-                                      <Ionicons name="close" size={22} color={colors.sub} />
-                                    </Pressable>
-                                  </View>
-                                  <DateTimePicker
-                                    value={pickerDate}
-                                    mode="time"
-                                    is24Hour
-                                    display="spinner"
-                                    textColor={colors.text}
-                                    onChange={handleTimePickerChange}
-                                  />
-                                  <Pressable
-                                    onPress={() => setShowTimePicker(false)}
-                                    style={[styles.timePickerModalDone, { backgroundColor: '#10B981' }]}
-                                  >
-                                    <Text style={styles.timePickerModalDoneText}>Xác nhận giờ</Text>
-                                  </Pressable>
-                                </View>
-                              </View>
-                            </Modal>
-                          ) : (
-                            <DateTimePicker
-                              value={pickerDate}
-                              mode="time"
-                              is24Hour
-                              display="default"
-                              onChange={handleTimePickerChange}
-                            />
-                          )
-                        )}
-
-                        {/* Dòng xem trước từ hàm duy nhất computeNextOccurrence (VIỆC AE) */}
-                        {occurrencePreview?.previewText ? (
-                          <View style={[styles.previewBox, { backgroundColor: colors.card, borderColor: '#10B981' }]}>
-                            <Ionicons name="time-outline" size={16} color="#10B981" />
-                            <Text style={[styles.previewText, { color: colors.text }]}>
-                              {occurrencePreview.previewText}
-                            </Text>
-                          </View>
-                        ) : null}
-
-                        {/* Tùy chọn khi giờ nhắc đã qua hôm nay (VIỆC AE & BỔ SUNG #14) */}
-                        {occurrencePreview?.passedToday && formType === HABIT_TYPES.DAILY ? (
-                          <View style={{ marginTop: 10 }}>
-                            <Text style={[styles.fieldSubLabel, { color: colors.sub }]}>Tùy chọn bắt đầu theo dõi:</Text>
-                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                              <Pressable
-                                onPress={() => setFormStartDate(getTodayDateString())}
-                                style={[
-                                  styles.choiceChip,
-                                  {
-                                    flex: 1,
-                                    borderColor: formStartDate === getTodayDateString() || !formStartDate ? '#10B981' : colors.border,
-                                    backgroundColor: formStartDate === getTodayDateString() || !formStartDate ? 'rgba(16,185,129,0.15)' : colors.card,
-                                    paddingVertical: 10,
-                                    alignItems: 'center',
-                                  },
-                                ]}
-                              >
-                                <Text style={{ fontSize: 13, fontWeight: '700', color: formStartDate === getTodayDateString() || !formStartDate ? '#10B981' : colors.sub }}>
-                                  Từ hôm nay
-                                </Text>
-                              </Pressable>
-                              <Pressable
-                                onPress={() => {
-                                  const tom = new Date();
-                                  tom.setDate(tom.getDate() + 1);
-                                  setFormStartDate(getTodayDateString(tom));
-                                }}
-                                style={[
-                                  styles.choiceChip,
-                                  {
-                                    flex: 1,
-                                    borderColor: formStartDate && formStartDate > getTodayDateString() ? '#10B981' : colors.border,
-                                    backgroundColor: formStartDate && formStartDate > getTodayDateString() ? 'rgba(16,185,129,0.15)' : colors.card,
-                                    paddingVertical: 10,
-                                    alignItems: 'center',
-                                  },
-                                ]}
-                              >
-                                <Text style={{ fontSize: 13, fontWeight: '700', color: formStartDate && formStartDate > getTodayDateString() ? '#10B981' : colors.sub }}>
-                                  Từ ngày mai
-                                </Text>
-                              </Pressable>
-                            </View>
-                            <Text style={{ fontSize: 11, color: colors.sub, marginTop: 6, fontStyle: 'italic' }}>
-                              {formStartDate && formStartDate > getTodayDateString()
-                                ? '💡 Hôm nay không tính việc này (ở trạng thái Chưa đến hạn), bắt đầu theo dõi từ ngày mai.'
-                                : '💡 Hôm nay vẫn theo dõi tiến độ mục tiêu, chuông nhắc bắt đầu từ ngày mai.'}
-                            </Text>
-                          </View>
-                        ) : null}
-
-                        {/* Tùy chọn tần suất nhắc nhở trong ngày (BỔ SUNG #15 - AL) */}
-                        {formType === HABIT_TYPES.DAILY ? (
-                          <View style={{ marginTop: 12 }}>
-                            <Text style={[styles.fieldSubLabel, { color: colors.text, fontWeight: '700', fontSize: 12 }]}>
-                              Khoảng cách nhắc trong ngày
-                            </Text>
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                              {[
-                                { val: '0', label: '1 lần duy nhất' },
-                                { val: '1', label: 'Mỗi 1 giờ' },
-                                { val: '2', label: 'Mỗi 2 giờ' },
-                                { val: '3', label: 'Mỗi 3 giờ' },
-                                { val: '4', label: 'Mỗi 4 giờ' },
-                                { val: 'custom', label: '⚙️ Tùy chỉnh' },
-                              ].map((opt) => {
-                                const isCustomMode = formReminderIntervalHours === 'custom';
-                                const isSel = opt.val === 'custom'
-                                  ? isCustomMode
-                                  : !isCustomMode && String(formReminderIntervalHours) === opt.val;
-                                return (
-                                  <Pressable
-                                    key={opt.val}
-                                    onPress={() => {
-                                      if (opt.val === 'custom') {
-                                        setFormReminderIntervalHours('custom');
-                                        // Default custom: 1h30m if not already set
-                                        if (formReminderIntervalMinutes === '0' && String(formReminderIntervalHours) !== 'custom') {
-                                          setFormReminderIntervalMinutes('30');
-                                        }
-                                      } else {
-                                        setFormReminderIntervalHours(opt.val);
-                                        setFormReminderIntervalMinutes('0');
-                                      }
-                                    }}
-                                    style={[
-                                      styles.presetChip,
-                                      {
-                                        backgroundColor: isSel ? '#10B981' : colors.cardElevated,
-                                        borderColor: isSel ? '#10B981' : colors.cardBorder,
-                                      },
-                                    ]}
-                                  >
-                                    <Text style={[styles.presetChipText, { color: isSel ? '#FFFFFF' : colors.text }]}>
-                                      {opt.label}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })}
-                            </View>
-
-                            {/* Bộ tùy chỉnh giờ + phút (chỉ hiện khi chọn "Tùy chỉnh") */}
-                            {formReminderIntervalHours === 'custom' ? (
-                              <View style={{ marginTop: 10, padding: 12, backgroundColor: colors.cardElevated, borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder }}>
-                                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 12, marginBottom: 10 }}>
-                                  Cách nhắc mỗi:
-                                </Text>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                                  {/* Giờ: 0-12 */}
-                                  <View style={{ alignItems: 'center', flex: 1 }}>
-                                    <Text style={{ color: colors.sub, fontSize: 11, marginBottom: 4 }}>Giờ (0–12)</Text>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                      <Pressable
-                                        onPress={() => setFormReminderIntervalMinutes((prev) => {
-                                          // This button is for hours — handled via stepperMiniBtn below
-                                          return prev;
-                                        })}
-                                        style={{ display: 'none' }}
-                                      />
-                                      <Pressable
-                                        onPress={() => {
-                                          const cur = parseInt(formReminderIntervalHours === 'custom' ? '0' : formReminderIntervalHours, 10) || 0;
-                                          // Store custom hours in a separate key via workaround: encode as "custom:H:M"
-                                          const curM = parseInt(formReminderIntervalMinutes || '0', 10);
-                                          const newH = Math.max(0, cur - 1);
-                                          if (newH === 0 && curM < 15) setFormReminderIntervalMinutes('15');
-                                          setFormReminderIntervalHours(`custom:${newH}`);
-                                        }}
-                                        style={[styles.stepperMiniBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                      >
-                                        <Ionicons name="remove" size={16} color={colors.text} />
-                                      </Pressable>
-                                      <View style={[styles.stepperDisplay, { backgroundColor: colors.card, borderColor: '#10B981', minWidth: 44 }]}>
-                                        <Text style={[styles.stepperDisplayText, { color: colors.text }]}>
-                                          {(() => {
-                                            const raw = String(formReminderIntervalHours);
-                                            if (raw.startsWith('custom:')) return raw.split(':')[1] || '0';
-                                            return '0';
-                                          })()}
-                                        </Text>
-                                      </View>
-                                      <Pressable
-                                        onPress={() => {
-                                          const raw = String(formReminderIntervalHours);
-                                          const cur = raw.startsWith('custom:') ? parseInt(raw.split(':')[1] || '0', 10) : 0;
-                                          const newH = Math.min(12, cur + 1);
-                                          setFormReminderIntervalHours(`custom:${newH}`);
-                                        }}
-                                        style={[styles.stepperMiniBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                      >
-                                        <Ionicons name="add" size={16} color={colors.text} />
-                                      </Pressable>
-                                    </View>
-                                  </View>
-
-                                  <Text style={{ color: colors.sub, fontSize: 18, fontWeight: '700' }}>:</Text>
-
-                                  {/* Phút: 0, 5, 10... 55 */}
-                                  <View style={{ alignItems: 'center', flex: 1 }}>
-                                    <Text style={{ color: colors.sub, fontSize: 11, marginBottom: 4 }}>Phút (bước 5)</Text>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                      <Pressable
-                                        onPress={() => {
-                                          const cur = parseInt(formReminderIntervalMinutes || '0', 10);
-                                          const newM = Math.max(0, Math.floor((cur - 5) / 5) * 5);
-                                          const raw = String(formReminderIntervalHours);
-                                          const curH = raw.startsWith('custom:') ? parseInt(raw.split(':')[1] || '0', 10) : 0;
-                                          if (curH === 0 && newM < 15) setFormReminderIntervalMinutes('15');
-                                          else setFormReminderIntervalMinutes(String(newM));
-                                        }}
-                                        style={[styles.stepperMiniBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                      >
-                                        <Ionicons name="remove" size={16} color={colors.text} />
-                                      </Pressable>
-                                      <View style={[styles.stepperDisplay, { backgroundColor: colors.card, borderColor: '#10B981', minWidth: 44 }]}>
-                                        <Text style={[styles.stepperDisplayText, { color: colors.text }]}>
-                                          {String(parseInt(formReminderIntervalMinutes || '0', 10)).padStart(2, '0')}
-                                        </Text>
-                                      </View>
-                                      <Pressable
-                                        onPress={() => {
-                                          const cur = parseInt(formReminderIntervalMinutes || '0', 10);
-                                          const newM = Math.min(55, Math.ceil((cur + 5) / 5) * 5);
-                                          setFormReminderIntervalMinutes(String(newM));
-                                        }}
-                                        style={[styles.stepperMiniBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                      >
-                                        <Ionicons name="add" size={16} color={colors.text} />
-                                      </Pressable>
-                                    </View>
-                                  </View>
-                                </View>
-                                <Text style={{ color: colors.sub, fontSize: 11, marginTop: 8, textAlign: 'center' }}>
-                                  {(() => {
-                                    const raw = String(formReminderIntervalHours);
-                                    const h = raw.startsWith('custom:') ? parseInt(raw.split(':')[1] || '0', 10) : 0;
-                                    const m = parseInt(formReminderIntervalMinutes || '0', 10);
-                                    const total = h * 60 + m;
-                                    if (total < 15) return '⚠️ Khoảng cách tối thiểu 15 phút';
-                                    if (h > 0 && m > 0) return `Nhắc mỗi ${h} giờ ${m} phút`;
-                                    if (h > 0) return `Nhắc mỗi ${h} giờ`;
-                                    return `Nhắc mỗi ${m} phút`;
-                                  })()}
-                                </Text>
-                              </View>
-                            ) : null}
-
-                            {/* Giờ kết thúc nhắc (End Time picker) */}
-                            {formReminderIntervalHours !== '0' ? (
-                              <View style={{ marginTop: 10 }}>
-                                <Text style={{ color: colors.sub, fontSize: 11, fontWeight: '600', marginBottom: 4 }}>
-                                  Giờ dừng nhắc (tuỳ chọn)
-                                </Text>
-                                <Pressable
-                                  onPress={() => setShowEndTimePicker(true)}
-                                  style={[styles.timePickerBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder, paddingVertical: 10 }]}
-                                >
-                                  <Ionicons name="moon-outline" size={20} color={colors.sub} />
-                                  <View style={{ flex: 1, marginLeft: 10 }}>
-                                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>
-                                      {formReminderEndTime || 'Không giới hạn (cả ngày)'}
-                                    </Text>
-                                    <Text style={{ color: colors.sub, fontSize: 11 }}>
-                                      Nhắc từ {formReminderTime || '08:00'}{formReminderEndTime ? ` đến ${formReminderEndTime}` : ' đến cuối ngày'}
-                                    </Text>
-                                  </View>
-                                  {formReminderEndTime ? (
-                                    <Pressable
-                                      onPress={() => setFormReminderEndTime('')}
-                                      hitSlop={8}
-                                      style={{ padding: 4 }}
-                                    >
-                                      <Ionicons name="close-circle" size={18} color={colors.sub} />
-                                    </Pressable>
-                                  ) : null}
-                                </Pressable>
-
-                                {showEndTimePicker && (
-                                  Platform.OS === 'ios' ? (
-                                    <Modal visible={showEndTimePicker} transparent animationType="fade">
-                                      <View style={styles.timePickerModalOverlay}>
-                                        <View style={[styles.timePickerModalBox, { backgroundColor: colors.card }]}>
-                                          <View style={styles.timePickerModalHeader}>
-                                            <Text style={[styles.timePickerModalTitle, { color: colors.text }]}>Giờ dừng nhắc</Text>
-                                            <Pressable onPress={() => setShowEndTimePicker(false)}>
-                                              <Ionicons name="close" size={22} color={colors.sub} />
-                                            </Pressable>
-                                          </View>
-                                          <DateTimePicker
-                                            value={formReminderEndTime ? (() => { const [h, m] = formReminderEndTime.split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d; })() : new Date()}
-                                            mode="time"
-                                            is24Hour
-                                            display="spinner"
-                                            textColor={colors.text}
-                                            onChange={(event, selectedDate) => {
-                                              if (selectedDate) {
-                                                const h = String(selectedDate.getHours()).padStart(2, '0');
-                                                const m = String(selectedDate.getMinutes()).padStart(2, '0');
-                                                setFormReminderEndTime(`${h}:${m}`);
-                                              }
-                                            }}
-                                          />
-                                          <Pressable
-                                            onPress={() => setShowEndTimePicker(false)}
-                                            style={[styles.timePickerModalDone, { backgroundColor: '#10B981' }]}
-                                          >
-                                            <Text style={styles.timePickerModalDoneText}>Xác nhận</Text>
-                                          </Pressable>
-                                        </View>
-                                      </View>
-                                    </Modal>
-                                  ) : (
-                                    <DateTimePicker
-                                      value={formReminderEndTime ? (() => { const [h, m] = formReminderEndTime.split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d; })() : new Date()}
-                                      mode="time"
-                                      is24Hour
-                                      display="default"
-                                      onChange={(event, selectedDate) => {
-                                        setShowEndTimePicker(false);
-                                        if (selectedDate) {
-                                          const h = String(selectedDate.getHours()).padStart(2, '0');
-                                          const m = String(selectedDate.getMinutes()).padStart(2, '0');
-                                          setFormReminderEndTime(`${h}:${m}`);
-                                        }
-                                      }}
-                                    />
-                                  )
-                                )}
-                              </View>
-                            ) : null}
-
-                            {/* Preview danh sách slot nhắc */}
-                            {formReminderIntervalHours !== '0' ? (
-                              <View style={{ marginTop: 8, padding: 10, backgroundColor: colors.cardElevated, borderRadius: 10, borderWidth: 1, borderColor: colors.cardBorder }}>
-                                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 11, marginBottom: 6 }}>
-                                  📋 Các slot nhắc hôm nay:
-                                </Text>
-                                {(() => {
-                                  const [startH, startM] = (formReminderTime || '08:00').split(':').map(Number);
-                                  const raw = String(formReminderIntervalHours);
-                                  const intervalH = raw.startsWith('custom:') ? parseInt(raw.split(':')[1] || '0', 10) : parseInt(raw, 10);
-                                  const intervalM = parseInt(formReminderIntervalMinutes || '0', 10);
-                                  const totalIntervalMin = intervalH * 60 + intervalM;
-                                  if (totalIntervalMin < 15 || totalIntervalMin === 0) return (
-                                    <Text style={{ color: '#F59E0B', fontSize: 11 }}>Khoảng cách tối thiểu 15 phút</Text>
-                                  );
-                                  const endStr = formReminderEndTime;
-                                  const endMinutes = endStr ? (() => { const [eh, em] = endStr.split(':').map(Number); return eh * 60 + em; })() : 23 * 60 + 59;
-                                  const slots = [];
-                                  let cur = startH * 60 + startM;
-                                  const maxSlots = Math.min(parseInt(formTargetCount, 10) || 20, 20);
-                                  while (slots.length < maxSlots && cur <= endMinutes) {
-                                    const sh = Math.floor(cur / 60);
-                                    const sm = cur % 60;
-                                    if (sh < 24) slots.push(`${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}`);
-                                    cur += totalIntervalMin;
-                                  }
-                                  const iosBudgetOk = slots.length <= 8;
-                                  return (
-                                    <>
-                                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-                                        {slots.map((s, i) => (
-                                          <View key={i} style={{ backgroundColor: '#10B98122', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-                                            <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '700' }}>{s}</Text>
-                                          </View>
-                                        ))}
-                                      </View>
-                                      <Text style={{ color: colors.sub, fontSize: 10, marginTop: 4 }}>
-                                        {slots.length} lần/ngày × 7 ngày = {slots.length * 7} thông báo{!iosBudgetOk ? ' ⚠️ iOS giới hạn 64, hệ thống tự giới hạn 8 slot/ngày' : ''}
-                                      </Text>
-                                    </>
-                                  );
-                                })()}
-                              </View>
-                            ) : (
-                              <Text style={{ fontSize: 11, color: colors.sub, marginTop: 4 }}>
-                                {`Báo thức 1 lần lúc ${formReminderTime || '08:00'}.`}
-                              </Text>
-                            )}
-                          </View>
-                        ) : null}
-
-                        {/* Cho việc Theo ngày (INTERVAL) và Hàng tháng (MONTHLY): Bộ chọn ngày bắt đầu / đến hạn kế tiếp (VIỆC AE) */}
-                        {(formType === HABIT_TYPES.INTERVAL || formType === HABIT_TYPES.MONTHLY) ? (
-                          <View style={{ marginTop: 10 }}>
-                            <Text style={[styles.subPickerTitle, { color: colors.text }]}>Ngày bắt đầu / đến hạn kế tiếp</Text>
-                            <Pressable
-                              onPress={() => setShowStartDatePicker(true)}
-                              style={[styles.timePickerBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder, marginTop: 4 }]}
-                            >
-                              <Ionicons name="calendar-outline" size={22} color="#3B82F6" />
-                              <View style={{ flex: 1, marginLeft: 10 }}>
-                                <Text style={[styles.timePickerVal, { color: colors.text, fontSize: 15 }]}>
-                                  {formStartDate ? new Date(formStartDate).toLocaleDateString('vi-VN') : 'Mặc định theo chu kỳ'}
-                                </Text>
-                                <Text style={[styles.timePickerSub, { color: colors.sub }]}>
-                                  {occurrencePreview?.dueDate ? `Kỳ tiếp theo: ${new Date(occurrencePreview.dueDate).toLocaleDateString('vi-VN')}` : 'Tự động tính'}
-                                </Text>
-                              </View>
-                              <View style={[styles.changeTimeBadge, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
-                                <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: '700' }}>Chọn ngày</Text>
-                              </View>
-                            </Pressable>
-
-                            {/* Hiển thị giải thích tự động đẩy chu kỳ nếu người dùng chọn ngày trong quá khứ */}
-                            {occurrencePreview?.explanation ? (
-                              <View style={[styles.explanationBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: '#F59E0B' }]}>
-                                <Ionicons name="information-circle" size={16} color="#F59E0B" />
-                                <Text style={{ color: '#F59E0B', fontSize: 12, flex: 1, marginLeft: 6, fontWeight: '600' }}>
-                                  {occurrencePreview.explanation}
-                                </Text>
-                              </View>
-                            ) : null}
-
-                            {showStartDatePicker ? (
-                              <DateTimePicker
-                                value={formStartDate ? new Date(formStartDate) : new Date()}
-                                mode="date"
-                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                                onChange={(event, selectedDate) => {
-                                  setShowStartDatePicker(false);
-                                  if (selectedDate) {
-                                    setFormStartDate(getTodayDateString(selectedDate));
-                                  }
-                                }}
-                              />
-                            ) : null}
-                          </View>
-                        ) : null}
-
-                        {/* Nút thử chuông đã bị xóa theo yêu cầu */}
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Danh mục */}
-                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Nhóm / Danh mục</Text>
-                  <View style={styles.chipWrap}>
-                    {CATEGORIES.map((category) => (
-                      <Pressable key={category} onPress={() => { setFormCategory(category); setFormErrors((e) => ({ ...e, category: undefined })); }} style={[styles.choiceChip, { borderColor: formCategory === category ? '#10B981' : colors.border, backgroundColor: formCategory === category ? 'rgba(16,185,129,0.15)' : colors.card }]}>
-                        <Text style={{ color: formCategory === category ? '#10B981' : colors.sub, fontWeight: '700' }}>{category}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  {customCategories.length ? <View style={styles.customCategoryRow}>
-                    {customCategories.map((category) => <View key={category} style={[styles.choiceChip, { flexDirection: 'row', gap: 4, borderColor: colors.border }]}>
-                      <Pressable onPress={() => { setFormCategory('Khác'); setFormCustomCategory(category); }}><Text style={{ color: colors.sub, fontWeight: '700' }}>{category}</Text></Pressable>
-                      <Pressable onPress={async () => { const next = customCategories.filter((item) => item !== category); setCustomCategories(next); await saveCustomCategories(next); }} hitSlop={6}><Ionicons name="close" size={14} color={colors.sub} /></Pressable>
-                    </View>)}
-                  </View> : null}
-                  {formCategory === 'Khác' ? <>
-                    <TextInput
-                      autoFocus
-                      value={formCustomCategory}
-                      onChangeText={(text) => { setFormCustomCategory(text); setFormErrors((e) => ({ ...e, category: undefined })); }}
-                      maxLength={20}
-                      placeholder="Tên danh mục"
-                      placeholderTextColor={colors.sub}
-                      style={[styles.input, { color: colors.text, borderColor: formErrors.category ? '#EF4444' : colors.border, marginTop: 8 }]}
-                    />
-                    {formErrors.category ? <Text style={styles.errorText}>{formErrors.category}</Text> : null}
-                  </> : null}
-
-                  {/* Ghi chú */}
-                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Ghi chú thêm</Text>
-                  <TextInput
-                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                    value={formNote}
-                    onChangeText={setFormNote}
-                    placeholder="VD: Nhớt 10W40, STK chủ nhà..."
-                    placeholderTextColor={colors.sub}
-                  />
-
-                  {/* Chọn màu sắc */}
-                  <Text style={[styles.fieldLabel, { color: colors.text }]}>Màu đại diện</Text>
-                  <View style={styles.colorPalette}>
-                    {PRESET_COLORS.map((c) => (
-                      <Pressable
-                        key={c}
-                        onPress={() => setFormColor(c)}
-                        style={[
-                          styles.colorCircle,
-                          { backgroundColor: c },
-                          formColor === c && styles.colorCircleSelected,
-                        ]}
-                      />
-                    ))}
-                  </View>
-
-                  {/* Nút Submit */}
-                  <Pressable
-                    onPress={handleSaveForm}
-                    disabled={!isFormValid || isSaving}
-                    style={[
-                      styles.saveBtn,
-                      {
-                        backgroundColor: isFormValid && !isSaving ? '#10B981' : '#6B7280',
-                        opacity: isFormValid && !isSaving ? 1 : 0.6,
-                      },
-                    ]}
-                  >
-                    {isSaving ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                        <Text style={styles.saveBtnText}>Đang lưu...</Text>
-                      </View>
-                    ) : (
-                      <Text style={styles.saveBtnText}>
-                        {editingId ? 'Cập nhật việc vặt' : 'Lưu việc vặt mới'}
-                      </Text>
-                    )}
-                  </Pressable>
-                  <View style={{ height: 20 }} />
-                </View>
-              )}
-            />
-          </View>
-
-          </KeyboardAvoidingView>
-
-          {/* Hộp thoại xác nhận thay đổi chưa lưu - NẰM TRONG MODAL CHÍNH ĐỂ KHÔNG BỊ IOS BLOCK */}
-          {showUnsavedConfirm && (
-            <View style={styles.confirmOverlayAbsolute}>
-              <Pressable style={StyleSheet.absoluteFillObject} onPress={handleContinueEditing} />
-              <View style={[styles.confirmCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-                <View style={styles.confirmHeader}>
-                  <Ionicons name="alert-circle" size={30} color="#F59E0B" />
-                  <Text style={[styles.confirmTitle, { color: colors.text }]}>Lưu thay đổi?</Text>
-                </View>
-                <Text style={[styles.confirmDesc, { color: colors.sub }]}>
-                  Bạn có các thay đổi chưa được lưu. Bạn có muốn lưu lại trước khi thoát không?
-                </Text>
-
-                <View style={styles.confirmActionCol}>
-                  <Pressable
-                    onPress={handleSaveAndExit}
-                    disabled={isSaving}
-                    style={[styles.confirmBtn, styles.confirmBtnSave]}
-                  >
-                    <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.confirmBtnTextSave}>Lưu và thoát</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={handleDiscardAndExit}
-                    style={[styles.confirmBtn, styles.confirmBtnDiscard]}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
-                    <Text style={styles.confirmBtnTextDiscard}>Không lưu</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={handleContinueEditing}
-                    style={[styles.confirmBtn, styles.confirmBtnContinue, { borderColor: colors.cardBorder, backgroundColor: colors.cardElevated }]}
-                  >
-                    <Text style={[styles.confirmBtnTextContinue, { color: colors.text }]}>Tiếp tục chỉnh sửa</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          )}
-        </View>
-      </Modal>
+        editingId={editingId}
+        formType={formType}
+        setFormType={setFormType}
+        formTitle={formTitle}
+        setFormTitle={setFormTitle}
+        formErrors={formErrors}
+        setFormErrors={setFormErrors}
+        formIntervalDays={formIntervalDays}
+        setFormIntervalDays={setFormIntervalDays}
+        formDayOfMonth={formDayOfMonth}
+        setFormDayOfMonth={setFormDayOfMonth}
+        formTargetCount={formTargetCount}
+        setFormTargetCount={setFormTargetCount}
+        formUnit={formUnit}
+        setFormUnit={setFormUnit}
+        formReminderEnabled={formReminderEnabled}
+        setFormReminderEnabled={setFormReminderEnabled}
+        formReminderTime={formReminderTime}
+        setFormReminderTime={setFormReminderTime}
+        showTimePicker={showTimePicker}
+        setShowTimePicker={setShowTimePicker}
+        pickerDate={pickerDate}
+        handleTimePickerChange={handleTimePickerChange}
+        occurrencePreview={occurrencePreview}
+        formStartDate={formStartDate}
+        setFormStartDate={setFormStartDate}
+        showStartDatePicker={showStartDatePicker}
+        setShowStartDatePicker={setShowStartDatePicker}
+        formReminderIntervalHours={formReminderIntervalHours}
+        setFormReminderIntervalHours={setFormReminderIntervalHours}
+        formReminderIntervalMinutes={formReminderIntervalMinutes}
+        setFormReminderIntervalMinutes={setFormReminderIntervalMinutes}
+        formReminderEndTime={formReminderEndTime}
+        setFormReminderEndTime={setFormReminderEndTime}
+        showEndTimePicker={showEndTimePicker}
+        setShowEndTimePicker={setShowEndTimePicker}
+        formCategory={formCategory}
+        setFormCategory={setFormCategory}
+        customCategories={customCategories}
+        setCustomCategories={setCustomCategories}
+        saveCustomCategories={saveCustomCategories}
+        formCustomCategory={formCustomCategory}
+        setFormCustomCategory={setFormCustomCategory}
+        formNote={formNote}
+        setFormNote={setFormNote}
+        formColor={formColor}
+        setFormColor={setFormColor}
+        handleSaveForm={handleSaveForm}
+        isFormValid={isFormValid}
+        isSaving={isSaving}
+        showUnsavedConfirm={showUnsavedConfirm}
+        handleSaveAndExit={handleSaveAndExit}
+        handleDiscardAndExit={handleDiscardAndExit}
+        handleContinueEditing={handleContinueEditing}
+        colors={colors}
+        t={t}
+        intervalPresets={INTERVAL_PRESETS}
+        dailyPresets={DAILY_PRESETS}
+        dailyUnits={DAILY_UNITS}
+        categories={CATEGORIES}
+        daysOfMonth={DAYS_OF_MONTH}
+        presetColors={PRESET_COLORS}
+      />
 
       {/* Modal Xem lịch sử lần hoàn thành */}
       <HabitHistoryModal
@@ -1956,477 +972,19 @@ export default function MicroHabitScreen({ navigation, route }) {
       {/* Modal Debug Toàn Bộ Thông Báo OS Đã Lên Lịch */}
       <HabitDebugNotifModal
         visible={debugNotifModalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setDebugNotifModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card, maxHeight: '80%' }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="notifications-circle" size={22} color="#10B981" />
-                <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  Lịch báo hệ điều hành ({scheduledNotifs.length})
-                </Text>
-              </View>
-              <Pressable onPress={() => setDebugNotifModalVisible(false)} hitSlop={8}>
-                <Ionicons name="close" size={24} color={colors.sub} />
-              </Pressable>
-            </View>
+        onClose={() => setDebugNotifModalVisible(false)}
+        scheduledNotifs={scheduledNotifs}
+        onSimulateNotificationTap={handleSimulateNotificationTap}
+        onSelfHeal={handleSelfHealNotifications}
+        colors={colors}
+        t={t}
+      />
 
-            <FlatList
-              data={scheduledNotifs}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <Pressable onPress={() => handleSimulateNotificationTap(item.taskId)} style={[styles.debugNotifCard, { backgroundColor: colors.cardElevated, borderColor: colors.cardBorder }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <Ionicons name="alarm" size={16} color="#10B981" />
-                    <Text style={[styles.debugNotifTitle, { color: colors.text }]}>{item.title}</Text>
-                  </View>
-                  <Text style={[styles.debugNotifBody, { color: colors.sub }]}>{item.body}</Text>
-                  <View style={styles.debugNotifMetaRow}>
-                    <Text style={[styles.debugNotifTrigger, { color: '#10B981' }]}>⏰ {item.triggerSummary}</Text>
-                    <Text style={[styles.debugNotifId, { color: colors.sub }]}>ID: {item.id.slice(0, 8)}...</Text>
-                  </View>
-                  {item.nextAt ? <Text style={[styles.debugNotifBody, { color: colors.sub }]}>Lần kế tiếp: {new Date(item.nextAt).toLocaleString('vi-VN')}</Text> : null}
-                </Pressable>
-              )}
-              ListEmptyComponent={
-                <View style={{ paddingVertical: 30, alignItems: 'center' }}>
-                  <Ionicons name="notifications-off-outline" size={44} color={colors.sub} />
-                  <Text style={[styles.emptyText, { color: colors.sub }]}>
-                    Hiện chưa có thông báo nào được đặt lịch. Bật công tắc chuông trên việc vặt để kiểm tra.
-                  </Text>
-                </View>
-              }
-            />
-
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              <Pressable
-                onPress={handleSelfHealNotifications}
-                style={[styles.saveBtn, { flex: 1, backgroundColor: '#3B82F6', marginTop: 0 }]}
-              >
-                <Text style={styles.saveBtnText}>Tự đối chiếu & Sửa</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setDebugNotifModalVisible(false)}
-                style={[styles.saveBtn, { flex: 1, backgroundColor: '#10B981', marginTop: 0 }]}
-              >
-                <Text style={styles.saveBtnText}>Đóng</Text>
-              </Pressable>
-            </View>
-          </View>
+      {toastMessage ? (
+        <View style={styles.toastBanner} pointerEvents="none">
+          <Text style={styles.toastBannerText}>{toastMessage}</Text>
         </View>
-      </Modal>
+      ) : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  listContent: { paddingHorizontal: 16, paddingTop: 8 },
-
-  // Stats Card
-  statsCard: {
-    borderRadius: 20, padding: 16, borderWidth: 1, marginBottom: 14,
-  },
-  statsHeader: { gap: 10, marginBottom: 12 },
-  statsTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  statsTitle: { fontSize: 14, fontWeight: '800' },
-  statsActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 6, width: '100%' },
-  aiSuggestTopBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8,
-  },
-  aiSuggestTopBtnText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  keyBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
-    backgroundColor: 'rgba(124, 58, 237, 0.1)',
-  },
-  keyBtnText: {
-    fontSize: 11, fontWeight: '700', color: '#7C3AED',
-  },
-  addTopBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8,
-  },
-  addTopBtnText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-
-  statsGrid: { flexDirection: 'row', gap: 8 },
-  statBox: {
-    flex: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', borderWidth: 1,
-  },
-  statNumber: { fontSize: 18, fontWeight: '800', marginBottom: 2 },
-  statLabel: { fontSize: 11, fontWeight: '600', textAlign: 'center' },
-
-  // Tabs
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
-  filterTab: {
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1,
-  },
-  filterTabText: { fontSize: 12, fontWeight: '700' },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, minHeight: 44, marginBottom: 10 },
-  searchInput: { flex: 1, fontSize: 14, paddingVertical: 8 },
-  filterSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -6, marginBottom: 12 },
-  filterSummaryText: { flex: 1, fontSize: 12, fontWeight: '600' },
-
-  // Habit Card
-  habitCard: {
-    borderRadius: 18, padding: 16, borderWidth: 1, marginBottom: 12,
-  },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  cardIconBox: {
-    width: 44, height: 44, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cardTitleBox: { flex: 1 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  cardTitle: { fontSize: 15, fontWeight: '800', flex: 1 },
-  categoryBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  categoryBadgeText: { fontSize: 10, fontWeight: '700' },
-  cardNote: { fontSize: 12, fontWeight: '500', marginTop: 2 },
-  cardHeaderBtn: { padding: 4 },
-
-  // Card 2 Rows layout (VIỆC 2)
-  cardRow1: {
-    flexDirection: 'row', alignItems: 'center', marginBottom: 8,
-  },
-  cardRow2: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center', maxWidth: '100%', marginBottom: 10,
-  },
-  urgencyBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1,
-  },
-  urgencyDot: { width: 7, height: 7, borderRadius: 4 },
-  urgencyText: { fontSize: 13, fontWeight: '800' },
-  infoChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, borderWidth: 1,
-  },
-  infoChipText: { fontSize: 12 },
-
-  progressBarBg: {
-    height: 6, borderRadius: 3, overflow: 'hidden', marginBottom: 12,
-  },
-  progressBarFill: { height: '100%', borderRadius: 3 },
-
-  actionRow: { marginTop: 2 },
-  resetBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 12, borderRadius: 12,
-  },
-  resetBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
-
-  dailyCounterRow: { flexDirection: 'row', gap: 8 },
-  stepBtnMinus: {
-    width: 44, height: 44, borderRadius: 12, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  stepBtnPlus: {
-    flex: 1, height: 44, borderRadius: 12,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-  },
-  stepBtnPlusText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
-
-  emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 50 },
-  emptyText: { fontSize: 14, fontWeight: '500', marginTop: 10 },
-  emptyClearButton: { marginTop: 12, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
-
-  // Debug Notification in header (VIỆC 5)
-  debugNotifTopBtn: {
-    width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1,
-  },
-  debugNotifTopBtnText: { fontSize: 11, fontWeight: '700' },
-
-  // Modal
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center', padding: 16,
-  },
-  modalCard: {
-    borderRadius: 24, padding: 18, maxHeight: '88%',
-  },
-  modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12,
-  },
-  modalTitle: { fontSize: 17, fontWeight: '800' },
-  formContainer: { paddingVertical: 4 },
-  fieldLabel: { fontSize: 13, fontWeight: '700', marginBottom: 6, marginTop: 10 },
-  typeSelectorRow: { flexDirection: 'row', gap: 6 },
-  typeBtn: { flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
-  typeBtnText: { fontSize: 11, fontWeight: '700' },
-  input: {
-    borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14,
-  },
-  errorText: {
-    color: '#EF4444', fontSize: 11, fontWeight: '600', marginTop: 3, marginLeft: 4,
-  },
-  charCount: { fontSize: 11, alignSelf: 'flex-end', marginTop: 3 },
-  toastPill: {
-    position: 'absolute', top: 56, alignSelf: 'center', zIndex: 9999,
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#10B981', paddingHorizontal: 16, paddingVertical: 8,
-    borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25, shadowRadius: 4, elevation: 5,
-  },
-  toastPillText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
-
-  // Form Selector Elements (VIỆC 1)
-  formSectionBox: { marginVertical: 4 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 6 },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  customCategoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  choiceChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
-  presetChip: {
-    paddingHorizontal: 11, paddingVertical: 7, borderRadius: 10, borderWidth: 1,
-  },
-  presetChipText: { fontSize: 12, fontWeight: '700' },
-
-  stepperContainer: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
-  stepperMiniBtn: {
-    minWidth: 42, height: 40, borderRadius: 10, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8,
-  },
-  stepperMiniBtnText: { fontSize: 13, fontWeight: '800' },
-  stepperDisplay: {
-    flex: 1, height: 40, borderRadius: 10, borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  stepperDisplayText: { fontSize: 15, fontWeight: '800' },
-
-  daysGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 6 },
-  dayGridCell: {
-    width: '12%', aspectRatio: 1, borderRadius: 8, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  dayGridCellText: { fontSize: 12, fontWeight: '700' },
-
-  noteBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8,
-    borderRadius: 8, borderWidth: 1, marginTop: 6,
-  },
-  noteBoxText: { fontSize: 11, flex: 1, lineHeight: 15 },
-
-  // Reminder section in modal
-  reminderSection: {
-    borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 14,
-  },
-  previewBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10,
-    borderRadius: 10, borderWidth: 1, marginTop: 8,
-  },
-  previewText: { fontSize: 12, fontWeight: '700', flex: 1 },
-  explanationBox: {
-    flexDirection: 'row', alignItems: 'center', padding: 10,
-    borderRadius: 10, borderWidth: 1, marginTop: 8,
-  },
-  fieldSubLabel: { fontSize: 12, fontWeight: '600', marginTop: 8 },
-  reminderHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  reminderSectionTitle: { fontSize: 13, fontWeight: '800' },
-  reminderBody: { marginTop: 10 },
-
-  subPickerTitle: {
-    fontSize: 12, fontWeight: '700', marginBottom: 6, marginTop: 4,
-  },
-  timePickerBtn: {
-    flexDirection: 'row', alignItems: 'center', padding: 12,
-    borderRadius: 12, borderWidth: 1.5, marginTop: 4,
-  },
-  timePickerVal: { fontSize: 18, fontWeight: '800' },
-  timePickerSub: { fontSize: 11, marginTop: 2 },
-  changeTimeBadge: {
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
-  },
-  timePickerModalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center', alignItems: 'center', padding: 20,
-  },
-  timePickerModalBox: {
-    width: '100%', maxWidth: 360, borderRadius: 18, padding: 20,
-  },
-  timePickerModalHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12,
-  },
-  timePickerModalTitle: { fontSize: 16, fontWeight: '800' },
-  timePickerModalDone: {
-    paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 14,
-  },
-  timePickerModalDoneText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-
-  // Test Notification Button
-  testNotifBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 10, borderRadius: 10, borderWidth: 1, marginTop: 12,
-  },
-  testNotifBtnText: {
-    color: '#10B981', fontSize: 13, fontWeight: '800',
-  },
-
-  // Debug Notification Modal Items (VIỆC 5)
-  debugNotifCard: {
-    borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 8,
-  },
-  debugNotifTitle: { fontSize: 14, fontWeight: '800' },
-  debugNotifBody: { fontSize: 12, marginTop: 2 },
-  debugNotifMetaRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  debugNotifTrigger: { fontSize: 11, fontWeight: '700' },
-  debugNotifId: { fontSize: 10 },
-
-  colorPalette: { flexDirection: 'row', gap: 8, marginVertical: 6 },
-  colorCircle: { width: 28, height: 28, borderRadius: 14 },
-  colorCircleSelected: { borderWidth: 3, borderColor: '#FFFFFF' },
-  saveBtn: {
-    paddingVertical: 13, borderRadius: 12, alignItems: 'center', marginTop: 16,
-  },
-  saveBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-
-  historyRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 8, borderBottomWidth: 0.5,
-  },
-  historyDateText: { fontSize: 12, fontWeight: '700' },
-  historyNoteText: { fontSize: 11, flex: 1, textAlign: 'right' },
-
-  // Gemini AI Modal Styles
-  aiModalCard: {
-    width: '100%', maxHeight: '88%', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 20, paddingTop: 16,
-  },
-  aiIntroText: {
-    fontSize: 13, lineHeight: 18, marginBottom: 12,
-  },
-  aiTopicChipsRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14,
-  },
-  aiTopicChip: {
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1,
-  },
-  aiTopicChipText: {
-    fontSize: 12, fontWeight: '700',
-  },
-  aiInputRow: {
-    flexDirection: 'row', gap: 8, marginBottom: 16,
-  },
-  aiCustomInput: {
-    flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14,
-    paddingVertical: 10, fontSize: 14,
-  },
-  aiGenerateBtn: {
-    width: 48, height: 48, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  aiResultsContainer: {
-    marginTop: 6,
-  },
-  aiResultsTitle: {
-    fontSize: 14, fontWeight: '800', marginBottom: 10,
-  },
-  aiSuggestionCard: {
-    flexDirection: 'row', borderRadius: 12, borderWidth: 1,
-    overflow: 'hidden', marginBottom: 8,
-  },
-  aiCardColorBar: {
-    width: 6,
-  },
-  aiCardTitle: {
-    fontSize: 14, fontWeight: '800', marginBottom: 2,
-  },
-  aiCardSubtitle: {
-    fontSize: 12, fontWeight: '500',
-  },
-  applyAiBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 14, borderRadius: 14, marginTop: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 4, elevation: 4,
-  },
-  applyAiBtnText: {
-    color: '#FFFFFF', fontSize: 14, fontWeight: '800',
-  },
-
-  // Hộp thoại xác nhận thay đổi chưa lưu
-  confirmOverlayAbsolute: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.70)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 40,
-    zIndex: 99999,
-    elevation: 99999,
-  },
-  confirmCard: {
-    width: '100%',
-    maxWidth: 340,
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 20,
-    alignItems: 'stretch',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.30,
-    shadowRadius: 16,
-    elevation: 20,
-  },
-  confirmHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-    gap: 8,
-  },
-  confirmTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  confirmDesc: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 18,
-    lineHeight: 20,
-  },
-  confirmActionCol: {
-    gap: 10,
-  },
-  confirmBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 13,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    minHeight: 48,
-  },
-  confirmBtnSave: {
-    backgroundColor: '#10B981',
-  },
-  confirmBtnTextSave: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  confirmBtnDiscard: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderWidth: 1,
-    borderColor: '#EF4444',
-  },
-  confirmBtnTextDiscard: {
-    color: '#EF4444',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  confirmBtnContinue: {
-    borderWidth: 1,
-  },
-  confirmBtnTextContinue: {
-    fontWeight: '600',
-    fontSize: 14,
-    textAlign: 'center',
-    flexShrink: 1,
-  },
-});

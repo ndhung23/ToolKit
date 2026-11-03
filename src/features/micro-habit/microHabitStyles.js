@@ -66,7 +66,7 @@ export const styles = StyleSheet.create({
   cardNote: { fontSize: 12, fontWeight: '500', marginTop: 2 },
   cardHeaderBtn: { padding: 4 },
 
-  // Card 2 Rows layout
+  // Card 2 Rows layout (VIỆC 2)
   cardRow1: {
     flexDirection: 'row', alignItems: 'center', marginBottom: 8,
   },
@@ -112,7 +112,7 @@ export const styles = StyleSheet.create({
   emptyText: { fontSize: 14, fontWeight: '500', marginTop: 10 },
   emptyClearButton: { marginTop: 12, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
 
-  // Debug Notification in header
+  // Debug Notification in header (VIỆC 5)
   debugNotifTopBtn: {
     width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1,
   },
@@ -142,8 +142,16 @@ export const styles = StyleSheet.create({
     color: '#EF4444', fontSize: 11, fontWeight: '600', marginTop: 3, marginLeft: 4,
   },
   charCount: { fontSize: 11, alignSelf: 'flex-end', marginTop: 3 },
+  toastPill: {
+    position: 'absolute', top: 56, alignSelf: 'center', zIndex: 9999,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#10B981', paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25, shadowRadius: 4, elevation: 5,
+  },
+  toastPillText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 
-  // Form Selector Elements
+  // Form Selector Elements (VIỆC 1)
   formSectionBox: { marginVertical: 4 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 6 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -183,6 +191,16 @@ export const styles = StyleSheet.create({
   reminderSection: {
     borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 14,
   },
+  previewBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10,
+    borderRadius: 10, borderWidth: 1, marginTop: 8,
+  },
+  previewText: { fontSize: 12, fontWeight: '700', flex: 1 },
+  explanationBox: {
+    flexDirection: 'row', alignItems: 'center', padding: 10,
+    borderRadius: 10, borderWidth: 1, marginTop: 8,
+  },
+  fieldSubLabel: { fontSize: 12, fontWeight: '600', marginTop: 8 },
   reminderHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
@@ -226,7 +244,7 @@ export const styles = StyleSheet.create({
     color: '#10B981', fontSize: 13, fontWeight: '800',
   },
 
-  // Debug Notification Modal Items
+  // Debug Notification Modal Items (VIỆC 5)
   debugNotifCard: {
     borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 8,
   },
@@ -306,5 +324,86 @@ export const styles = StyleSheet.create({
   },
   applyAiBtnText: {
     color: '#FFFFFF', fontSize: 14, fontWeight: '800',
+  },
+
+  // Hộp thoại xác nhận thay đổi chưa lưu
+  confirmOverlayAbsolute: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.70)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 40,
+    zIndex: 99999,
+    elevation: 99999,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: 'stretch',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.30,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  confirmHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    gap: 8,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  confirmDesc: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 18,
+    lineHeight: 20,
+  },
+  confirmActionCol: {
+    gap: 10,
+  },
+  confirmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    minHeight: 48,
+  },
+  confirmBtnSave: {
+    backgroundColor: '#10B981',
+  },
+  confirmBtnTextSave: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  confirmBtnDiscard: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  confirmBtnTextDiscard: {
+    color: '#EF4444',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  confirmBtnContinue: {
+    borderWidth: 1,
+  },
+  confirmBtnTextContinue: {
+    fontWeight: '600',
+    fontSize: 14,
+    textAlign: 'center',
+    flexShrink: 1,
   },
 });

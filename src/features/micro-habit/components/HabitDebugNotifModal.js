@@ -8,6 +8,7 @@ export default function HabitDebugNotifModal({
   onClose,
   scheduledNotifs = [],
   onSimulateNotificationTap,
+  onSelfHeal,
   colors,
   t,
 }) {
@@ -62,12 +63,22 @@ export default function HabitDebugNotifModal({
             }
           />
 
-          <Pressable
-            onPress={onClose}
-            style={[styles.saveBtn, { backgroundColor: '#10B981', marginTop: 12 }]}
-          >
-            <Text style={styles.saveBtnText}>{t ? t('common.close') : 'Đóng'}</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            {onSelfHeal ? (
+              <Pressable
+                onPress={onSelfHeal}
+                style={[styles.saveBtn, { flex: 1, backgroundColor: '#3B82F6', marginTop: 0 }]}
+              >
+                <Text style={styles.saveBtnText}>Tự đối chiếu & Sửa</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={onClose}
+              style={[styles.saveBtn, { flex: 1, backgroundColor: '#10B981', marginTop: 0 }]}
+            >
+              <Text style={styles.saveBtnText}>{t ? t('common.close') : 'Đóng'}</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
