@@ -1744,7 +1744,9 @@ export default function MicroHabitScreen({ navigation, route }) {
             />
           </View>
 
-          {/* Hộp thoại xác nhận thay đổi chưa lưu NGAY TRONG cây giao diện form (VIỆC AI - Không dùng Modal thứ hai) */}
+        </KeyboardAvoidingView>
+
+          {/* Hộp thoại xác nhận thay đổi chưa lưu - NGOÀI KeyboardAvoidingView, ở gốc Modal (VIỆC AK) */}
           {showUnsavedConfirm && (
             <View style={styles.confirmOverlayAbsolute}>
               <Pressable style={StyleSheet.absoluteFillObject} onPress={handleContinueEditing} />
@@ -1785,7 +1787,6 @@ export default function MicroHabitScreen({ navigation, route }) {
               </View>
             </View>
           )}
-        </KeyboardAvoidingView>
       </Modal>
 
       {/* Modal Xem lịch sử lần hoàn thành */}
@@ -2372,6 +2373,7 @@ const styles = StyleSheet.create({
   confirmCard: {
     width: '100%',
     maxWidth: 360,
+    maxHeight: '80%',
     borderRadius: 20,
     borderWidth: 1,
     padding: 20,
