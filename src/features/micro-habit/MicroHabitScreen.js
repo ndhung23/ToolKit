@@ -18,12 +18,12 @@ import {
   Keyboard,
   ActivityIndicator,
   BackHandler,
-  InteractionManager,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ScreenHeader } from '../../components/ui';
 import { useTheme } from '../../theme';
+import runAfterUi from '../../utils/runAfterUi';
 import { generateHabitsWithAi } from '../../services/geminiService';
 import {
   HABIT_TYPES,
@@ -671,7 +671,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     initialFormSnapshot.current = null;
 
     // GIAI ĐOẠN (b) NỀN: Chạy sau khi modal đóng hoàn toàn (không chặn JS thread)
-    InteractionManager.runAfterInteractions(async () => {
+    runAfterUi(async () => {
       try {
         // 1. Đồng bộ thông báo hệ điều hành (có timeout 6s)
         if (savedItem.reminderEnabled) {
