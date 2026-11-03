@@ -1925,14 +1925,7 @@ export default function MicroHabitScreen({ navigation, route }) {
                           </View>
                         ) : null}
 
-                        {/* Nút bắn thông báo thử nghiệm ngay (2s) để test loa & banner trên iOS & Android */}
-                        <Pressable
-                          onPress={handleTestNotification}
-                          style={[styles.testNotifBtn, { backgroundColor: colors.card, borderColor: '#10B981' }]}
-                        >
-                          <Ionicons name="notifications-circle" size={18} color="#10B981" />
-                          <Text style={styles.testNotifBtnText}>🔔 Thử chuông thông báo ngay (2s)</Text>
-                        </Pressable>
+                        {/* Nút thử chuông đã bị xóa theo yêu cầu */}
                       </View>
                     )}
                   </View>
@@ -2636,34 +2629,35 @@ const styles = StyleSheet.create({
     color: '#FFFFFF', fontSize: 14, fontWeight: '800',
   },
 
-  // Hộp thoại xác nhận thay đổi chưa lưu (VIỆC AG & VIỆC AI)
+  // Hộp thoại xác nhận thay đổi chưa lưu
   confirmOverlayAbsolute: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(0, 0, 0, 0.70)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 40,
     zIndex: 99999,
     elevation: 99999,
   },
   confirmCard: {
     width: '100%',
-    maxWidth: 360,
-    maxHeight: '80%',
+    maxWidth: 340,
     borderRadius: 20,
     borderWidth: 1,
     padding: 20,
-    alignItems: 'center',
+    alignItems: 'stretch',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.30,
     shadowRadius: 16,
-    elevation: 10,
+    elevation: 20,
   },
   confirmHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'center',
+    marginBottom: 10,
     gap: 8,
   },
   confirmTitle: {
@@ -2673,20 +2667,20 @@ const styles = StyleSheet.create({
   confirmDesc: {
     fontSize: 14,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 18,
     lineHeight: 20,
   },
   confirmActionCol: {
-    width: '100%',
     gap: 10,
   },
   confirmBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 13,
+    paddingHorizontal: 12,
     borderRadius: 12,
+    minHeight: 48,
   },
   confirmBtnSave: {
     backgroundColor: '#10B981',
@@ -2711,6 +2705,8 @@ const styles = StyleSheet.create({
   },
   confirmBtnTextContinue: {
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: 14,
+    textAlign: 'center',
+    flexShrink: 1,
   },
 });
