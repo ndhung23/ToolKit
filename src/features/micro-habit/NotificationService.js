@@ -257,13 +257,6 @@ async function scheduleOne(habit, now = new Date()) {
     nowLog('cancelled-today-completed', { taskId: habit.id });
   }
 
-  const masterTrigger = buildHabitReminderTrigger(habit, now);
-  if (!masterTrigger) {
-    await Promise.all(existingForTask.map((item) => Notifications.cancelScheduledNotificationAsync(item.identifier).catch(() => {})));
-    nowLog('skip-past-or-invalid', { taskId: habit.id });
-    return null;
-  }
-
   if (!await permissionGranted()) {
     nowLog('permission-denied', { taskId: habit.id });
     return null;
@@ -271,6 +264,33 @@ async function scheduleOne(habit, now = new Date()) {
 
   // Clean stale notifications for this task before re-scheduling
   await Promise.all(existingForTask.map((item) => Notifications.cancelScheduledNotificationAsync(item.identifier).catch(() => {})));
+
+  // DAILY: use pre-scheduled DATE triggers exclusively (more reliable in Expo Go than CALENDAR/DAILY repeating triggers)
+  if (habit.type === HABIT_TYPES.DAILY) {
+    const futureTriggers = buildUpcomingDailyTriggers(habit, MAX_PRE_SCHEDULE_DAYS, now);
+    if (futureTriggers.length === 0) {
+      nowLog('skip-no-future-triggers', { taskId: habit.id });
+      return null;
+    }
+    let firstId = null;
+    for (const item of futureTriggers) {
+      const id = await Notifications.scheduleNotificationAsync({
+        content: contentFor(habit, item.key, `Mục tiêu hàng ngày lúc ${habit.reminderTime}`),
+        trigger: item.trigger,
+      }).catch((err) => { console.warn('[HabitNotification] Pre-schedule warning:', err.message); return null; });
+      if (id && !firstId) firstId = id;
+    }
+    const nextAt = futureTriggers[0]?.date?.toISOString() || null;
+    nowLog('scheduled-daily-date-triggers', { taskId: habit.id, count: futureTriggers.length, nextAt });
+    return firstId;
+  }
+
+  // INTERVAL & MONTHLY: one-shot DATE trigger at next due date
+  const masterTrigger = buildHabitReminderTrigger(habit, now);
+  if (!masterTrigger) {
+    nowLog('skip-past-or-invalid', { taskId: habit.id });
+    return null;
+  }
 
   const masterKey = getReminderKey(habit, 'master');
   const masterId = await Notifications.scheduleNotificationAsync({
@@ -281,18 +301,6 @@ async function scheduleOne(habit, now = new Date()) {
   const nativeNext = Notifications.getNextTriggerDateAsync ? await Notifications.getNextTriggerDateAsync(masterTrigger).catch(() => null) : null;
   const nextAt = nativeNext ? new Date(nativeNext).toISOString() : getNextOccurrenceForTrigger(masterTrigger, now)?.toISOString() || null;
   nowLog('scheduled-master', { taskId: habit.id, key: masterKey, id: masterId, trigger: triggerSignature(masterTrigger), nextAt });
-
-  // For DAILY habits: also pre-schedule upcoming 7 days to guarantee survival when app is killed
-  if (habit.type === HABIT_TYPES.DAILY) {
-    const futureTriggers = buildUpcomingDailyTriggers(habit, MAX_PRE_SCHEDULE_DAYS, now);
-    for (const item of futureTriggers) {
-      await Notifications.scheduleNotificationAsync({
-        content: contentFor(habit, item.key, `Mục tiêu hàng ngày lúc ${habit.reminderTime}`),
-        trigger: item.trigger,
-      }).catch((err) => console.warn('[HabitNotification] Pre-schedule warning:', err.message));
-    }
-    nowLog('scheduled-future-days', { taskId: habit.id, count: futureTriggers.length });
-  }
 
   return masterId;
 }
@@ -351,19 +359,31 @@ export function reconcileHabitReminders(habits = []) {
         !orphans.some((o) => o.identifier === item.identifier)
       );
 
-      const desiredTrigger = buildHabitReminderTrigger(habit, now);
-      const masterKey = getReminderKey(habit, 'master');
-      const matchingMaster = taskNotifications.find((item) =>
-        (item.content?.data?.notificationKey === masterKey || !item.content?.data?.notificationKey?.includes('day:')) &&
-        triggerSignature(item.trigger) === triggerSignature(desiredTrigger)
-      );
+      let masterId = null;
 
-      let masterId = matchingMaster?.identifier || null;
-
-      // If master notification is missing or has stale time/trigger, re-schedule task
-      if (!matchingMaster) {
+      if (habit.type === HABIT_TYPES.DAILY) {
+        // For DAILY: check if we have upcoming DATE triggers already scheduled (next 2 days at minimum)
+        const futureDate = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+        const hasFutureDateTriggers = taskNotifications.some((item) => {
+          const norm = normalizeTriggerData(item.trigger);
+          return norm?.type === 'date' && norm.timestamp > now.getTime() && norm.timestamp < futureDate.getTime();
+        });
+        // Always re-schedule to fill the 7-day window whenever we reconcile
         masterId = await scheduleOne(habit, now);
-        nowLog('reconciled-rescheduled', { taskId: habit.id, newId: masterId });
+        if (masterId) nowLog('reconciled-daily-rescheduled', { taskId: habit.id, hadFuture: hasFutureDateTriggers });
+      } else {
+        // INTERVAL / MONTHLY: check if master trigger still matches
+        const desiredTrigger = buildHabitReminderTrigger(habit, now);
+        const masterKey = getReminderKey(habit, 'master');
+        const matchingMaster = taskNotifications.find((item) =>
+          (item.content?.data?.notificationKey === masterKey || !item.content?.data?.notificationKey?.includes('day:')) &&
+          triggerSignature(item.trigger) === triggerSignature(desiredTrigger)
+        );
+        masterId = matchingMaster?.identifier || null;
+        if (!matchingMaster) {
+          masterId = await scheduleOne(habit, now);
+          nowLog('reconciled-rescheduled', { taskId: habit.id, newId: masterId });
+        }
       }
 
       const idx = updatedHabits.findIndex((h) => h.id === habit.id);
@@ -404,6 +424,9 @@ export function testInstantNotification(taskId, title = '🔔 Thử chuông', bo
   return serial(async () => {
     if (!taskId) throw new Error('Chọn một việc trước khi thử chuông.');
     if (!await permissionGranted()) throw new Error('Chưa được cấp quyền thông báo.');
+    // Use DATE trigger (same type as real notifications) +2 seconds
+    // This validates the full scheduling path used by real reminders
+    const fireAt = new Date(Date.now() + 2000);
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title,
@@ -412,9 +435,12 @@ export function testInstantNotification(taskId, title = '🔔 Thử chuông', bo
         data: { taskId, habitId: taskId, managedBy: MANAGED_BY, test: true },
         ...(Platform.OS === 'android' ? { channelId: HABIT_REMINDER_CHANNEL } : {}),
       },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 2 },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: fireAt,
+      },
     });
-    nowLog('test-scheduled', { taskId, id });
+    nowLog('test-scheduled', { taskId, id, fireAt: fireAt.toISOString() });
     return id;
   });
 }
