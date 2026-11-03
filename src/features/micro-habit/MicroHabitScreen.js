@@ -202,6 +202,7 @@ export default function MicroHabitScreen({ navigation, route }) {
   }, [searchInput]);
 
   const updateHabitsList = useCallback((newList) => {
+    if (!Array.isArray(newList)) return;
     setHabits(newList);
     saveSharedHabits(newList);
   }, []);
@@ -299,52 +300,46 @@ export default function MicroHabitScreen({ navigation, route }) {
     Alert.alert('Thành công', `Đã thêm ${newItems.length} việc vặt thông minh vào danh sách theo dõi của bạn! 🎉`);
   }, [aiSuggestions, habits, updateHabitsList]);
 
-  const handleCompleteHabit = (id) => {
-    const updated = recordHabitCompletion(habits, id);
-    updateHabitsList(updated);
-    const target = updated.find((h) => h.id === id);
-    if (!target) return;
+  const handleCompleteHabit = useCallback(async (id) => {
+    try {
+      const list = Array.isArray(habits) ? habits : [];
+      const currentTarget = list.find((h) => h.id === id);
+      const title = currentTarget?.title || 'Việc vặt';
 
-    if (target.reminderEnabled) {
-      scheduleHabitReminder(target).catch(() => {});
-    }
+      await recordHabitCompletion(id);
 
-    if (Platform.OS !== 'web') {
-      Alert.alert('Đã hoàn thành! 🎉', `Đã reset chu kỳ cho "${target.title}".`, [
-        {
-          text: 'Hoàn tác',
-          style: 'destructive',
-          onPress: () => {
-            const restored = undoHabitCompletion(updated, id);
-            updateHabitsList(restored);
-            const restoredTarget = restored.find((h) => h.id === id);
-            if (restoredTarget?.reminderEnabled) {
-              scheduleHabitReminder(restoredTarget).catch(() => {});
-            }
-          },
-        },
-        { text: 'OK' },
-      ]);
-    }
-  };
-
-  const handleStepDaily = (id, delta) => {
-    const updated = habits.map((h) => {
-      if (h.id === id) {
-        const today = getTodayDateString();
-        const baseCount = h.lastDailyDate === today ? h.currentCount || 0 : 0;
-        const nextCount = Math.max(0, baseCount + delta);
-        return {
-          ...h,
-          currentCount: nextCount,
-          lastDailyDate: today,
-          lastCompletedDate: nextCount > 0 ? new Date().toISOString() : h.lastCompletedDate,
-        };
+      if (Platform.OS !== 'web') {
+        Alert.alert(
+          t('microHabit.completedTitle') || 'Đã hoàn thành! 🎉',
+          (t('microHabit.cycleResetFor') || 'Đã reset chu kỳ cho') + ` "${title}".`,
+          [
+            {
+              text: t('microHabit.undo') || 'Hoàn tác',
+              style: 'destructive',
+              onPress: async () => {
+                await undoHabitCompletion(id);
+              },
+            },
+            { text: t('common.ok') || 'OK' },
+          ]
+        );
       }
-      return h;
-    });
-    updateHabitsList(updated);
-  };
+    } catch (err) {
+      console.warn('[MicroHabit] Lỗi handleCompleteHabit:', err);
+    }
+  }, [habits, t]);
+
+  const handleStepDaily = useCallback(async (id, delta) => {
+    try {
+      if (delta > 0) {
+        await recordHabitCompletion(id);
+      } else {
+        await undoHabitCompletion(id);
+      }
+    } catch (err) {
+      console.warn('[MicroHabit] Lỗi handleStepDaily:', err);
+    }
+  }, []);
 
   const handleDeleteHabit = (id, title) => {
     Alert.alert(
@@ -781,7 +776,8 @@ export default function MicroHabitScreen({ navigation, route }) {
   }, [modalVisible, requestCloseModal]);
 
   const habitsWithStatus = useMemo(() => {
-    return habits.map((h) => ({
+    const list = Array.isArray(habits) ? habits : [];
+    return list.map((h) => ({
       ...h,
       status: calculateHabitStatus(h),
     }));
