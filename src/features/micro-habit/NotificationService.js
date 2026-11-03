@@ -47,22 +47,36 @@ export function getReminderKey(habit) {
   return `task:${habit.id}:${day}`;
 }
 
-function getTrigger(habit) {
+// iOS uses UNCalendarNotificationTrigger for a daily calendar match. The Android
+// `daily` trigger looks similar, but is not the native iOS representation.
+export function buildHabitReminderTrigger(habit, now = new Date()) {
   const [hour, minute] = String(habit.reminderTime || '').split(':').map(Number);
   if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
   if (habit.type === HABIT_TYPES.DAILY) {
-    return { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour, minute, repeats: true };
+    return Platform.OS === 'ios'
+      ? { type: Notifications.SchedulableTriggerInputTypes.CALENDAR, hour, minute, repeats: true }
+      : { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour, minute };
   }
   const due = calculateHabitStatus(habit).dueDate;
   if (!due) return null;
   const date = new Date(due.getFullYear(), due.getMonth(), due.getDate(), hour, minute, 0, 0);
-  return date > new Date() ? { type: Notifications.SchedulableTriggerInputTypes.DATE, date } : null;
+  return date > now ? { type: Notifications.SchedulableTriggerInputTypes.DATE, date } : null;
 }
 
 function triggerSignature(trigger) {
   if (!trigger) return 'none';
   if (trigger.date) return `date:${new Date(trigger.date).getTime()}`;
-  return `daily:${trigger.hour}:${trigger.minute}`;
+  return `${trigger.type}:${trigger.hour}:${trigger.minute}`;
+}
+
+export function getNextOccurrenceForTrigger(trigger, now = new Date()) {
+  if (!trigger) return null;
+  if (trigger.date) return new Date(trigger.date);
+  if (!Number.isInteger(trigger.hour) || !Number.isInteger(trigger.minute)) return null;
+  const next = new Date(now);
+  next.setHours(trigger.hour, trigger.minute, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  return next;
 }
 
 async function permissionGranted() {
@@ -91,7 +105,7 @@ async function scheduleOne(habit) {
       nowLog('cancelled-daily-complete', { taskId: habit.id });
       return null;
     }
-    const trigger = getTrigger(habit);
+    const trigger = buildHabitReminderTrigger(habit);
     if (!trigger) { nowLog('skip-past-or-invalid', { taskId: habit.id }); return null; }
     if (!await permissionGranted()) { nowLog('permission-denied', { taskId: habit.id }); return null; }
     const key = getReminderKey(habit);
@@ -101,7 +115,9 @@ async function scheduleOne(habit) {
     const stale = pending.filter((item) => item.content?.data?.notificationKey === key);
     await Promise.all(stale.map((item) => Notifications.cancelScheduledNotificationAsync(item.identifier)));
     const id = await Notifications.scheduleNotificationAsync({ content: contentFor(habit, key), trigger });
-    nowLog('scheduled', { taskId: habit.id, key, id, trigger: triggerSignature(trigger) });
+    const nativeNext = Notifications.getNextTriggerDateAsync ? await Notifications.getNextTriggerDateAsync(trigger).catch(() => null) : null;
+    const nextAt = nativeNext ? new Date(nativeNext).toISOString() : getNextOccurrenceForTrigger(trigger)?.toISOString() || null;
+    nowLog('scheduled', { taskId: habit.id, key, id, trigger: triggerSignature(trigger), nextAt });
     return id;
 }
 
@@ -120,7 +136,7 @@ export function cancelHabitReminder(notificationId, reason = 'explicit') {
 export function reconcileHabitReminders(habits = []) {
   return serial(async () => {
     const allowed = habits.filter((habit) => habit?.reminderEnabled && habit?.reminderTime)
-      .map((habit) => ({ habit, trigger: getTrigger(habit), key: getReminderKey(habit) }))
+      .map((habit) => ({ habit, trigger: buildHabitReminderTrigger(habit), key: getReminderKey(habit) }))
       .filter((item) => item.trigger)
       .slice(0, 64);
     const desired = new Map(allowed.map((item) => [item.key, item]));
@@ -145,13 +161,16 @@ export function reconcileHabitReminders(habits = []) {
   });
 }
 
-export function getAllScheduledHabitReminders() {
-  return Notifications.getAllScheduledNotificationsAsync().then((items) => items
+export async function getAllScheduledHabitReminders() {
+  const items = await Notifications.getAllScheduledNotificationsAsync();
+  return Promise.all(items
     .filter((item) => item.content?.data?.managedBy === MANAGED_BY)
-    .map((item) => {
+    .map(async (item) => {
       const trigger = item.trigger || {};
+      const nativeNext = Notifications.getNextTriggerDateAsync ? await Notifications.getNextTriggerDateAsync(trigger).catch(() => null) : null;
+      const nextAt = nativeNext ? new Date(nativeNext).toISOString() : getNextOccurrenceForTrigger(trigger)?.toISOString() || null;
       const triggerSummary = trigger.date ? new Date(trigger.date).toLocaleString('vi-VN') : trigger.hour !== undefined ? `Hàng ngày lúc ${String(trigger.hour).padStart(2, '0')}:${String(trigger.minute || 0).padStart(2, '0')}` : 'Không xác định';
-      return { id: item.identifier, taskId: item.content?.data?.taskId, title: item.content?.title, body: item.content?.body, trigger, triggerSummary };
+      return { id: item.identifier, taskId: item.content?.data?.taskId, title: item.content?.title, body: item.content?.body, trigger, triggerSummary, nextAt };
     }));
 }
 

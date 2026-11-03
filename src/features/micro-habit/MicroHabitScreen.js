@@ -1505,6 +1505,7 @@ export default function MicroHabitScreen({ navigation, route }) {
                     <Text style={[styles.debugNotifTrigger, { color: '#10B981' }]}>⏰ {item.triggerSummary}</Text>
                     <Text style={[styles.debugNotifId, { color: colors.sub }]}>ID: {item.id.slice(0, 8)}...</Text>
                   </View>
+                  {item.nextAt ? <Text style={[styles.debugNotifBody, { color: colors.sub }]}>Lần kế tiếp: {new Date(item.nextAt).toLocaleString('vi-VN')}</Text> : null}
                 </Pressable>
               )}
               ListEmptyComponent={
