@@ -18,6 +18,7 @@ import {
   Keyboard,
   ActivityIndicator,
   BackHandler,
+  InteractionManager,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -145,10 +146,12 @@ export default function MicroHabitScreen({ navigation, route }) {
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [formErrors, setFormErrors] = useState({});
 
-  // Cảnh báo thoát khi chưa lưu (VIỆC AG)
+  // Cảnh báo thoát khi chưa lưu (VIỆC AG) & Trạng thái lưu an toàn không đơ UI (VIỆC AH)
   const initialFormSnapshot = useRef(null);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const pendingExitActionRef = useRef(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const isBypassingUnsavedCheck = useRef(false);
 
   const occurrencePreview = useMemo(() => {
     return computeNextOccurrence({
@@ -571,13 +574,17 @@ export default function MicroHabitScreen({ navigation, route }) {
     return Object.keys(errors).length === 0;
   }, [validateHabitForm]);
 
-  // 7. Lưu việc vặt từ Modal (Thêm hoặc Sửa)
+  // 7. Lưu việc vặt từ Modal (Thêm hoặc Sửa) — Thiết kế 2 giai đoạn không đơ giao diện (VIỆC AH)
   const handleSaveForm = async () => {
+    if (isSaving) return; // Chống bấm đúp (anti double-click)
     const errors = validateHabitForm();
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) {
       return;
     }
+
+    setIsSaving(true);
+    isBypassingUnsavedCheck.current = true; // Bỏ qua chặn thoát khi người dùng đã bấm lưu
 
     const trimmedTitle = formTitle.trim();
     const validTime = (formReminderTime || '08:00').trim();
@@ -585,23 +592,27 @@ export default function MicroHabitScreen({ navigation, route }) {
     if (formCategory === 'Khác' && !customCategories.includes(selectedCategory)) {
       const nextCategories = [selectedCategory, ...customCategories].slice(0, 10);
       setCustomCategories(nextCategories);
-      await saveCustomCategories(nextCategories);
+      saveCustomCategories(nextCategories).catch(() => {});
     }
 
-    // Clamp dayOfMonth cho tháng ngắn (logic xử lý ở microHabitService.calculateHabitStatus)
     const parsedDayOfMonth = Math.min(31, Math.max(1, parseInt(formDayOfMonth || 1, 10)));
+    const parsedIntervalDays = Math.min(3650, Math.max(1, parseInt(formIntervalDays || 1, 10)));
+    const parsedTargetCount = Math.min(1000, Math.max(1, parseInt(formTargetCount || 1, 10)));
+    const parsedReminderIntervalHours = Math.min(24, Math.max(0, parseInt(formReminderIntervalHours || 0, 10)));
+
+    let savedItem;
+    let updatedList;
 
     if (editingId) {
-      // Đang sửa
       const currentItem = habits.find((h) => h.id === editingId);
-      const habitDraft = {
+      savedItem = {
         ...(currentItem || {}),
         id: editingId,
         title: trimmedTitle,
         type: formType,
-        intervalDays: Math.max(1, parseInt(formIntervalDays || 1, 10)),
+        intervalDays: parsedIntervalDays,
         dayOfMonth: parsedDayOfMonth,
-        targetCount: Math.max(1, parseInt(formTargetCount || 1, 10)),
+        targetCount: parsedTargetCount,
         unit: formUnit.trim() || 'lần',
         category: selectedCategory,
         note: formNote.trim(),
@@ -609,23 +620,18 @@ export default function MicroHabitScreen({ navigation, route }) {
         color: formColor,
         reminderEnabled: formReminderEnabled,
         reminderTime: validTime || '08:00',
+        reminderIntervalHours: parsedReminderIntervalHours,
         startDate: formStartDate || null,
       };
-
-      const newNotifId = await scheduleHabitReminder(habitDraft);
-      habitDraft.notificationId = newNotifId;
-
-      const updated = habits.map((h) => (h.id === editingId ? habitDraft : h));
-      updateHabitsList(updated);
+      updatedList = habits.map((h) => (h.id === editingId ? savedItem : h));
     } else {
-      // Đang thêm mới
-      const newHabit = {
+      savedItem = {
         id: `habit-${Date.now()}`,
         title: trimmedTitle,
         type: formType,
-        intervalDays: Math.max(1, parseInt(formIntervalDays || 1, 10)),
+        intervalDays: parsedIntervalDays,
         dayOfMonth: parsedDayOfMonth,
-        targetCount: Math.max(1, parseInt(formTargetCount || 1, 10)),
+        targetCount: parsedTargetCount,
         unit: formUnit.trim() || 'lần',
         category: selectedCategory,
         note: formNote.trim(),
@@ -636,52 +642,92 @@ export default function MicroHabitScreen({ navigation, route }) {
         lastDailyDate: getTodayDateString(),
         reminderEnabled: formReminderEnabled,
         reminderTime: validTime || '08:00',
+        reminderIntervalHours: parsedReminderIntervalHours,
         startDate: formStartDate || null,
         notificationId: null,
         history: [],
       };
-
-      if (formReminderEnabled) {
-        const notifId = await scheduleHabitReminder(newHabit);
-        newHabit.notificationId = notifId;
-      }
-
-      updateHabitsList([newHabit, ...habits]);
+      updatedList = [savedItem, ...habits];
     }
 
-    // Auto-routing về đúng ô lọc & làm nổi bật (VIỆC AF)
-    const savedItem = editingId
-      ? { ...habits.find((h) => h.id === editingId), title: trimmedTitle, type: formType, intervalDays: Math.max(1, parseInt(formIntervalDays || 1, 10)), dayOfMonth: parsedDayOfMonth, targetCount: Math.max(1, parseInt(formTargetCount || 1, 10)), startDate: formStartDate || null, reminderTime: validTime || '08:00', reminderEnabled: formReminderEnabled }
-      : { id: `habit-${Date.now()}`, title: trimmedTitle, type: formType, startDate: formStartDate || null, reminderTime: validTime || '08:00', reminderEnabled: formReminderEnabled };
+    // GIAI ĐOẠN (a) NHANH, ĐỒNG BỘ (< 50ms):
+    // 1. Cập nhật state và store ngay lập tức
+    setHabits(updatedList);
+    saveSharedHabits(updatedList).catch((err) => console.warn('[HabitStore] Save error:', err));
 
-    const targetStatus = calculateHabitStatus(savedItem);
-    const targetGroup = getHabitStatusGroup(targetStatus);
-    const STATUS_GROUP_NAMES = {
-      overdue: 'Quá hạn',
-      warning: 'Sắp đến hạn',
-      safe: 'An toàn / Chưa đến hạn',
-      completed: 'Đã hoàn thành',
-    };
-
-    const isVisibleUnderCurrentFilter =
-      (!activeStatusFilter || activeStatusFilter === targetGroup) &&
-      (activeFilter === 'all' || activeFilter === savedItem.type || (activeFilter === 'urgent' && ['overdue', 'warning'].includes(targetGroup))) &&
-      (!debouncedSearch || normalizeHabitSearch(`${savedItem.title || ''} ${savedItem.category || ''}`).includes(normalizeHabitSearch(debouncedSearch)));
-
-    if (!isVisibleUnderCurrentFilter) {
-      setActiveStatusFilter(targetGroup);
-      setActiveFilter('all');
-      setSearchInput('');
-      setDebouncedSearch('');
-      setToastMessage(`Việc đã chuyển sang nhóm ${STATUS_GROUP_NAMES[targetGroup] || targetGroup}`);
-      setTimeout(() => setToastMessage(null), 2500);
-    }
-
-    setHighlightHabitId(savedItem.id);
-    setTimeout(() => setHighlightHabitId(null), 2500);
-
+    // 2. Đóng Modal ngay lập tức, giải phóng UI và bàn phím
     setModalVisible(false);
+    setShowUnsavedConfirm(false);
+    setEditingId(null);
     setFormErrors({});
+    setIsSaving(false);
+    initialFormSnapshot.current = null;
+
+    // GIAI ĐOẠN (b) NỀN: Chạy sau khi modal đóng hoàn toàn (không chặn JS thread)
+    InteractionManager.runAfterInteractions(async () => {
+      try {
+        // 1. Đồng bộ thông báo hệ điều hành (có timeout 6s)
+        if (savedItem.reminderEnabled) {
+          const schedulePromise = scheduleHabitReminder(savedItem);
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000));
+          const newNotifId = await Promise.race([schedulePromise, timeoutPromise]).catch((err) => {
+            console.warn('[MicroHabit] Notification scheduling warning:', err.message);
+            return null;
+          });
+
+          if (newNotifId) {
+            savedItem.notificationId = newNotifId;
+            const synced = updatedList.map((h) => (h.id === savedItem.id ? { ...h, notificationId: newNotifId } : h));
+            setHabits(synced);
+            saveSharedHabits(synced).catch(() => {});
+          } else if (newNotifId === null && savedItem.reminderEnabled) {
+            setToastMessage('Đã lưu việc nhưng chưa đặt được nhắc, hãy thử lại');
+            setTimeout(() => setToastMessage(null), 3000);
+          }
+        } else {
+          cancelHabitRemindersForTask(savedItem.id).catch(() => {});
+        }
+
+        // 2. Auto-routing về đúng tab bộ lọc và highlight (VIỆC AF)
+        const targetStatus = calculateHabitStatus(savedItem);
+        const targetGroup = getHabitStatusGroup(targetStatus);
+        const STATUS_GROUP_NAMES = {
+          overdue: 'Quá hạn',
+          warning: 'Sắp đến hạn',
+          safe: 'An toàn / Chưa đến hạn',
+          completed: 'Đã hoàn thành',
+        };
+
+        const isVisibleUnderCurrentFilter =
+          (!activeStatusFilter || activeStatusFilter === targetGroup) &&
+          (activeFilter === 'all' || activeFilter === savedItem.type || (activeFilter === 'urgent' && ['overdue', 'warning'].includes(targetGroup))) &&
+          (!debouncedSearch || normalizeHabitSearch(`${savedItem.title || ''} ${savedItem.category || ''}`).includes(normalizeHabitSearch(debouncedSearch)));
+
+        if (!isVisibleUnderCurrentFilter) {
+          setActiveStatusFilter(targetGroup);
+          setActiveFilter('all');
+          setSearchInput('');
+          setDebouncedSearch('');
+          setToastMessage(`Việc đã chuyển sang nhóm ${STATUS_GROUP_NAMES[targetGroup] || targetGroup}`);
+          setTimeout(() => setToastMessage(null), 2500);
+        }
+
+        setHighlightHabitId(savedItem.id);
+        setTimeout(() => setHighlightHabitId(null), 2500);
+
+        // 3. Cuộn tới thẻ
+        setTimeout(() => {
+          const index = updatedList.findIndex((h) => h.id === savedItem.id);
+          if (index >= 0) {
+            listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 });
+          }
+        }, 200);
+      } catch (bgError) {
+        console.warn('[MicroHabit] Background post-save warning:', bgError);
+      } finally {
+        isBypassingUnsavedCheck.current = false;
+      }
+    });
   };
 
   // Xác định "có thay đổi" bằng cách so sánh giá trị đã chuẩn hóa với bản gốc lúc mở (VIỆC AG)
@@ -1607,12 +1653,25 @@ export default function MicroHabitScreen({ navigation, route }) {
                   {/* Nút Submit */}
                   <Pressable
                     onPress={handleSaveForm}
-                    disabled={!isFormValid}
-                    style={[styles.saveBtn, { backgroundColor: isFormValid ? '#10B981' : '#6B7280', opacity: isFormValid ? 1 : 0.5 }]}
+                    disabled={!isFormValid || isSaving}
+                    style={[
+                      styles.saveBtn,
+                      {
+                        backgroundColor: isFormValid && !isSaving ? '#10B981' : '#6B7280',
+                        opacity: isFormValid && !isSaving ? 1 : 0.6,
+                      },
+                    ]}
                   >
-                    <Text style={styles.saveBtnText}>
-                      {editingId ? 'Cập nhật việc vặt' : 'Lưu việc vặt mới'}
-                    </Text>
+                    {isSaving ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                        <Text style={styles.saveBtnText}>Đang lưu...</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.saveBtnText}>
+                        {editingId ? 'Cập nhật việc vặt' : 'Lưu việc vặt mới'}
+                      </Text>
+                    )}
                   </Pressable>
                   <View style={{ height: 20 }} />
                 </View>

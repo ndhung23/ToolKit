@@ -165,28 +165,50 @@ function contentFor(habit, key, subNote = '') {
 }
 
 /**
- * Builds upcoming date triggers for daily tasks (7-14 days ahead)
+ * Builds upcoming date triggers for daily tasks (7 days ahead)
  * Guarantees reminders fire even when app remains killed for days.
+ * Also supports reminderIntervalHours (e.g. drink water every 2 hours).
  */
 export function buildUpcomingDailyTriggers(habit, daysCount = MAX_PRE_SCHEDULE_DAYS, now = new Date()) {
-  const [hour, minute] = String(habit.reminderTime || '').split(':').map(Number);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return [];
+  const [startHour, startMinute] = String(habit.reminderTime || '').split(':').map(Number);
+  if (!Number.isInteger(startHour) || !Number.isInteger(startMinute)) return [];
   const list = [];
-  const startDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
-  const firstIndex = startDay > now ? 0 : 1;
+  const intervalHours = parseInt(habit.reminderIntervalHours || 0, 10);
+  const targetCount = Math.max(1, parseInt(habit.targetCount || 1, 10));
 
-  for (let i = firstIndex; i < firstIndex + daysCount; i++) {
-    const occDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i, hour, minute, 0, 0);
-    const dateKey = `${occDate.getFullYear()}-${String(occDate.getMonth() + 1).padStart(2, '0')}-${String(occDate.getDate()).padStart(2, '0')}`;
-    list.push({
-      date: occDate,
-      dateKey,
-      key: getReminderKey(habit, dateKey),
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
+  // Determine reminder slots within each day
+  const timeSlots = [];
+  if (intervalHours > 0) {
+    const maxSlots = Math.min(targetCount, 8); // At most 8 slots a day to protect OS limits
+    for (let slot = 0; slot < maxSlots; slot++) {
+      const h = startHour + slot * intervalHours;
+      if (h >= 24) break;
+      timeSlots.push({ hour: h, minute: startMinute });
+    }
+  } else {
+    timeSlots.push({ hour: startHour, minute: startMinute });
+  }
+
+  const safeDays = Math.min(14, Math.max(1, daysCount));
+  for (let dayOffset = 0; dayOffset < safeDays; dayOffset++) {
+    for (let slotIdx = 0; slotIdx < timeSlots.length; slotIdx++) {
+      const { hour, minute } = timeSlots[slotIdx];
+      const occDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset, hour, minute, 0, 0);
+      if (occDate.getTime() <= now.getTime()) continue;
+
+      const dateKey = `${occDate.getFullYear()}-${String(occDate.getMonth() + 1).padStart(2, '0')}-${String(occDate.getDate()).padStart(2, '0')}-slot-${slotIdx}`;
+      list.push({
         date: occDate,
-      },
-    });
+        dateKey,
+        key: getReminderKey(habit, dateKey),
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: occDate,
+        },
+      });
+      if (list.length >= 35) break; // Hard safety cap across all future days
+    }
+    if (list.length >= 35) break;
   }
   return list;
 }

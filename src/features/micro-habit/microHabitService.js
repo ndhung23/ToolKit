@@ -593,12 +593,14 @@ export function computeNextOccurrence(task, now = new Date(), startFrom = null) 
 
     let targetDate = new Date(baseDate);
 
-    // Nếu người dùng chọn ngày trong quá khứ -> tự đẩy tới lần đến hạn kế tiếp theo đúng chu kỳ
+    // Nếu người dùng chọn ngày trong quá khứ -> tự đẩy tới lần đến hạn kế tiếp theo đúng chu kỳ (chặn an toàn tối đa 1000 bước)
     if (targetDate.getTime() < currentNow.getTime() && effectiveStartDate) {
       const diffMs = currentNow.getTime() - targetDate.getTime();
-      const cycles = Math.floor(diffMs / (intervalDays * 86400000)) + 1;
-      targetDate = new Date(targetDate.getTime() + cycles * intervalDays * 86400000);
-      explanation = `Ngày chọn trong quá khứ đã được tự đẩy sang lần đến hạn kế tiếp (+${cycles * intervalDays} ngày) theo chu kỳ.`;
+      const safeInterval = Number.isFinite(intervalDays) && intervalDays >= 1 ? intervalDays : 1;
+      const rawCycles = Math.floor(diffMs / (safeInterval * 86400000)) + 1;
+      const cycles = Math.min(1000, Math.max(1, Number.isFinite(rawCycles) ? rawCycles : 1));
+      targetDate = new Date(targetDate.getTime() + cycles * safeInterval * 86400000);
+      explanation = `Ngày chọn trong quá khứ đã được tự đẩy sang lần đến hạn kế tiếp (+${cycles * safeInterval} ngày) theo chu kỳ.`;
     }
 
     const daysRemaining = getDaysDiff(targetDate, currentNow);
