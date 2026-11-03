@@ -484,7 +484,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const host = req.headers.host || `localhost:${PORT}`;
+        const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
         const proto = req.headers['x-forwarded-proto'] || (host.includes('trycloudflare.com') || host.includes('loca.lt') ? 'https' : 'http');
         const result = await processMediaRequest(url, mode || 'video', quality || 'best', host, proto);
         res.writeHead(200, { 'Content-Type': 'application/json' });
