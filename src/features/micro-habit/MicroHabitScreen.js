@@ -82,6 +82,8 @@ export function serializeHabitFormState({
   reminderEnabled = false,
   reminderTime = '08:00',
   reminderIntervalHours = '0',
+  reminderIntervalMinutes = '0',
+  reminderEndTime = '',
   startDate = null,
 } = {}) {
   return JSON.stringify({
@@ -99,6 +101,8 @@ export function serializeHabitFormState({
     reminderEnabled: Boolean(reminderEnabled),
     reminderTime: String(reminderTime || '08:00').trim(),
     reminderIntervalHours: String(parseInt(reminderIntervalHours || '0', 10)),
+    reminderIntervalMinutes: String(parseInt(reminderIntervalMinutes || '0', 10)),
+    reminderEndTime: String(reminderEndTime || '').trim(),
     startDate: startDate ? String(startDate).slice(0, 10) : null,
   });
 }
@@ -145,6 +149,9 @@ export default function MicroHabitScreen({ navigation, route }) {
   const [formReminderEnabled, setFormReminderEnabled] = useState(false);
   const [formReminderTime, setFormReminderTime] = useState('08:00');
   const [formReminderIntervalHours, setFormReminderIntervalHours] = useState('0');
+  const [formReminderIntervalMinutes, setFormReminderIntervalMinutes] = useState('0');
+  const [formReminderEndTime, setFormReminderEndTime] = useState('');
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [formStartDate, setFormStartDate] = useState(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [formErrors, setFormErrors] = useState({});
@@ -414,6 +421,8 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormReminderEnabled(false);
     setFormReminderTime('08:00');
     setFormReminderIntervalHours('0');
+    setFormReminderIntervalMinutes('0');
+    setFormReminderEndTime('');
     setFormStartDate(null);
     setFormErrors({});
     initialFormSnapshot.current = serializeHabitFormState({
@@ -431,6 +440,8 @@ export default function MicroHabitScreen({ navigation, route }) {
       reminderEnabled: false,
       reminderTime: '08:00',
       reminderIntervalHours: '0',
+      reminderIntervalMinutes: '0',
+      reminderEndTime: '',
       startDate: null,
     });
     setModalVisible(true);
@@ -453,6 +464,8 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormReminderEnabled(!!item.reminderEnabled);
     setFormReminderTime(item.reminderTime || '08:00');
     setFormReminderIntervalHours(String(item.reminderIntervalHours || 0));
+    setFormReminderIntervalMinutes(String(item.reminderIntervalMinutes || 0));
+    setFormReminderEndTime(item.reminderEndTime || '');
     setFormStartDate(item.startDate || null);
     setFormErrors({});
     initialFormSnapshot.current = serializeHabitFormState({
@@ -470,6 +483,8 @@ export default function MicroHabitScreen({ navigation, route }) {
       reminderEnabled: !!item.reminderEnabled,
       reminderTime: item.reminderTime || '08:00',
       reminderIntervalHours: String(item.reminderIntervalHours || 0),
+      reminderIntervalMinutes: String(item.reminderIntervalMinutes || 0),
+      reminderEndTime: item.reminderEndTime || '',
       startDate: item.startDate || null,
     });
     setModalVisible(true);
@@ -606,6 +621,10 @@ export default function MicroHabitScreen({ navigation, route }) {
     const parsedIntervalDays = Math.min(3650, Math.max(1, parseInt(formIntervalDays || 1, 10)));
     const parsedTargetCount = Math.min(1000, Math.max(1, parseInt(formTargetCount || 1, 10)));
     const parsedReminderIntervalHours = Math.min(24, Math.max(0, parseInt(formReminderIntervalHours || 0, 10)));
+    const parsedReminderIntervalMinutes = Math.min(55, Math.max(0, parseInt(formReminderIntervalMinutes || 0, 10)));
+    // Total interval in minutes (for custom: hours * 60 + minutes); min 15 min if interval > 0
+    const totalIntervalMinutes = parsedReminderIntervalHours * 60 + parsedReminderIntervalMinutes;
+    const effectiveIntervalMinutes = totalIntervalMinutes > 0 ? Math.max(15, totalIntervalMinutes) : 0;
 
     let savedItem;
     let updatedList;
@@ -628,6 +647,9 @@ export default function MicroHabitScreen({ navigation, route }) {
         reminderEnabled: formReminderEnabled,
         reminderTime: validTime || '08:00',
         reminderIntervalHours: parsedReminderIntervalHours,
+        reminderIntervalMinutes: parsedReminderIntervalMinutes,
+        reminderIntervalTotalMinutes: effectiveIntervalMinutes,
+        reminderEndTime: formReminderEndTime || '',
         startDate: formStartDate || null,
       };
       updatedList = habits.map((h) => (h.id === editingId ? savedItem : h));
@@ -650,6 +672,9 @@ export default function MicroHabitScreen({ navigation, route }) {
         reminderEnabled: formReminderEnabled,
         reminderTime: validTime || '08:00',
         reminderIntervalHours: parsedReminderIntervalHours,
+        reminderIntervalMinutes: parsedReminderIntervalMinutes,
+        reminderIntervalTotalMinutes: effectiveIntervalMinutes,
+        reminderEndTime: formReminderEndTime || '',
         startDate: formStartDate || null,
         notificationId: null,
         history: [],
@@ -755,10 +780,12 @@ export default function MicroHabitScreen({ navigation, route }) {
       reminderEnabled: formReminderEnabled,
       reminderTime: formReminderTime,
       reminderIntervalHours: formReminderIntervalHours,
+      reminderIntervalMinutes: formReminderIntervalMinutes,
+      reminderEndTime: formReminderEndTime,
       startDate: formStartDate,
     });
     return currentSnapshot !== initialFormSnapshot.current;
-  }, [formTitle, formType, formIntervalDays, formDayOfMonth, formTargetCount, formUnit, formCategory, formCustomCategory, formNote, formIcon, formColor, formReminderEnabled, formReminderTime, formReminderIntervalHours, formStartDate]);
+  }, [formTitle, formType, formIntervalDays, formDayOfMonth, formTargetCount, formUnit, formCategory, formCustomCategory, formNote, formIcon, formColor, formReminderEnabled, formReminderTime, formReminderIntervalHours, formReminderIntervalMinutes, formReminderEndTime, formStartDate]);
 
   // Chặn mọi đường thoát khi có thay đổi chưa lưu (VIỆC AG & VIỆC AI)
   const requestCloseModal = useCallback((onConfirmed) => {
@@ -1559,7 +1586,7 @@ export default function MicroHabitScreen({ navigation, route }) {
                           </View>
                         ) : null}
 
-                        {/* Tùy chọn tần suất nhắc nhở trong ngày (BỔ SUNG #14) */}
+                        {/* Tùy chọn tần suất nhắc nhở trong ngày (BỔ SUNG #15 - AL) */}
                         {formType === HABIT_TYPES.DAILY ? (
                           <View style={{ marginTop: 12 }}>
                             <Text style={[styles.fieldSubLabel, { color: colors.text, fontWeight: '700', fontSize: 12 }]}>
@@ -1572,12 +1599,27 @@ export default function MicroHabitScreen({ navigation, route }) {
                                 { val: '2', label: 'Mỗi 2 giờ' },
                                 { val: '3', label: 'Mỗi 3 giờ' },
                                 { val: '4', label: 'Mỗi 4 giờ' },
+                                { val: 'custom', label: '⚙️ Tùy chỉnh' },
                               ].map((opt) => {
-                                const isSel = String(formReminderIntervalHours) === opt.val;
+                                const isCustomMode = formReminderIntervalHours === 'custom';
+                                const isSel = opt.val === 'custom'
+                                  ? isCustomMode
+                                  : !isCustomMode && String(formReminderIntervalHours) === opt.val;
                                 return (
                                   <Pressable
                                     key={opt.val}
-                                    onPress={() => setFormReminderIntervalHours(opt.val)}
+                                    onPress={() => {
+                                      if (opt.val === 'custom') {
+                                        setFormReminderIntervalHours('custom');
+                                        // Default custom: 1h30m if not already set
+                                        if (formReminderIntervalMinutes === '0' && String(formReminderIntervalHours) !== 'custom') {
+                                          setFormReminderIntervalMinutes('30');
+                                        }
+                                      } else {
+                                        setFormReminderIntervalHours(opt.val);
+                                        setFormReminderIntervalMinutes('0');
+                                      }
+                                    }}
                                     style={[
                                       styles.presetChip,
                                       {
@@ -1593,11 +1635,245 @@ export default function MicroHabitScreen({ navigation, route }) {
                                 );
                               })}
                             </View>
-                            <Text style={{ fontSize: 11, color: colors.sub, marginTop: 4 }}>
-                              {formReminderIntervalHours === '0'
-                                ? `Báo thức 1 lần lúc ${formReminderTime || '08:00'}.`
-                                : `Nhắc định kỳ cách mỗi ${formReminderIntervalHours} tiếng từ ${formReminderTime || '08:00'} để đạt mục tiêu ${formTargetCount} ${formUnit}.`}
-                            </Text>
+
+                            {/* Bộ tùy chỉnh giờ + phút (chỉ hiện khi chọn "Tùy chỉnh") */}
+                            {formReminderIntervalHours === 'custom' ? (
+                              <View style={{ marginTop: 10, padding: 12, backgroundColor: colors.cardElevated, borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder }}>
+                                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 12, marginBottom: 10 }}>
+                                  Cách nhắc mỗi:
+                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                                  {/* Giờ: 0-12 */}
+                                  <View style={{ alignItems: 'center', flex: 1 }}>
+                                    <Text style={{ color: colors.sub, fontSize: 11, marginBottom: 4 }}>Giờ (0–12)</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                      <Pressable
+                                        onPress={() => setFormReminderIntervalMinutes((prev) => {
+                                          // This button is for hours — handled via stepperMiniBtn below
+                                          return prev;
+                                        })}
+                                        style={{ display: 'none' }}
+                                      />
+                                      <Pressable
+                                        onPress={() => {
+                                          const cur = parseInt(formReminderIntervalHours === 'custom' ? '0' : formReminderIntervalHours, 10) || 0;
+                                          // Store custom hours in a separate key via workaround: encode as "custom:H:M"
+                                          const curM = parseInt(formReminderIntervalMinutes || '0', 10);
+                                          const newH = Math.max(0, cur - 1);
+                                          if (newH === 0 && curM < 15) setFormReminderIntervalMinutes('15');
+                                          setFormReminderIntervalHours(`custom:${newH}`);
+                                        }}
+                                        style={[styles.stepperMiniBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                      >
+                                        <Ionicons name="remove" size={16} color={colors.text} />
+                                      </Pressable>
+                                      <View style={[styles.stepperDisplay, { backgroundColor: colors.card, borderColor: '#10B981', minWidth: 44 }]}>
+                                        <Text style={[styles.stepperDisplayText, { color: colors.text }]}>
+                                          {(() => {
+                                            const raw = String(formReminderIntervalHours);
+                                            if (raw.startsWith('custom:')) return raw.split(':')[1] || '0';
+                                            return '0';
+                                          })()}
+                                        </Text>
+                                      </View>
+                                      <Pressable
+                                        onPress={() => {
+                                          const raw = String(formReminderIntervalHours);
+                                          const cur = raw.startsWith('custom:') ? parseInt(raw.split(':')[1] || '0', 10) : 0;
+                                          const newH = Math.min(12, cur + 1);
+                                          setFormReminderIntervalHours(`custom:${newH}`);
+                                        }}
+                                        style={[styles.stepperMiniBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                      >
+                                        <Ionicons name="add" size={16} color={colors.text} />
+                                      </Pressable>
+                                    </View>
+                                  </View>
+
+                                  <Text style={{ color: colors.sub, fontSize: 18, fontWeight: '700' }}>:</Text>
+
+                                  {/* Phút: 0, 5, 10... 55 */}
+                                  <View style={{ alignItems: 'center', flex: 1 }}>
+                                    <Text style={{ color: colors.sub, fontSize: 11, marginBottom: 4 }}>Phút (bước 5)</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                      <Pressable
+                                        onPress={() => {
+                                          const cur = parseInt(formReminderIntervalMinutes || '0', 10);
+                                          const newM = Math.max(0, Math.floor((cur - 5) / 5) * 5);
+                                          const raw = String(formReminderIntervalHours);
+                                          const curH = raw.startsWith('custom:') ? parseInt(raw.split(':')[1] || '0', 10) : 0;
+                                          if (curH === 0 && newM < 15) setFormReminderIntervalMinutes('15');
+                                          else setFormReminderIntervalMinutes(String(newM));
+                                        }}
+                                        style={[styles.stepperMiniBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                      >
+                                        <Ionicons name="remove" size={16} color={colors.text} />
+                                      </Pressable>
+                                      <View style={[styles.stepperDisplay, { backgroundColor: colors.card, borderColor: '#10B981', minWidth: 44 }]}>
+                                        <Text style={[styles.stepperDisplayText, { color: colors.text }]}>
+                                          {String(parseInt(formReminderIntervalMinutes || '0', 10)).padStart(2, '0')}
+                                        </Text>
+                                      </View>
+                                      <Pressable
+                                        onPress={() => {
+                                          const cur = parseInt(formReminderIntervalMinutes || '0', 10);
+                                          const newM = Math.min(55, Math.ceil((cur + 5) / 5) * 5);
+                                          setFormReminderIntervalMinutes(String(newM));
+                                        }}
+                                        style={[styles.stepperMiniBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                      >
+                                        <Ionicons name="add" size={16} color={colors.text} />
+                                      </Pressable>
+                                    </View>
+                                  </View>
+                                </View>
+                                <Text style={{ color: colors.sub, fontSize: 11, marginTop: 8, textAlign: 'center' }}>
+                                  {(() => {
+                                    const raw = String(formReminderIntervalHours);
+                                    const h = raw.startsWith('custom:') ? parseInt(raw.split(':')[1] || '0', 10) : 0;
+                                    const m = parseInt(formReminderIntervalMinutes || '0', 10);
+                                    const total = h * 60 + m;
+                                    if (total < 15) return '⚠️ Khoảng cách tối thiểu 15 phút';
+                                    if (h > 0 && m > 0) return `Nhắc mỗi ${h} giờ ${m} phút`;
+                                    if (h > 0) return `Nhắc mỗi ${h} giờ`;
+                                    return `Nhắc mỗi ${m} phút`;
+                                  })()}
+                                </Text>
+                              </View>
+                            ) : null}
+
+                            {/* Giờ kết thúc nhắc (End Time picker) */}
+                            {formReminderIntervalHours !== '0' ? (
+                              <View style={{ marginTop: 10 }}>
+                                <Text style={{ color: colors.sub, fontSize: 11, fontWeight: '600', marginBottom: 4 }}>
+                                  Giờ dừng nhắc (tuỳ chọn)
+                                </Text>
+                                <Pressable
+                                  onPress={() => setShowEndTimePicker(true)}
+                                  style={[styles.timePickerBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder, paddingVertical: 10 }]}
+                                >
+                                  <Ionicons name="moon-outline" size={20} color={colors.sub} />
+                                  <View style={{ flex: 1, marginLeft: 10 }}>
+                                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>
+                                      {formReminderEndTime || 'Không giới hạn (cả ngày)'}
+                                    </Text>
+                                    <Text style={{ color: colors.sub, fontSize: 11 }}>
+                                      Nhắc từ {formReminderTime || '08:00'}{formReminderEndTime ? ` đến ${formReminderEndTime}` : ' đến cuối ngày'}
+                                    </Text>
+                                  </View>
+                                  {formReminderEndTime ? (
+                                    <Pressable
+                                      onPress={() => setFormReminderEndTime('')}
+                                      hitSlop={8}
+                                      style={{ padding: 4 }}
+                                    >
+                                      <Ionicons name="close-circle" size={18} color={colors.sub} />
+                                    </Pressable>
+                                  ) : null}
+                                </Pressable>
+
+                                {showEndTimePicker && (
+                                  Platform.OS === 'ios' ? (
+                                    <Modal visible={showEndTimePicker} transparent animationType="fade">
+                                      <View style={styles.timePickerModalOverlay}>
+                                        <View style={[styles.timePickerModalBox, { backgroundColor: colors.card }]}>
+                                          <View style={styles.timePickerModalHeader}>
+                                            <Text style={[styles.timePickerModalTitle, { color: colors.text }]}>Giờ dừng nhắc</Text>
+                                            <Pressable onPress={() => setShowEndTimePicker(false)}>
+                                              <Ionicons name="close" size={22} color={colors.sub} />
+                                            </Pressable>
+                                          </View>
+                                          <DateTimePicker
+                                            value={formReminderEndTime ? (() => { const [h, m] = formReminderEndTime.split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d; })() : new Date()}
+                                            mode="time"
+                                            is24Hour
+                                            display="spinner"
+                                            textColor={colors.text}
+                                            onChange={(event, selectedDate) => {
+                                              if (selectedDate) {
+                                                const h = String(selectedDate.getHours()).padStart(2, '0');
+                                                const m = String(selectedDate.getMinutes()).padStart(2, '0');
+                                                setFormReminderEndTime(`${h}:${m}`);
+                                              }
+                                            }}
+                                          />
+                                          <Pressable
+                                            onPress={() => setShowEndTimePicker(false)}
+                                            style={[styles.timePickerModalDone, { backgroundColor: '#10B981' }]}
+                                          >
+                                            <Text style={styles.timePickerModalDoneText}>Xác nhận</Text>
+                                          </Pressable>
+                                        </View>
+                                      </View>
+                                    </Modal>
+                                  ) : (
+                                    <DateTimePicker
+                                      value={formReminderEndTime ? (() => { const [h, m] = formReminderEndTime.split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d; })() : new Date()}
+                                      mode="time"
+                                      is24Hour
+                                      display="default"
+                                      onChange={(event, selectedDate) => {
+                                        setShowEndTimePicker(false);
+                                        if (selectedDate) {
+                                          const h = String(selectedDate.getHours()).padStart(2, '0');
+                                          const m = String(selectedDate.getMinutes()).padStart(2, '0');
+                                          setFormReminderEndTime(`${h}:${m}`);
+                                        }
+                                      }}
+                                    />
+                                  )
+                                )}
+                              </View>
+                            ) : null}
+
+                            {/* Preview danh sách slot nhắc */}
+                            {formReminderIntervalHours !== '0' ? (
+                              <View style={{ marginTop: 8, padding: 10, backgroundColor: colors.cardElevated, borderRadius: 10, borderWidth: 1, borderColor: colors.cardBorder }}>
+                                <Text style={{ color: colors.text, fontWeight: '700', fontSize: 11, marginBottom: 6 }}>
+                                  📋 Các slot nhắc hôm nay:
+                                </Text>
+                                {(() => {
+                                  const [startH, startM] = (formReminderTime || '08:00').split(':').map(Number);
+                                  const raw = String(formReminderIntervalHours);
+                                  const intervalH = raw.startsWith('custom:') ? parseInt(raw.split(':')[1] || '0', 10) : parseInt(raw, 10);
+                                  const intervalM = parseInt(formReminderIntervalMinutes || '0', 10);
+                                  const totalIntervalMin = intervalH * 60 + intervalM;
+                                  if (totalIntervalMin < 15 || totalIntervalMin === 0) return (
+                                    <Text style={{ color: '#F59E0B', fontSize: 11 }}>Khoảng cách tối thiểu 15 phút</Text>
+                                  );
+                                  const endStr = formReminderEndTime;
+                                  const endMinutes = endStr ? (() => { const [eh, em] = endStr.split(':').map(Number); return eh * 60 + em; })() : 23 * 60 + 59;
+                                  const slots = [];
+                                  let cur = startH * 60 + startM;
+                                  const maxSlots = Math.min(parseInt(formTargetCount, 10) || 20, 20);
+                                  while (slots.length < maxSlots && cur <= endMinutes) {
+                                    const sh = Math.floor(cur / 60);
+                                    const sm = cur % 60;
+                                    if (sh < 24) slots.push(`${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}`);
+                                    cur += totalIntervalMin;
+                                  }
+                                  const iosBudgetOk = slots.length <= 8;
+                                  return (
+                                    <>
+                                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
+                                        {slots.map((s, i) => (
+                                          <View key={i} style={{ backgroundColor: '#10B98122', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                            <Text style={{ color: '#10B981', fontSize: 11, fontWeight: '700' }}>{s}</Text>
+                                          </View>
+                                        ))}
+                                      </View>
+                                      <Text style={{ color: colors.sub, fontSize: 10, marginTop: 4 }}>
+                                        {slots.length} lần/ngày × 7 ngày = {slots.length * 7} thông báo{!iosBudgetOk ? ' ⚠️ iOS giới hạn 64, hệ thống tự giới hạn 8 slot/ngày' : ''}
+                                      </Text>
+                                    </>
+                                  );
+                                })()}
+                              </View>
+                            ) : (
+                              <Text style={{ fontSize: 11, color: colors.sub, marginTop: 4 }}>
+                                {`Báo thức 1 lần lúc ${formReminderTime || '08:00'}.`}
+                              </Text>
+                            )}
                           </View>
                         ) : null}
 

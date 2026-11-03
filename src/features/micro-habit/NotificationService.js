@@ -167,23 +167,44 @@ function contentFor(habit, key, subNote = '') {
 /**
  * Builds upcoming date triggers for daily tasks (7 days ahead)
  * Guarantees reminders fire even when app remains killed for days.
- * Also supports reminderIntervalHours (e.g. drink water every 2 hours).
+ * Supports reminderIntervalTotalMinutes (custom hour+minute interval) and reminderIntervalHours (legacy).
+ * Respects reminderEndTime to stop generating slots after end time.
  */
 export function buildUpcomingDailyTriggers(habit, daysCount = MAX_PRE_SCHEDULE_DAYS, now = new Date()) {
   const [startHour, startMinute] = String(habit.reminderTime || '').split(':').map(Number);
   if (!Number.isInteger(startHour) || !Number.isInteger(startMinute)) return [];
   const list = [];
-  const intervalHours = parseInt(habit.reminderIntervalHours || 0, 10);
+
+  // Determine interval in minutes — support new custom field first, then legacy hourly field
+  let intervalMinutes = 0;
+  if (habit.reminderIntervalTotalMinutes && habit.reminderIntervalTotalMinutes >= 15) {
+    intervalMinutes = habit.reminderIntervalTotalMinutes;
+  } else {
+    const intervalHours = parseInt(habit.reminderIntervalHours || 0, 10);
+    intervalMinutes = intervalHours > 0 ? intervalHours * 60 : 0;
+  }
+
   const targetCount = Math.max(1, parseInt(habit.targetCount || 1, 10));
+
+  // Parse optional end time
+  let endMinutes = 23 * 60 + 59;
+  if (habit.reminderEndTime) {
+    const [eh, em] = String(habit.reminderEndTime).split(':').map(Number);
+    if (Number.isInteger(eh) && Number.isInteger(em)) {
+      endMinutes = eh * 60 + em;
+    }
+  }
 
   // Determine reminder slots within each day
   const timeSlots = [];
-  if (intervalHours > 0) {
+  if (intervalMinutes >= 15) {
     const maxSlots = Math.min(targetCount, 8); // At most 8 slots a day to protect OS limits
-    for (let slot = 0; slot < maxSlots; slot++) {
-      const h = startHour + slot * intervalHours;
-      if (h >= 24) break;
-      timeSlots.push({ hour: h, minute: startMinute });
+    let cur = startHour * 60 + startMinute;
+    while (timeSlots.length < maxSlots && cur <= endMinutes) {
+      const h = Math.floor(cur / 60);
+      const m = cur % 60;
+      if (h < 24) timeSlots.push({ hour: h, minute: m });
+      cur += intervalMinutes;
     }
   } else {
     timeSlots.push({ hour: startHour, minute: startMinute });
