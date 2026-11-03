@@ -10,6 +10,14 @@ const STORAGE_LIMIT_MINUTES = 'toolkit_screentime_limit_minutes';
 const STORAGE_ALERT_ENABLED = 'toolkit_screentime_alert_enabled';
 const STORAGE_TODAY_MINUTES = 'toolkit_screentime_today_minutes';
 const STORAGE_DATE_KEY = 'toolkit_screentime_last_date';
+const SCREEN_TIME_NOTIFICATION = 'screen-time';
+
+export async function cancelScreenTimeReminders() {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(scheduled
+    .filter((item) => item.content?.data?.managedBy === SCREEN_TIME_NOTIFICATION)
+    .map((item) => Notifications.cancelScheduledNotificationAsync(item.identifier)));
+}
 
 // Cấu hình hiển thị thông báo đẩy ngay cả khi app đang mở
 if (Platform.OS !== 'web') {
@@ -85,7 +93,7 @@ export function ScreenTimeProvider({ children }) {
   const scheduleSystemReminder = async (minutes) => {
     try {
       if (Platform.OS === 'web') return;
-      await Notifications.cancelAllScheduledNotificationsAsync();
+      await cancelScreenTimeReminders();
       if (!alertEnabledRef.current || minutes <= 0) return;
 
       const remainingSec = Math.max(10, minutes * 60 - sessionSeconds);
@@ -97,6 +105,7 @@ export function ScreenTimeProvider({ children }) {
           body: `Bạn ơi, bạn đã dùng máy liên tục ${minutes} phút (${hours} giờ) rồi! Cho mắt nghỉ ngơi 5-10 phút thôi nào!`,
           sound: true,
           priority: Notifications.AndroidNotificationPriority.HIGH,
+          data: { managedBy: SCREEN_TIME_NOTIFICATION },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -170,7 +179,7 @@ export function ScreenTimeProvider({ children }) {
     if (enabled) {
       await scheduleSystemReminder(limitMinutesRef.current);
     } else {
-      await Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
+      await cancelScreenTimeReminders().catch(() => {});
     }
 
     try {
@@ -241,6 +250,7 @@ export function ScreenTimeProvider({ children }) {
           title: '🦉 Cú ToolKit: Đã hết giờ dùng máy!',
           body: `Bạn đã dùng thiết bị liên tục ${alertLimitMinutes} phút. Hãy tạm rời điện thoại và cho mắt thư giãn nhé!`,
           sound: true,
+          data: { managedBy: SCREEN_TIME_NOTIFICATION },
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,

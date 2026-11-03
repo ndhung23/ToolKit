@@ -40,6 +40,7 @@ import {
 import {
   scheduleHabitReminder,
   cancelHabitReminder,
+  cancelHabitRemindersForTask,
   testInstantNotification,
   getAllScheduledHabitReminders,
   reconcileHabitReminders,
@@ -132,6 +133,14 @@ export default function MicroHabitScreen({ navigation, route }) {
     setScheduledNotifs(list);
     setDebugNotifModalVisible(true);
   }, []);
+
+  const handleSelfHealNotifications = useCallback(async () => {
+    const synchronized = await reconcileHabitReminders(habits);
+    await saveSharedHabits(synchronized);
+    const list = await getAllScheduledHabitReminders();
+    setScheduledNotifs(list);
+    Alert.alert('Đã tự đối chiếu & đồng bộ', `Hệ thống đã kiểm tra ${habits.length} việc vặt và cập nhật lại toàn bộ lịch hẹn thông báo trong OS.`);
+  }, [habits]);
 
   // Thử nghiệm gửi thông báo tức thì (2 giây)
   const handleTestNotification = useCallback(async () => {
@@ -317,10 +326,7 @@ export default function MicroHabitScreen({ navigation, route }) {
           text: 'Xóa vĩnh viễn',
           style: 'destructive',
           onPress: async () => {
-            const habitToDelete = habits.find((h) => h.id === id);
-            if (habitToDelete?.notificationId) {
-              await cancelHabitReminder(habitToDelete.notificationId);
-            }
+            await cancelHabitRemindersForTask(id);
             const remaining = habits.filter((h) => h.id !== id);
             updateHabitsList(remaining);
           },
@@ -1518,12 +1524,20 @@ export default function MicroHabitScreen({ navigation, route }) {
               }
             />
 
-            <Pressable
-              onPress={() => setDebugNotifModalVisible(false)}
-              style={[styles.saveBtn, { backgroundColor: '#10B981', marginTop: 12 }]}
-            >
-              <Text style={styles.saveBtnText}>Đóng</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <Pressable
+                onPress={handleSelfHealNotifications}
+                style={[styles.saveBtn, { flex: 1, backgroundColor: '#3B82F6', marginTop: 0 }]}
+              >
+                <Text style={styles.saveBtnText}>Tự đối chiếu & Sửa</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setDebugNotifModalVisible(false)}
+                style={[styles.saveBtn, { flex: 1, backgroundColor: '#10B981', marginTop: 0 }]}
+              >
+                <Text style={styles.saveBtnText}>Đóng</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>

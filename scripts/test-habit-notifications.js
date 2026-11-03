@@ -39,7 +39,7 @@ const ios = loadFor('ios');
 const android = loadFor('android');
 
 const iosTrigger = ios.buildHabitReminderTrigger(daily, now);
-assert.deepEqual(iosTrigger, { type: 'calendar', hour: 22, minute: 39, repeats: true });
+assert.deepEqual(iosTrigger, { type: 'calendar', hour: 22, minute: 39, second: 0, timezone: 'Asia/Ho_Chi_Minh', repeats: true });
 assert.equal(ios.getNextOccurrenceForTrigger(iosTrigger, now).toISOString(), new Date(2026, 10, 3, 22, 39, 0, 0).toISOString());
 console.log('[PASS] iOS uses repeating calendar trigger; next +3 minute reminder is today 22:39:00.');
 
