@@ -484,8 +484,23 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
-        const proto = req.headers['x-forwarded-proto'] || (host.includes('trycloudflare.com') || host.includes('loca.lt') ? 'https' : 'http');
+        let host = req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`;
+        let proto = req.headers['x-forwarded-proto'] || (host.includes('trycloudflare.com') || host.includes('loca.lt') ? 'https' : 'http');
+
+        if (host.startsWith('127.0.0.1') || host.startsWith('localhost')) {
+          try {
+            const envContent = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8');
+            const match = envContent.match(/EXPO_PUBLIC_SNAP_SERVER_URL=(.*)/);
+            if (match && match[1]) {
+              const publicParsed = new URL(match[1].trim());
+              host = publicParsed.host;
+              proto = publicParsed.protocol.replace(':', '');
+            }
+          } catch {
+            // fallback giữ nguyên
+          }
+        }
+
         const result = await processMediaRequest(url, mode || 'video', quality || 'best', host, proto);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result));
