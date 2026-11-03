@@ -9,7 +9,7 @@ import * as Sharing from 'expo-sharing';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 
-const REQUEST_TIMEOUT_MS = 25000;
+const REQUEST_TIMEOUT_MS = 75000;
 const SNAP_SERVER_URL = process.env.EXPO_PUBLIC_SNAP_SERVER_URL?.replace(/\/$/, '');
 
 function bytesToHex(bytes) {
@@ -473,7 +473,7 @@ export async function fetchDownloadLink(rawUrl, mode = 'video', quality = 'best'
   if (getSnapServerEndpoints().length) {
     return Promise.race([
       resolveWithSnapBackend(url, mode, quality, signal),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 25s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 75s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)),
     ]);
   }
   if (mode === 'audio') {
@@ -483,7 +483,7 @@ export async function fetchDownloadLink(rawUrl, mode = 'video', quality = 'best'
   }
 
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 25s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)
+    setTimeout(() => reject(new Error('Quá thời gian kết nối (Timeout 75s). Vui lòng thử lại.')), REQUEST_TIMEOUT_MS)
   );
 
   let resolverPromise;

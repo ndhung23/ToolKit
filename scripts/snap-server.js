@@ -214,7 +214,7 @@ async function normalizeAndVerify(inputPath, mode, outputPath) {
   }
   const ffmpegArgs = mode === 'audio'
     ? ['-y', '-fflags', '+genpts', '-i', inputPath, '-vn', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', outputPath]
-    : ['-y', '-fflags', '+genpts', '-i', inputPath, '-map', '0:v:0?', '-map', '0:a:0?', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', outputPath];
+    : ['-y', '-fflags', '+genpts', '-i', inputPath, '-map', '0:v:0?', '-map', '0:a:0?', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero', outputPath];
   await runFile(FFMPEG_PATH, ffmpegArgs);
   const metadata = await verifyMediaFile(outputPath, mode);
   outputMetadata.set(path.basename(outputPath), metadata);
@@ -228,7 +228,7 @@ async function normalizeAndVerify(inputPath, mode, outputPath) {
  * @param {string} quality 'best' | '1080p' | '720p' | '480p' | '360p'
  * @param {string} host 
  */
-function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'localhost:4000') {
+function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'localhost:4000', proto = 'http') {
   return new Promise((resolve, reject) => {
     cleanOldDownloads();
 
@@ -273,7 +273,7 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
         normalizeAudioToMp3(rawPath, finalPath, platformName, title).then((metadata) => {
           if (isYt) backendState.lastYoutubeSuccessAt = new Date().toISOString();
           console.log('[SnapServer Audio Success] normalized', { rawPath, finalPath, metadata });
-          resolve({ success: true, mode: 'audio', url: `http://${host}/download/${encodeURIComponent(filename)}`, filename, qualityInfo: `MP3 128kbps • ${(metadata.size / (1024 * 1024)).toFixed(2)}MB`, durationSec, metadata });
+          resolve({ success: true, mode: 'audio', url: `${proto}://${host}/download/${encodeURIComponent(filename)}`, filename, qualityInfo: `MP3 128kbps • ${(metadata.size / (1024 * 1024)).toFixed(2)}MB`, durationSec, metadata });
         }).catch((normalizeError) => {
           console.error('[SnapServer Audio Normalize Error]', normalizeError.stderr || normalizeError.message || normalizeError);
           reject(normalizeError.code ? normalizeError : { code: 'INVALID_AUDIO', message: 'Không thể chuẩn hóa audio thành MP3 hợp lệ.' });
@@ -301,7 +301,7 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
     let formatSelector = '';
     const isFacebook = targetUrl.includes('facebook.com') || targetUrl.includes('fb.watch');
     if (isFacebook) {
-      formatSelector = 'bv*+ba/b/best';
+      formatSelector = 'bv*[vcodec^=avc1]+ba[acodec^=mp4a]/bv*[vcodec^=avc1]+ba/bv*+ba/b/best';
     } else if (targetHeight > 0) {
       formatSelector = `bv*[height<=${targetHeight}][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=${targetHeight}]+ba/b[height<=${targetHeight}]/best`;
     } else {
@@ -351,7 +351,7 @@ function processMediaRequest(rawUrl, mode = 'video', quality = 'best', host = 'l
         codec = media.vcodec;
         console.log('[SnapServer] normalized ffprobe verified', { rawFilePath, media, metadata });
         const qualityInfo = `${realHeight}p • ${sizeMB}MB (${durationSec}s)`;
-        const serveUrl = `http://${host}/download/${outFilename}`;
+        const serveUrl = `${proto}://${host}/download/${outFilename}`;
         if (isYt) backendState.lastYoutubeSuccessAt = new Date().toISOString();
         resolve({ success: true, mode: 'video', url: serveUrl, filename: outFilename, quality: `${realHeight}p`, resolution: `${realWidth}x${realHeight}`, codec, sizeMB, qualityInfo, durationSec, metadata });
       }).catch((normalizeError) => {
@@ -477,7 +477,8 @@ const server = http.createServer(async (req, res) => {
         }
 
         const host = req.headers.host || `localhost:${PORT}`;
-        const result = await processMediaRequest(url, mode || 'video', quality || 'best', host);
+        const proto = req.headers['x-forwarded-proto'] || (host.includes('trycloudflare.com') || host.includes('loca.lt') ? 'https' : 'http');
+        const result = await processMediaRequest(url, mode || 'video', quality || 'best', host, proto);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result));
       } catch (err) {
