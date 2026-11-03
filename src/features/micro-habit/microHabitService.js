@@ -439,156 +439,307 @@ export async function testInstantNotification(title = '🔔 Thử nghiệm thôn
 }
 
 /**
- * Tính toán trạng thái hạn chót & màu sắc cảnh báo cho từng mục
- * @param {object} item 
- * @returns {object} { daysRemaining, urgency: 'overdue'|'warning'|'safe', statusText, progress: 0..1, dueDate }
+ * Tính toán trạng thái hạn chót & màu sắc cảnh báo cho từng mục.
+ * Gọi trực tiếp hàm duy nhất computeNextOccurrence để đảm bảo 100% tính nhất quán.
  */
 export function calculateHabitStatus(item, now = new Date()) {
-  const todayStr = getTodayDateString(now);
-
-  // 1. CHU KỲ THEO SỐ NGÀY (INTERVAL)
-  if (item.type === HABIT_TYPES.INTERVAL) {
-    const intervalDays = Math.max(1, parseInt(item.intervalDays || 1, 10));
-    const lastDate = item.lastCompletedDate ? new Date(item.lastCompletedDate) : new Date();
-    
-    // Ngày đến hạn tiếp theo = Ngày cuối + intervalDays
-    const dueDate = new Date(lastDate);
-    dueDate.setDate(dueDate.getDate() + intervalDays);
-
-    const daysRemaining = getDaysDiff(dueDate, now);
-    const daysPassed = getDaysDiff(now, lastDate);
-    const progress = Math.max(0, Math.min(1, daysPassed / intervalDays));
-
-    let urgency = item.completedCycleAt ? 'completed' : 'safe';
-    let statusText = item.completedCycleAt ? `Đã xong chu kỳ này (còn ${daysRemaining} ngày)` : `Còn ${daysRemaining} ngày`;
-
-    if (daysRemaining < 0) {
-      urgency = 'overdue';
-      statusText = `Quá hạn ${Math.abs(daysRemaining)} ngày!`;
-    } else if (daysRemaining === 0) {
-      urgency = 'overdue';
-      statusText = 'Hôm nay đến hạn!';
-    } else if (daysRemaining <= 3 || progress >= 0.8) {
-      urgency = 'warning';
-      statusText = `Sắp đến hạn (còn ${daysRemaining} ngày)`;
-    }
-
-    return {
-      daysRemaining,
-      daysPassed,
-      urgency,
-      statusText,
-      cycleInfo: `Mỗi ${intervalDays} ngày`,
-      progress,
-      dueDate,
-    };
-  }
-
-  // 2. CỐ ĐỊNH NGÀY HÀNG THÁNG (MONTHLY)
-  if (item.type === HABIT_TYPES.MONTHLY) {
-    const targetDay = Math.min(31, Math.max(1, parseInt(item.dayOfMonth || 1, 10)));
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    
-    // 1. Ngày hạn của THÁNG NÀY (đã tự co về ngày cuối tháng nếu tháng ngắn)
-    const dueDateThisMonth = getValidMonthlyDate(currentYear, currentMonth, targetDay);
-
-    // 2. Kiểm tra xem việc này đã được hoàn thành cho chu kỳ tháng này chưa
-    let isCompletedForThisMonth = false;
-    if (item.lastCompletedDate) {
-      const lastDone = getMidnight(new Date(item.lastCompletedDate));
-      // Nếu đã làm trong tháng này
-      if (lastDone.getFullYear() === currentYear && lastDone.getMonth() === currentMonth) {
-        // Đã hoàn thành trong chu kỳ tháng này
-        isCompletedForThisMonth = true;
-      } else if (lastDone >= dueDateThisMonth) {
-        isCompletedForThisMonth = true;
-      }
-    }
-
-    let dueDate;
-    let urgency = 'safe';
-    let statusText = '';
-    const cycleInfo = `Ngày ${targetDay} hàng tháng`;
-
-    if (isCompletedForThisMonth) {
-      // Đã hoàn thành tháng này -> Kỳ tiếp theo là THÁNG SAU
-      dueDate = getValidMonthlyDate(currentYear, currentMonth + 1, targetDay);
-      const daysRemaining = getDaysDiff(dueDate, now);
-      statusText = `Đã xong tháng này (còn ${daysRemaining} ngày)`;
-      urgency = 'completed';
-    } else {
-      // Chưa hoàn thành tháng này
-      dueDate = dueDateThisMonth;
-      const daysRemaining = getDaysDiff(dueDate, now);
-
-      if (daysRemaining < 0) {
-        urgency = 'overdue';
-        statusText = `Quá hạn ${Math.abs(daysRemaining)} ngày!`;
-      } else if (daysRemaining === 0) {
-        urgency = 'overdue'; // Hôm nay đến hạn cần làm
-        statusText = 'Hôm nay đến hạn!';
-      } else if (daysRemaining <= 3) {
-        urgency = 'warning';
-        statusText = `Sắp đến hạn (còn ${daysRemaining} ngày)`;
-      } else {
-        urgency = 'safe';
-        statusText = `Còn ${daysRemaining} ngày`;
-      }
-    }
-
-    const daysRemaining = getDaysDiff(dueDate, now);
-
-    return {
-      daysRemaining,
-      urgency,
-      statusText,
-      cycleInfo,
-      progress: isCompletedForThisMonth ? 1 : daysRemaining <= 0 ? 1 : Math.max(0, 1 - daysRemaining / 30),
-      dueDate,
-    };
-  }
-
-  // 3. ĐẾM LẦN TRONG NGÀY (DAILY COUNTER)
-  if (item.type === HABIT_TYPES.DAILY) {
-    const target = Math.max(1, parseInt(item.targetCount || 1, 10));
-    // Tự động reset về 0 nếu đã qua 00:00 ngày mới
-    const current = getDailyCompletionCount(item, now);
-    const progress = Math.min(1, current / target);
-    const isCompleted = current >= target;
-
-    let urgency = 'safe';
-    let statusText = `Đã xong ${current}/${target} ${item.unit || 'lần'}`;
-
-    if (isCompleted) {
-      urgency = 'completed';
-      statusText = `Đã hoàn thành! (${current}/${target})`;
-    } else if (current === 0) {
-      urgency = 'warning';
-      statusText = `Chưa làm (0/${target} ${item.unit || 'lần'})`;
-    } else {
-      urgency = 'warning';
-      statusText = `Tiến độ: ${current}/${target} ${item.unit || 'lần'}`;
-    }
-
-    return {
-      daysRemaining: 0,
-      urgency,
-      statusText,
-      cycleInfo: `Mục tiêu ${target} ${item.unit || 'lần'}/ngày`,
-      progress,
-      isCompleted,
-      currentCount: current,
-      targetCount: target,
-    };
-  }
+  const result = computeNextOccurrence(item, now);
+  if (result) return result;
 
   return {
     daysRemaining: 0,
     urgency: 'safe',
     statusText: '',
     progress: 0,
+    cycleInfo: 'Chu kỳ',
+    dueDate: new Date(now),
   };
+}
+
+/**
+ * Hàm duy nhất tính toán lần xuất hiện / nhắc nhở kế tiếp và trạng thái (VIỆC AE)
+ * Dùng thống nhất cho:
+ * 1. Bản xem trước trong form thêm / sửa
+ * 2. Lên lịch thông báo OS
+ * 3. Tính toán trạng thái hiển thị trên thẻ và 4 thẻ thống kê
+ */
+export function computeNextOccurrence(task, now = new Date(), startFrom = null) {
+  if (!task) return null;
+  const currentNow = new Date(now);
+  const todayStr = getTodayDateString(currentNow);
+  const tomorrowDate = new Date(currentNow.getFullYear(), currentNow.getMonth(), currentNow.getDate() + 1);
+  const tomorrowStr = getTodayDateString(tomorrowDate);
+
+  const [hour, minute] = String(task.reminderTime || '08:00').split(':').map(Number);
+  const validHour = Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 8;
+  const validMinute = Number.isInteger(minute) && minute >= 0 && minute <= 59 ? minute : 0;
+  const timeFormatted = `${String(validHour).padStart(2, '0')}:${String(validMinute).padStart(2, '0')}`;
+
+  const todayAtTime = new Date(currentNow.getFullYear(), currentNow.getMonth(), currentNow.getDate(), validHour, validMinute, 0, 0);
+  const passedToday = todayAtTime.getTime() <= currentNow.getTime();
+
+  // Determine effective startDate
+  let effectiveStartDate = startFrom !== null && startFrom !== undefined ? startFrom : task.startDate;
+  if (effectiveStartDate instanceof Date) {
+    effectiveStartDate = getTodayDateString(effectiveStartDate);
+  } else if (typeof effectiveStartDate === 'string') {
+    effectiveStartDate = effectiveStartDate.slice(0, 10);
+  } else {
+    effectiveStartDate = null;
+  }
+
+  // 1. ĐẾM LẦN TRONG NGÀY (DAILY COUNTER)
+  if (task.type === HABIT_TYPES.DAILY) {
+    const target = Math.max(1, parseInt(task.targetCount || 1, 10));
+    const current = getDailyCompletionCount(task, currentNow);
+    const isCompleted = current >= target;
+
+    // Người dùng chọn bắt đầu từ ngày mai: hôm nay việc ở trạng thái Chưa đến hạn (not_due -> safe)
+    if (effectiveStartDate === tomorrowStr || (effectiveStartDate && effectiveStartDate > todayStr)) {
+      const nextDate = new Date(currentNow.getFullYear(), currentNow.getMonth(), currentNow.getDate() + 1, validHour, validMinute, 0, 0);
+      return {
+        date: nextDate,
+        isToday: false,
+        isTomorrow: true,
+        passedToday,
+        diffMinutes: Math.max(0, Math.round((nextDate.getTime() - currentNow.getTime()) / 60000)),
+        diffDays: 1,
+        previewText: `${timeFormatted} hôm nay đã qua, nhắc đầu tiên: ngày mai ${timeFormatted}`,
+        explanation: 'Bắt đầu từ ngày mai (hôm nay không tính).',
+        urgency: 'safe', // Chưa đến hạn, không tính vào Sắp đến hạn hay Quá hạn của hôm nay
+        statusGroup: 'safe',
+        statusText: 'Chưa đến hạn (bắt đầu từ ngày mai)',
+        progress: 0,
+        isCompleted: false,
+        currentCount: 0,
+        targetCount: target,
+        cycleInfo: `Mục tiêu ${target} ${task.unit || 'lần'}/ngày`,
+        dueDate: nextDate,
+      };
+    }
+
+    // Tính từ hôm nay
+    if (passedToday) {
+      const nextDate = new Date(currentNow.getFullYear(), currentNow.getMonth(), currentNow.getDate() + 1, validHour, validMinute, 0, 0);
+      const urgency = isCompleted ? 'completed' : 'warning';
+      const statusText = isCompleted
+        ? `Đã xong hôm nay (${current}/${target} ${task.unit || 'lần'})`
+        : (current === 0 ? `Chưa đạt mục tiêu hôm nay (0/${target} ${task.unit || 'lần'})` : `Sắp đến hạn (${current}/${target} ${task.unit || 'lần'})`);
+
+      return {
+        date: nextDate,
+        isToday: false,
+        isTomorrow: true,
+        passedToday: true,
+        diffMinutes: Math.max(0, Math.round((nextDate.getTime() - currentNow.getTime()) / 60000)),
+        diffDays: 1,
+        previewText: `${timeFormatted} hôm nay đã qua, nhắc đầu tiên: ngày mai ${timeFormatted}`,
+        explanation: 'Tính từ hôm nay (hôm nay vẫn theo dõi tiến độ, nhắc từ ngày mai).',
+        urgency,
+        statusGroup: urgency,
+        statusText,
+        progress: Math.min(1, current / target),
+        isCompleted,
+        currentCount: current,
+        targetCount: target,
+        cycleInfo: `Mục tiêu ${target} ${task.unit || 'lần'}/ngày`,
+        dueDate: todayAtTime,
+      };
+    } else {
+      // Giờ nhắc còn ở phía trước hôm nay
+      const diffMinutes = Math.max(0, Math.round((todayAtTime.getTime() - currentNow.getTime()) / 60000));
+      const urgency = isCompleted ? 'completed' : 'warning';
+      const statusText = isCompleted
+        ? `Đã xong hôm nay (${current}/${target} ${task.unit || 'lần'})`
+        : (current === 0 ? `Chưa làm (0/${target} ${task.unit || 'lần'})` : `Sắp đến hạn (${current}/${target} ${task.unit || 'lần'})`);
+
+      return {
+        date: todayAtTime,
+        isToday: true,
+        isTomorrow: false,
+        passedToday: false,
+        diffMinutes,
+        diffDays: 0,
+        previewText: `Nhắc kế tiếp: hôm nay ${timeFormatted} (còn ${diffMinutes} phút)`,
+        explanation: null,
+        urgency,
+        statusGroup: urgency,
+        statusText,
+        progress: Math.min(1, current / target),
+        isCompleted,
+        currentCount: current,
+        targetCount: target,
+        cycleInfo: `Mục tiêu ${target} ${task.unit || 'lần'}/ngày`,
+        dueDate: todayAtTime,
+      };
+    }
+  }
+
+  // 2. CHU KỲ THEO SỐ NGÀY (INTERVAL)
+  if (task.type === HABIT_TYPES.INTERVAL) {
+    const intervalDays = Math.max(1, parseInt(task.intervalDays || 1, 10));
+    let explanation = null;
+    let baseDate;
+
+    if (effectiveStartDate) {
+      const parts = effectiveStartDate.split('-').map(Number);
+      baseDate = new Date(parts[0], parts[1] - 1, parts[2], validHour, validMinute, 0, 0);
+    } else if (task.lastCompletedDate) {
+      const last = new Date(task.lastCompletedDate);
+      baseDate = new Date(last.getFullYear(), last.getMonth(), last.getDate() + intervalDays, validHour, validMinute, 0, 0);
+    } else {
+      baseDate = new Date(currentNow.getFullYear(), currentNow.getMonth(), currentNow.getDate() + intervalDays, validHour, validMinute, 0, 0);
+    }
+
+    let targetDate = new Date(baseDate);
+
+    // Nếu người dùng chọn ngày trong quá khứ -> tự đẩy tới lần đến hạn kế tiếp theo đúng chu kỳ
+    if (targetDate.getTime() < currentNow.getTime() && effectiveStartDate) {
+      const diffMs = currentNow.getTime() - targetDate.getTime();
+      const cycles = Math.floor(diffMs / (intervalDays * 86400000)) + 1;
+      targetDate = new Date(targetDate.getTime() + cycles * intervalDays * 86400000);
+      explanation = `Ngày chọn trong quá khứ đã được tự đẩy sang lần đến hạn kế tiếp (+${cycles * intervalDays} ngày) theo chu kỳ.`;
+    }
+
+    const daysRemaining = getDaysDiff(targetDate, currentNow);
+    const isTargetToday = getTodayDateString(targetDate) === todayStr;
+    const isTargetTomorrow = getTodayDateString(targetDate) === tomorrowStr;
+
+    let previewText;
+    if (isTargetToday) {
+      if (passedToday) {
+        previewText = `${timeFormatted} hôm nay đã qua, nhắc đầu tiên: ngày mai ${timeFormatted}`;
+      } else {
+        const diffMin = Math.max(0, Math.round((todayAtTime.getTime() - currentNow.getTime()) / 60000));
+        previewText = `Nhắc kế tiếp: hôm nay ${timeFormatted} (còn ${diffMin} phút)`;
+      }
+    } else if (isTargetTomorrow) {
+      previewText = `Nhắc kế tiếp: ngày mai ${timeFormatted}`;
+    } else {
+      previewText = `Lần đến hạn kế tiếp: ${targetDate.toLocaleDateString('vi-VN')} lúc ${timeFormatted} (còn ${daysRemaining} ngày)`;
+    }
+
+    let urgency = 'safe';
+    let statusText = `Còn ${daysRemaining} ngày`;
+    if (task.completedCycleAt) {
+      urgency = 'completed';
+      statusText = `Đã xong chu kỳ này (còn ${daysRemaining} ngày)`;
+    } else if (daysRemaining < 0) {
+      urgency = 'overdue';
+      statusText = `Quá hạn ${Math.abs(daysRemaining)} ngày!`;
+    } else if (daysRemaining === 0) {
+      urgency = passedToday ? 'overdue' : 'warning';
+      statusText = passedToday ? 'Hôm nay đến hạn (đã qua giờ nhắc)!' : 'Hôm nay đến hạn!';
+    } else if (daysRemaining <= 3) {
+      urgency = 'warning';
+      statusText = `Sắp đến hạn (còn ${daysRemaining} ngày)`;
+    }
+
+    return {
+      date: targetDate,
+      isToday: isTargetToday,
+      isTomorrow: isTargetTomorrow,
+      passedToday: isTargetToday && passedToday,
+      diffMinutes: Math.max(0, Math.round((targetDate.getTime() - currentNow.getTime()) / 60000)),
+      diffDays: daysRemaining,
+      daysRemaining,
+      previewText,
+      explanation,
+      urgency,
+      statusGroup: urgency,
+      statusText,
+      cycleInfo: `Mỗi ${intervalDays} ngày`,
+      progress: Math.max(0, Math.min(1, 1 - daysRemaining / intervalDays)),
+      dueDate: targetDate,
+    };
+  }
+
+  // 3. CỐ ĐỊNH NGÀY HÀNG THÁNG (MONTHLY)
+  if (task.type === HABIT_TYPES.MONTHLY) {
+    const targetDay = Math.min(31, Math.max(1, parseInt(task.dayOfMonth || 1, 10)));
+    let explanation = null;
+
+    let targetDateThisMonth = getValidMonthlyDate(currentNow.getFullYear(), currentNow.getMonth(), targetDay);
+    targetDateThisMonth.setHours(validHour, validMinute, 0, 0);
+
+    let isCompletedForThisMonth = false;
+    if (task.lastCompletedDate) {
+      const lastDone = getMidnight(new Date(task.lastCompletedDate));
+      if (lastDone.getFullYear() === currentNow.getFullYear() && lastDone.getMonth() === currentNow.getMonth()) {
+        isCompletedForThisMonth = true;
+      } else if (lastDone >= targetDateThisMonth) {
+        isCompletedForThisMonth = true;
+      }
+    }
+
+    let targetDate;
+    if (isCompletedForThisMonth) {
+      targetDate = getValidMonthlyDate(currentNow.getFullYear(), currentNow.getMonth() + 1, targetDay);
+      targetDate.setHours(validHour, validMinute, 0, 0);
+    } else if (targetDateThisMonth.getTime() <= currentNow.getTime()) {
+      if (effectiveStartDate && new Date(effectiveStartDate) < targetDateThisMonth) {
+        explanation = `Ngày chọn trong quá khứ đã được tự chuyển sang chu kỳ tháng kế tiếp.`;
+      }
+      targetDate = getValidMonthlyDate(currentNow.getFullYear(), currentNow.getMonth() + 1, targetDay);
+      targetDate.setHours(validHour, validMinute, 0, 0);
+    } else {
+      targetDate = targetDateThisMonth;
+    }
+
+    const daysRemaining = getDaysDiff(targetDate, currentNow);
+    const isTargetToday = getTodayDateString(targetDate) === todayStr;
+    const isTargetTomorrow = getTodayDateString(targetDate) === tomorrowStr;
+
+    let previewText;
+    if (isTargetToday) {
+      if (passedToday) {
+        previewText = `${timeFormatted} hôm nay đã qua, nhắc đầu tiên: ngày mai ${timeFormatted}`;
+      } else {
+        const diffMin = Math.max(0, Math.round((todayAtTime.getTime() - currentNow.getTime()) / 60000));
+        previewText = `Nhắc kế tiếp: hôm nay ${timeFormatted} (còn ${diffMin} phút)`;
+      }
+    } else if (isTargetTomorrow) {
+      previewText = `Nhắc kế tiếp: ngày mai ${timeFormatted}`;
+    } else {
+      previewText = `Lần đến hạn kế tiếp: ${targetDate.toLocaleDateString('vi-VN')} lúc ${timeFormatted} (còn ${daysRemaining} ngày)`;
+    }
+
+    let urgency = 'safe';
+    let statusText = `Còn ${daysRemaining} ngày`;
+    if (isCompletedForThisMonth) {
+      urgency = 'completed';
+      statusText = `Đã xong tháng này (còn ${daysRemaining} ngày)`;
+    } else if (daysRemaining < 0) {
+      urgency = 'overdue';
+      statusText = `Quá hạn ${Math.abs(daysRemaining)} ngày!`;
+    } else if (daysRemaining === 0) {
+      urgency = passedToday ? 'overdue' : 'warning';
+      statusText = passedToday ? 'Hôm nay đến hạn (đã qua giờ nhắc)!' : 'Hôm nay đến hạn!';
+    } else if (daysRemaining <= 3) {
+      urgency = 'warning';
+      statusText = `Sắp đến hạn (còn ${daysRemaining} ngày)`;
+    }
+
+    return {
+      date: targetDate,
+      isToday: isTargetToday,
+      isTomorrow: isTargetTomorrow,
+      passedToday: isTargetToday && passedToday,
+      diffMinutes: Math.max(0, Math.round((targetDate.getTime() - currentNow.getTime()) / 60000)),
+      diffDays: daysRemaining,
+      daysRemaining,
+      previewText,
+      explanation,
+      urgency,
+      statusGroup: urgency,
+      statusText,
+      cycleInfo: `Ngày ${targetDay} hàng tháng`,
+      progress: isCompletedForThisMonth ? 1 : Math.max(0, 1 - daysRemaining / 30),
+      dueDate: targetDate,
+    };
+  }
+
+  return null;
 }
 
 // Dữ liệu mẫu ban đầu chuẩn thực tế

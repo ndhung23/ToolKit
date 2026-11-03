@@ -26,6 +26,7 @@ import { generateHabitsWithAi } from '../../services/geminiService';
 import {
   HABIT_TYPES,
   calculateHabitStatus,
+  computeNextOccurrence,
   getTodayDateString,
   getHabitStats,
   filterHabits,
@@ -103,7 +104,20 @@ export default function MicroHabitScreen({ navigation, route }) {
   const [formColor, setFormColor] = useState('#10B981');
   const [formReminderEnabled, setFormReminderEnabled] = useState(false);
   const [formReminderTime, setFormReminderTime] = useState('08:00');
+  const [formStartDate, setFormStartDate] = useState(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [formErrors, setFormErrors] = useState({});
+
+  const occurrencePreview = useMemo(() => {
+    return computeNextOccurrence({
+      type: formType,
+      intervalDays: parseInt(formIntervalDays || '1', 10),
+      dayOfMonth: parseInt(formDayOfMonth || '1', 10),
+      targetCount: parseInt(formTargetCount || '1', 10),
+      reminderTime: formReminderTime,
+      startDate: formStartDate,
+    }, new Date(), formStartDate);
+  }, [formType, formIntervalDays, formDayOfMonth, formTargetCount, formReminderTime, formStartDate]);
 
   // Native Time Picker (VIỆC 1)
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -351,6 +365,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormColor('#10B981');
     setFormReminderEnabled(false);
     setFormReminderTime('08:00');
+    setFormStartDate(null);
     setFormErrors({});
     setModalVisible(true);
   };
@@ -371,6 +386,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormColor(item.color || '#10B981');
     setFormReminderEnabled(!!item.reminderEnabled);
     setFormReminderTime(item.reminderTime || '08:00');
+    setFormStartDate(item.startDate || null);
     setFormErrors({});
     setModalVisible(true);
   };
@@ -519,6 +535,7 @@ export default function MicroHabitScreen({ navigation, route }) {
         color: formColor,
         reminderEnabled: formReminderEnabled,
         reminderTime: validTime || '08:00',
+        startDate: formStartDate || null,
       };
 
       const newNotifId = await scheduleHabitReminder(habitDraft);
@@ -545,6 +562,7 @@ export default function MicroHabitScreen({ navigation, route }) {
         lastDailyDate: getTodayDateString(),
         reminderEnabled: formReminderEnabled,
         reminderTime: validTime || '08:00',
+        startDate: formStartDate || null,
         notificationId: null,
         history: [],
       };
@@ -1216,6 +1234,107 @@ export default function MicroHabitScreen({ navigation, route }) {
                           )
                         )}
 
+                        {/* Dòng xem trước từ hàm duy nhất computeNextOccurrence (VIỆC AE) */}
+                        {occurrencePreview?.previewText ? (
+                          <View style={[styles.previewBox, { backgroundColor: colors.card, borderColor: '#10B981' }]}>
+                            <Ionicons name="time-outline" size={16} color="#10B981" />
+                            <Text style={[styles.previewText, { color: colors.text }]}>
+                              {occurrencePreview.previewText}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {/* Tùy chọn khi giờ nhắc đã qua hôm nay (VIỆC AE) */}
+                        {occurrencePreview?.passedToday && formType === HABIT_TYPES.DAILY ? (
+                          <View style={{ marginTop: 10 }}>
+                            <Text style={[styles.fieldSubLabel, { color: colors.sub }]}>Tùy chọn bắt đầu theo dõi:</Text>
+                            <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+                              <Pressable
+                                onPress={() => setFormStartDate(getTodayDateString())}
+                                style={[
+                                  styles.choiceChip,
+                                  {
+                                    flex: 1,
+                                    borderColor: formStartDate === getTodayDateString() || !formStartDate ? '#10B981' : colors.border,
+                                    backgroundColor: formStartDate === getTodayDateString() || !formStartDate ? 'rgba(16,185,129,0.15)' : colors.card,
+                                  },
+                                ]}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: formStartDate === getTodayDateString() || !formStartDate ? '#10B981' : colors.sub }}>
+                                  Tính từ hôm nay (theo dõi tiến độ, nhắc từ ngày mai)
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                onPress={() => {
+                                  const tom = new Date();
+                                  tom.setDate(tom.getDate() + 1);
+                                  setFormStartDate(getTodayDateString(tom));
+                                }}
+                                style={[
+                                  styles.choiceChip,
+                                  {
+                                    flex: 1,
+                                    borderColor: formStartDate && formStartDate > getTodayDateString() ? '#10B981' : colors.border,
+                                    backgroundColor: formStartDate && formStartDate > getTodayDateString() ? 'rgba(16,185,129,0.15)' : colors.card,
+                                  },
+                                ]}
+                              >
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: formStartDate && formStartDate > getTodayDateString() ? '#10B981' : colors.sub }}>
+                                  Bắt đầu từ ngày mai (hôm nay không tính)
+                                </Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        ) : null}
+
+                        {/* Cho việc Theo ngày (INTERVAL) và Hàng tháng (MONTHLY): Bộ chọn ngày bắt đầu / đến hạn kế tiếp (VIỆC AE) */}
+                        {(formType === HABIT_TYPES.INTERVAL || formType === HABIT_TYPES.MONTHLY) ? (
+                          <View style={{ marginTop: 10 }}>
+                            <Text style={[styles.subPickerTitle, { color: colors.text }]}>Ngày bắt đầu / đến hạn kế tiếp</Text>
+                            <Pressable
+                              onPress={() => setShowStartDatePicker(true)}
+                              style={[styles.timePickerBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder, marginTop: 4 }]}
+                            >
+                              <Ionicons name="calendar-outline" size={22} color="#3B82F6" />
+                              <View style={{ flex: 1, marginLeft: 10 }}>
+                                <Text style={[styles.timePickerVal, { color: colors.text, fontSize: 15 }]}>
+                                  {formStartDate ? new Date(formStartDate).toLocaleDateString('vi-VN') : 'Mặc định theo chu kỳ'}
+                                </Text>
+                                <Text style={[styles.timePickerSub, { color: colors.sub }]}>
+                                  {occurrencePreview?.dueDate ? `Kỳ tiếp theo: ${new Date(occurrencePreview.dueDate).toLocaleDateString('vi-VN')}` : 'Tự động tính'}
+                                </Text>
+                              </View>
+                              <View style={[styles.changeTimeBadge, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                                <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: '700' }}>Chọn ngày</Text>
+                              </View>
+                            </Pressable>
+
+                            {/* Hiển thị giải thích tự động đẩy chu kỳ nếu người dùng chọn ngày trong quá khứ */}
+                            {occurrencePreview?.explanation ? (
+                              <View style={[styles.explanationBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: '#F59E0B' }]}>
+                                <Ionicons name="information-circle" size={16} color="#F59E0B" />
+                                <Text style={{ color: '#F59E0B', fontSize: 12, flex: 1, marginLeft: 6, fontWeight: '600' }}>
+                                  {occurrencePreview.explanation}
+                                </Text>
+                              </View>
+                            ) : null}
+
+                            {showStartDatePicker ? (
+                              <DateTimePicker
+                                value={formStartDate ? new Date(formStartDate) : new Date()}
+                                mode="date"
+                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                onChange={(event, selectedDate) => {
+                                  setShowStartDatePicker(false);
+                                  if (selectedDate) {
+                                    setFormStartDate(getTodayDateString(selectedDate));
+                                  }
+                                }}
+                              />
+                            ) : null}
+                          </View>
+                        ) : null}
+
                         {/* Nút bắn thông báo thử nghiệm ngay (2s) để test loa & banner trên iOS & Android */}
                         <Pressable
                           onPress={handleTestNotification}
@@ -1728,6 +1847,16 @@ const styles = StyleSheet.create({
   reminderSection: {
     borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 14,
   },
+  previewBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10,
+    borderRadius: 10, borderWidth: 1, marginTop: 8,
+  },
+  previewText: { fontSize: 12, fontWeight: '700', flex: 1 },
+  explanationBox: {
+    flexDirection: 'row', alignItems: 'center', padding: 10,
+    borderRadius: 10, borderWidth: 1, marginTop: 8,
+  },
+  fieldSubLabel: { fontSize: 12, fontWeight: '600', marginTop: 8 },
   reminderHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },

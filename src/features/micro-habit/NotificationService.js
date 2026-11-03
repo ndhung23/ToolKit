@@ -2,7 +2,7 @@
 // Single native-notification boundary. UI code must not call expo-notifications directly.
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { HABIT_TYPES, calculateHabitStatus, formatTaskNameForNotification } from './microHabitService';
+import { HABIT_TYPES, calculateHabitStatus, computeNextOccurrence, formatTaskNameForNotification } from './microHabitService';
 
 export const HABIT_REMINDER_CHANNEL = 'habit-reminders';
 export const MANAGED_BY = 'micro-habit';
