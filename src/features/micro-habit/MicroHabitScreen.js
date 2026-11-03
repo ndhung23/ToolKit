@@ -17,6 +17,7 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -29,6 +30,7 @@ import {
   computeNextOccurrence,
   getTodayDateString,
   getHabitStats,
+  getHabitStatusGroup,
   filterHabits,
   normalizeHabitSearch,
   DEFAULT_CATEGORIES,
@@ -63,6 +65,40 @@ const DAILY_UNITS = ['lần', 'cốc', 'viên', 'km'];
 const CATEGORIES = [...DEFAULT_CATEGORIES, 'Khác'];
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, i) => i + 1);
 const PRESET_COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#06B6D4', '#64748B'];
+
+export function serializeHabitFormState({
+  title = '',
+  type = HABIT_TYPES.INTERVAL,
+  intervalDays = '30',
+  dayOfMonth = '5',
+  targetCount = '2',
+  unit = 'lần',
+  category = 'Sinh hoạt',
+  customCategory = '',
+  note = '',
+  icon = 'repeat',
+  color = '#10B981',
+  reminderEnabled = false,
+  reminderTime = '08:00',
+  startDate = null,
+} = {}) {
+  return JSON.stringify({
+    title: String(title || '').trim(),
+    type: String(type || HABIT_TYPES.INTERVAL),
+    intervalDays: String(parseInt(intervalDays || '30', 10)),
+    dayOfMonth: String(parseInt(dayOfMonth || '5', 10)),
+    targetCount: String(parseInt(targetCount || '2', 10)),
+    unit: String(unit || 'lần').trim(),
+    category: String(category || 'Sinh hoạt').trim(),
+    customCategory: String(customCategory || '').trim(),
+    note: String(note || '').trim(),
+    icon: String(icon || 'repeat'),
+    color: String(color || '#10B981'),
+    reminderEnabled: Boolean(reminderEnabled),
+    reminderTime: String(reminderTime || '08:00').trim(),
+    startDate: startDate ? String(startDate).slice(0, 10) : null,
+  });
+}
 
 export default function MicroHabitScreen({ navigation, route }) {
   const { colors } = useTheme();
@@ -108,6 +144,11 @@ export default function MicroHabitScreen({ navigation, route }) {
   const [formStartDate, setFormStartDate] = useState(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [formErrors, setFormErrors] = useState({});
+
+  // Cảnh báo thoát khi chưa lưu (VIỆC AG)
+  const initialFormSnapshot = useRef(null);
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+  const pendingExitActionRef = useRef(null);
 
   const occurrencePreview = useMemo(() => {
     return computeNextOccurrence({
@@ -368,6 +409,22 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormReminderTime('08:00');
     setFormStartDate(null);
     setFormErrors({});
+    initialFormSnapshot.current = serializeHabitFormState({
+      title: '',
+      type: HABIT_TYPES.INTERVAL,
+      intervalDays: '30',
+      dayOfMonth: '5',
+      targetCount: '2',
+      unit: 'lần',
+      category: 'Sinh hoạt',
+      customCategory: '',
+      note: '',
+      icon: 'repeat',
+      color: '#10B981',
+      reminderEnabled: false,
+      reminderTime: '08:00',
+      startDate: null,
+    });
     setModalVisible(true);
   };
 
@@ -389,6 +446,22 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormReminderTime(item.reminderTime || '08:00');
     setFormStartDate(item.startDate || null);
     setFormErrors({});
+    initialFormSnapshot.current = serializeHabitFormState({
+      title: item.title || '',
+      type: item.type || HABIT_TYPES.INTERVAL,
+      intervalDays: String(item.intervalDays || 30),
+      dayOfMonth: String(item.dayOfMonth || 5),
+      targetCount: String(item.targetCount || 2),
+      unit: item.unit || 'lần',
+      category: CATEGORIES.includes(item.category) ? item.category : 'Khác',
+      customCategory: CATEGORIES.includes(item.category) ? '' : (item.category || ''),
+      note: item.note || '',
+      icon: item.icon || 'repeat',
+      color: item.color || '#10B981',
+      reminderEnabled: !!item.reminderEnabled,
+      reminderTime: item.reminderTime || '08:00',
+      startDate: item.startDate || null,
+    });
     setModalVisible(true);
   };
 
@@ -610,6 +683,94 @@ export default function MicroHabitScreen({ navigation, route }) {
     setModalVisible(false);
     setFormErrors({});
   };
+
+  // Xác định "có thay đổi" bằng cách so sánh giá trị đã chuẩn hóa với bản gốc lúc mở (VIỆC AG)
+  const isFormDirty = useCallback(() => {
+    if (!initialFormSnapshot.current) return false;
+    const currentSnapshot = serializeHabitFormState({
+      title: formTitle,
+      type: formType,
+      intervalDays: formIntervalDays,
+      dayOfMonth: formDayOfMonth,
+      targetCount: formTargetCount,
+      unit: formUnit,
+      category: formCategory,
+      customCategory: formCustomCategory,
+      note: formNote,
+      icon: formIcon,
+      color: formColor,
+      reminderEnabled: formReminderEnabled,
+      reminderTime: formReminderTime,
+      startDate: formStartDate,
+    });
+    return currentSnapshot !== initialFormSnapshot.current;
+  }, [formTitle, formType, formIntervalDays, formDayOfMonth, formTargetCount, formUnit, formCategory, formCustomCategory, formNote, formIcon, formColor, formReminderEnabled, formReminderTime, formStartDate]);
+
+  // Chặn mọi đường thoát khi có thay đổi chưa lưu (VIỆC AG)
+  const requestCloseModal = useCallback((onConfirmed) => {
+    if (!isFormDirty()) {
+      setModalVisible(false);
+      setFormErrors({});
+      if (typeof onConfirmed === 'function') onConfirmed();
+      return;
+    }
+    pendingExitActionRef.current = typeof onConfirmed === 'function' ? onConfirmed : null;
+    setShowUnsavedConfirm(true);
+  }, [isFormDirty]);
+
+  // Lựa chọn 1: Lưu và thoát (validate trước; có lỗi ở lại form; hợp lệ thì lưu và đóng)
+  const handleSaveAndExit = useCallback(async () => {
+    const errors = validateHabitForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setShowUnsavedConfirm(false);
+      return;
+    }
+    setShowUnsavedConfirm(false);
+    await handleSaveForm();
+    if (pendingExitActionRef.current) {
+      pendingExitActionRef.current();
+      pendingExitActionRef.current = null;
+    }
+  }, [validateHabitForm, handleSaveForm]);
+
+  // Lựa chọn 2: Không lưu (đóng và bỏ thay đổi, không động đến thông báo)
+  const handleDiscardAndExit = useCallback(() => {
+    setShowUnsavedConfirm(false);
+    setModalVisible(false);
+    setFormErrors({});
+    if (pendingExitActionRef.current) {
+      pendingExitActionRef.current();
+      pendingExitActionRef.current = null;
+    }
+  }, []);
+
+  // Lựa chọn 3: Tiếp tục chỉnh sửa (đóng hộp thoại, giữ nguyên toàn bộ nội dung, scroll, bàn phím)
+  const handleContinueEditing = useCallback(() => {
+    setShowUnsavedConfirm(false);
+    pendingExitActionRef.current = null;
+  }, []);
+
+  // Chặn Back button phần cứng trên Android khi có thay đổi chưa lưu (VIỆC AG)
+  useEffect(() => {
+    if (!modalVisible) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      requestCloseModal();
+      return true;
+    });
+    return () => sub.remove();
+  }, [modalVisible, requestCloseModal]);
+
+  // Chặn điều hướng navigation sang màn hình khác khi có thay đổi chưa lưu (VIỆC AG)
+  useEffect(() => {
+    if (!navigation) return undefined;
+    const sub = navigation.addListener('beforeRemove', (e) => {
+      if (!modalVisible || !isFormDirty()) return;
+      e.preventDefault();
+      requestCloseModal(() => navigation.dispatch(e.data.action));
+    });
+    return sub;
+  }, [navigation, modalVisible, isFormDirty, requestCloseModal]);
 
   // Màu sắc theo urgency
   const getUrgencyColor = (urgency) => {
@@ -959,18 +1120,22 @@ export default function MicroHabitScreen({ navigation, route }) {
         visible={modalVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => requestCloseModal()}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => requestCloseModal()}
+          />
           <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 {editingId ? 'Chỉnh sửa việc vặt' : 'Thêm việc vặt & Chu kỳ mới'}
               </Text>
-              <Pressable onPress={() => setModalVisible(false)} hitSlop={8}>
+              <Pressable onPress={() => requestCloseModal()} hitSlop={8}>
                 <Ionicons name="close" size={24} color={colors.sub} />
               </Pressable>
             </View>
@@ -1455,6 +1620,52 @@ export default function MicroHabitScreen({ navigation, route }) {
             />
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Hộp thoại xác nhận thay đổi chưa lưu (VIỆC AG) */}
+      <Modal
+        visible={showUnsavedConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={handleContinueEditing}
+      >
+        <View style={styles.confirmOverlay}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={handleContinueEditing} />
+          <View style={[styles.confirmCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.confirmHeader}>
+              <Ionicons name="alert-circle" size={30} color="#F59E0B" />
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>Lưu thay đổi?</Text>
+            </View>
+            <Text style={[styles.confirmDesc, { color: colors.sub }]}>
+              Bạn có các thay đổi chưa được lưu. Bạn có muốn lưu lại trước khi thoát không?
+            </Text>
+
+            <View style={styles.confirmActionCol}>
+              <Pressable
+                onPress={handleSaveAndExit}
+                style={[styles.confirmBtn, styles.confirmBtnSave]}
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.confirmBtnTextSave}>Lưu và thoát</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleDiscardAndExit}
+                style={[styles.confirmBtn, styles.confirmBtnDiscard]}
+              >
+                <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
+                <Text style={styles.confirmBtnTextDiscard}>Không lưu</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleContinueEditing}
+                style={[styles.confirmBtn, styles.confirmBtnContinue, { borderColor: colors.cardBorder, backgroundColor: colors.cardElevated }]}
+              >
+                <Text style={[styles.confirmBtnTextContinue, { color: colors.text }]}>Tiếp tục chỉnh sửa</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* Modal Xem lịch sử lần hoàn thành */}
@@ -2026,5 +2237,80 @@ const styles = StyleSheet.create({
   },
   applyAiBtnText: {
     color: '#FFFFFF', fontSize: 14, fontWeight: '800',
+  },
+
+  // Hộp thoại xác nhận thay đổi chưa lưu (VIỆC AG)
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  confirmHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  confirmDesc: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  confirmActionCol: {
+    width: '100%',
+    gap: 10,
+  },
+  confirmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  confirmBtnSave: {
+    backgroundColor: '#10B981',
+  },
+  confirmBtnTextSave: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  confirmBtnDiscard: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+  },
+  confirmBtnTextDiscard: {
+    color: '#EF4444',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  confirmBtnContinue: {
+    borderWidth: 1,
+  },
+  confirmBtnTextContinue: {
+    fontWeight: '600',
+    fontSize: 15,
   },
 });
