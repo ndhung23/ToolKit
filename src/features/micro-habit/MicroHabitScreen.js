@@ -2015,47 +2015,54 @@ export default function MicroHabitScreen({ navigation, route }) {
 
         </KeyboardAvoidingView>
 
-          {/* Hộp thoại xác nhận thay đổi chưa lưu - NGOÀI KeyboardAvoidingView, ở gốc Modal (VIỆC AK) */}
-          {showUnsavedConfirm && (
-            <View style={styles.confirmOverlayAbsolute}>
-              <Pressable style={StyleSheet.absoluteFillObject} onPress={handleContinueEditing} />
-              <View style={[styles.confirmCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-                <View style={styles.confirmHeader}>
-                  <Ionicons name="alert-circle" size={30} color="#F59E0B" />
-                  <Text style={[styles.confirmTitle, { color: colors.text }]}>Lưu thay đổi?</Text>
-                </View>
-                <Text style={[styles.confirmDesc, { color: colors.sub }]}>
-                  Bạn có các thay đổi chưa được lưu. Bạn có muốn lưu lại trước khi thoát không?
-                </Text>
+      </Modal>
 
-                <View style={styles.confirmActionCol}>
-                  <Pressable
-                    onPress={handleSaveAndExit}
-                    disabled={isSaving}
-                    style={[styles.confirmBtn, styles.confirmBtnSave]}
-                  >
-                    <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.confirmBtnTextSave}>Lưu và thoát</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={handleDiscardAndExit}
-                    style={[styles.confirmBtn, styles.confirmBtnDiscard]}
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
-                    <Text style={styles.confirmBtnTextDiscard}>Không lưu</Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={handleContinueEditing}
-                    style={[styles.confirmBtn, styles.confirmBtnContinue, { borderColor: colors.cardBorder, backgroundColor: colors.cardElevated }]}
-                  >
-                    <Text style={[styles.confirmBtnTextContinue, { color: colors.text }]}>Tiếp tục chỉnh sửa</Text>
-                  </Pressable>
-                </View>
-              </View>
+      {/* Hộp thoại xác nhận thay đổi chưa lưu - Modal RIÊNG đảm bảo luôn ở giữa màn hình (VIỆC AK fix 2) */}
+      <Modal
+        visible={showUnsavedConfirm}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={handleContinueEditing}
+      >
+        <View style={styles.confirmOverlayAbsolute}>
+          <Pressable style={StyleSheet.absoluteFillObject} onPress={handleContinueEditing} />
+          <View style={[styles.confirmCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.confirmHeader}>
+              <Ionicons name="alert-circle" size={30} color="#F59E0B" />
+              <Text style={[styles.confirmTitle, { color: colors.text }]}>Lưu thay đổi?</Text>
             </View>
-          )}
+            <Text style={[styles.confirmDesc, { color: colors.sub }]}>
+              Bạn có các thay đổi chưa được lưu. Bạn có muốn lưu lại trước khi thoát không?
+            </Text>
+
+            <View style={styles.confirmActionCol}>
+              <Pressable
+                onPress={handleSaveAndExit}
+                disabled={isSaving}
+                style={[styles.confirmBtn, styles.confirmBtnSave]}
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.confirmBtnTextSave}>Lưu và thoát</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleDiscardAndExit}
+                style={[styles.confirmBtn, styles.confirmBtnDiscard]}
+              >
+                <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
+                <Text style={styles.confirmBtnTextDiscard}>Không lưu</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleContinueEditing}
+                style={[styles.confirmBtn, styles.confirmBtnContinue, { borderColor: colors.cardBorder, backgroundColor: colors.cardElevated }]}
+              >
+                <Text style={[styles.confirmBtnTextContinue, { color: colors.text }]}>Tiếp tục chỉnh sửa</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* Modal Xem lịch sử lần hoàn thành */}
