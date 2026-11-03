@@ -81,6 +81,7 @@ export function serializeHabitFormState({
   color = '#10B981',
   reminderEnabled = false,
   reminderTime = '08:00',
+  reminderIntervalHours = '0',
   startDate = null,
 } = {}) {
   return JSON.stringify({
@@ -97,6 +98,7 @@ export function serializeHabitFormState({
     color: String(color || '#10B981'),
     reminderEnabled: Boolean(reminderEnabled),
     reminderTime: String(reminderTime || '08:00').trim(),
+    reminderIntervalHours: String(parseInt(reminderIntervalHours || '0', 10)),
     startDate: startDate ? String(startDate).slice(0, 10) : null,
   });
 }
@@ -142,6 +144,7 @@ export default function MicroHabitScreen({ navigation, route }) {
   const [formColor, setFormColor] = useState('#10B981');
   const [formReminderEnabled, setFormReminderEnabled] = useState(false);
   const [formReminderTime, setFormReminderTime] = useState('08:00');
+  const [formReminderIntervalHours, setFormReminderIntervalHours] = useState('0');
   const [formStartDate, setFormStartDate] = useState(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [formErrors, setFormErrors] = useState({});
@@ -410,6 +413,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormColor('#10B981');
     setFormReminderEnabled(false);
     setFormReminderTime('08:00');
+    setFormReminderIntervalHours('0');
     setFormStartDate(null);
     setFormErrors({});
     initialFormSnapshot.current = serializeHabitFormState({
@@ -426,6 +430,7 @@ export default function MicroHabitScreen({ navigation, route }) {
       color: '#10B981',
       reminderEnabled: false,
       reminderTime: '08:00',
+      reminderIntervalHours: '0',
       startDate: null,
     });
     setModalVisible(true);
@@ -447,6 +452,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     setFormColor(item.color || '#10B981');
     setFormReminderEnabled(!!item.reminderEnabled);
     setFormReminderTime(item.reminderTime || '08:00');
+    setFormReminderIntervalHours(String(item.reminderIntervalHours || 0));
     setFormStartDate(item.startDate || null);
     setFormErrors({});
     initialFormSnapshot.current = serializeHabitFormState({
@@ -463,6 +469,7 @@ export default function MicroHabitScreen({ navigation, route }) {
       color: item.color || '#10B981',
       reminderEnabled: !!item.reminderEnabled,
       reminderTime: item.reminderTime || '08:00',
+      reminderIntervalHours: String(item.reminderIntervalHours || 0),
       startDate: item.startDate || null,
     });
     setModalVisible(true);
@@ -730,9 +737,9 @@ export default function MicroHabitScreen({ navigation, route }) {
     });
   };
 
-  // Xác định "có thay đổi" bằng cách so sánh giá trị đã chuẩn hóa với bản gốc lúc mở (VIỆC AG)
+  // Xác định "có thay đổi" bằng cách so sánh giá trị đã chuẩn hóa với bản gốc lúc mở (VIỆC AG & VIỆC AI)
   const isFormDirty = useCallback(() => {
-    if (!initialFormSnapshot.current) return false;
+    if (isBypassingUnsavedCheck.current || !initialFormSnapshot.current) return false;
     const currentSnapshot = serializeHabitFormState({
       title: formTitle,
       type: formType,
@@ -747,16 +754,19 @@ export default function MicroHabitScreen({ navigation, route }) {
       color: formColor,
       reminderEnabled: formReminderEnabled,
       reminderTime: formReminderTime,
+      reminderIntervalHours: formReminderIntervalHours,
       startDate: formStartDate,
     });
     return currentSnapshot !== initialFormSnapshot.current;
-  }, [formTitle, formType, formIntervalDays, formDayOfMonth, formTargetCount, formUnit, formCategory, formCustomCategory, formNote, formIcon, formColor, formReminderEnabled, formReminderTime, formStartDate]);
+  }, [formTitle, formType, formIntervalDays, formDayOfMonth, formTargetCount, formUnit, formCategory, formCustomCategory, formNote, formIcon, formColor, formReminderEnabled, formReminderTime, formReminderIntervalHours, formStartDate]);
 
-  // Chặn mọi đường thoát khi có thay đổi chưa lưu (VIỆC AG)
+  // Chặn mọi đường thoát khi có thay đổi chưa lưu (VIỆC AG & VIỆC AI)
   const requestCloseModal = useCallback((onConfirmed) => {
-    if (!isFormDirty()) {
+    if (isBypassingUnsavedCheck.current || !isFormDirty()) {
+      setShowUnsavedConfirm(false);
       setModalVisible(false);
       setFormErrors({});
+      initialFormSnapshot.current = null;
       if (typeof onConfirmed === 'function') onConfirmed();
       return;
     }
@@ -772,7 +782,6 @@ export default function MicroHabitScreen({ navigation, route }) {
       setShowUnsavedConfirm(false);
       return;
     }
-    setShowUnsavedConfirm(false);
     await handleSaveForm();
     if (pendingExitActionRef.current) {
       pendingExitActionRef.current();
@@ -782,13 +791,18 @@ export default function MicroHabitScreen({ navigation, route }) {
 
   // Lựa chọn 2: Không lưu (đóng và bỏ thay đổi, không động đến thông báo)
   const handleDiscardAndExit = useCallback(() => {
+    isBypassingUnsavedCheck.current = true;
     setShowUnsavedConfirm(false);
     setModalVisible(false);
     setFormErrors({});
+    initialFormSnapshot.current = null;
     if (pendingExitActionRef.current) {
       pendingExitActionRef.current();
       pendingExitActionRef.current = null;
     }
+    setTimeout(() => {
+      isBypassingUnsavedCheck.current = false;
+    }, 300);
   }, []);
 
   // Lựa chọn 3: Tiếp tục chỉnh sửa (đóng hộp thoại, giữ nguyên toàn bộ nội dung, scroll, bàn phím)
@@ -1493,11 +1507,11 @@ export default function MicroHabitScreen({ navigation, route }) {
                           </View>
                         ) : null}
 
-                        {/* Tùy chọn khi giờ nhắc đã qua hôm nay (VIỆC AE) */}
+                        {/* Tùy chọn khi giờ nhắc đã qua hôm nay (VIỆC AE & BỔ SUNG #14) */}
                         {occurrencePreview?.passedToday && formType === HABIT_TYPES.DAILY ? (
                           <View style={{ marginTop: 10 }}>
                             <Text style={[styles.fieldSubLabel, { color: colors.sub }]}>Tùy chọn bắt đầu theo dõi:</Text>
-                            <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
                               <Pressable
                                 onPress={() => setFormStartDate(getTodayDateString())}
                                 style={[
@@ -1506,11 +1520,13 @@ export default function MicroHabitScreen({ navigation, route }) {
                                     flex: 1,
                                     borderColor: formStartDate === getTodayDateString() || !formStartDate ? '#10B981' : colors.border,
                                     backgroundColor: formStartDate === getTodayDateString() || !formStartDate ? 'rgba(16,185,129,0.15)' : colors.card,
+                                    paddingVertical: 10,
+                                    alignItems: 'center',
                                   },
                                 ]}
                               >
-                                <Text style={{ fontSize: 11, fontWeight: '700', color: formStartDate === getTodayDateString() || !formStartDate ? '#10B981' : colors.sub }}>
-                                  Tính từ hôm nay (theo dõi tiến độ, nhắc từ ngày mai)
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: formStartDate === getTodayDateString() || !formStartDate ? '#10B981' : colors.sub }}>
+                                  Từ hôm nay
                                 </Text>
                               </Pressable>
                               <Pressable
@@ -1525,14 +1541,63 @@ export default function MicroHabitScreen({ navigation, route }) {
                                     flex: 1,
                                     borderColor: formStartDate && formStartDate > getTodayDateString() ? '#10B981' : colors.border,
                                     backgroundColor: formStartDate && formStartDate > getTodayDateString() ? 'rgba(16,185,129,0.15)' : colors.card,
+                                    paddingVertical: 10,
+                                    alignItems: 'center',
                                   },
                                 ]}
                               >
-                                <Text style={{ fontSize: 11, fontWeight: '700', color: formStartDate && formStartDate > getTodayDateString() ? '#10B981' : colors.sub }}>
-                                  Bắt đầu từ ngày mai (hôm nay không tính)
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: formStartDate && formStartDate > getTodayDateString() ? '#10B981' : colors.sub }}>
+                                  Từ ngày mai
                                 </Text>
                               </Pressable>
                             </View>
+                            <Text style={{ fontSize: 11, color: colors.sub, marginTop: 6, fontStyle: 'italic' }}>
+                              {formStartDate && formStartDate > getTodayDateString()
+                                ? '💡 Hôm nay không tính việc này (ở trạng thái Chưa đến hạn), bắt đầu theo dõi từ ngày mai.'
+                                : '💡 Hôm nay vẫn theo dõi tiến độ mục tiêu, chuông nhắc bắt đầu từ ngày mai.'}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {/* Tùy chọn tần suất nhắc nhở trong ngày (BỔ SUNG #14) */}
+                        {formType === HABIT_TYPES.DAILY ? (
+                          <View style={{ marginTop: 12 }}>
+                            <Text style={[styles.fieldSubLabel, { color: colors.text, fontWeight: '700', fontSize: 12 }]}>
+                              Khoảng cách nhắc trong ngày
+                            </Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                              {[
+                                { val: '0', label: '1 lần duy nhất' },
+                                { val: '1', label: 'Mỗi 1 giờ' },
+                                { val: '2', label: 'Mỗi 2 giờ' },
+                                { val: '3', label: 'Mỗi 3 giờ' },
+                                { val: '4', label: 'Mỗi 4 giờ' },
+                              ].map((opt) => {
+                                const isSel = String(formReminderIntervalHours) === opt.val;
+                                return (
+                                  <Pressable
+                                    key={opt.val}
+                                    onPress={() => setFormReminderIntervalHours(opt.val)}
+                                    style={[
+                                      styles.presetChip,
+                                      {
+                                        backgroundColor: isSel ? '#10B981' : colors.cardElevated,
+                                        borderColor: isSel ? '#10B981' : colors.cardBorder,
+                                      },
+                                    ]}
+                                  >
+                                    <Text style={[styles.presetChipText, { color: isSel ? '#FFFFFF' : colors.text }]}>
+                                      {opt.label}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                            <Text style={{ fontSize: 11, color: colors.sub, marginTop: 4 }}>
+                              {formReminderIntervalHours === '0'
+                                ? `Báo thức 1 lần lúc ${formReminderTime || '08:00'}.`
+                                : `Nhắc định kỳ cách mỗi ${formReminderIntervalHours} tiếng từ ${formReminderTime || '08:00'} để đạt mục tiêu ${formTargetCount} ${formUnit}.`}
+                            </Text>
                           </View>
                         ) : null}
 
@@ -1678,53 +1743,49 @@ export default function MicroHabitScreen({ navigation, route }) {
               )}
             />
           </View>
+
+          {/* Hộp thoại xác nhận thay đổi chưa lưu NGAY TRONG cây giao diện form (VIỆC AI - Không dùng Modal thứ hai) */}
+          {showUnsavedConfirm && (
+            <View style={styles.confirmOverlayAbsolute}>
+              <Pressable style={StyleSheet.absoluteFillObject} onPress={handleContinueEditing} />
+              <View style={[styles.confirmCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <View style={styles.confirmHeader}>
+                  <Ionicons name="alert-circle" size={30} color="#F59E0B" />
+                  <Text style={[styles.confirmTitle, { color: colors.text }]}>Lưu thay đổi?</Text>
+                </View>
+                <Text style={[styles.confirmDesc, { color: colors.sub }]}>
+                  Bạn có các thay đổi chưa được lưu. Bạn có muốn lưu lại trước khi thoát không?
+                </Text>
+
+                <View style={styles.confirmActionCol}>
+                  <Pressable
+                    onPress={handleSaveAndExit}
+                    disabled={isSaving}
+                    style={[styles.confirmBtn, styles.confirmBtnSave]}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.confirmBtnTextSave}>Lưu và thoát</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={handleDiscardAndExit}
+                    style={[styles.confirmBtn, styles.confirmBtnDiscard]}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
+                    <Text style={styles.confirmBtnTextDiscard}>Không lưu</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={handleContinueEditing}
+                    style={[styles.confirmBtn, styles.confirmBtnContinue, { borderColor: colors.cardBorder, backgroundColor: colors.cardElevated }]}
+                  >
+                    <Text style={[styles.confirmBtnTextContinue, { color: colors.text }]}>Tiếp tục chỉnh sửa</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          )}
         </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Hộp thoại xác nhận thay đổi chưa lưu (VIỆC AG) */}
-      <Modal
-        visible={showUnsavedConfirm}
-        transparent
-        animationType="fade"
-        onRequestClose={handleContinueEditing}
-      >
-        <View style={styles.confirmOverlay}>
-          <Pressable style={StyleSheet.absoluteFillObject} onPress={handleContinueEditing} />
-          <View style={[styles.confirmCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <View style={styles.confirmHeader}>
-              <Ionicons name="alert-circle" size={30} color="#F59E0B" />
-              <Text style={[styles.confirmTitle, { color: colors.text }]}>Lưu thay đổi?</Text>
-            </View>
-            <Text style={[styles.confirmDesc, { color: colors.sub }]}>
-              Bạn có các thay đổi chưa được lưu. Bạn có muốn lưu lại trước khi thoát không?
-            </Text>
-
-            <View style={styles.confirmActionCol}>
-              <Pressable
-                onPress={handleSaveAndExit}
-                style={[styles.confirmBtn, styles.confirmBtnSave]}
-              >
-                <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.confirmBtnTextSave}>Lưu và thoát</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleDiscardAndExit}
-                style={[styles.confirmBtn, styles.confirmBtnDiscard]}
-              >
-                <Ionicons name="trash-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
-                <Text style={styles.confirmBtnTextDiscard}>Không lưu</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleContinueEditing}
-                style={[styles.confirmBtn, styles.confirmBtnContinue, { borderColor: colors.cardBorder, backgroundColor: colors.cardElevated }]}
-              >
-                <Text style={[styles.confirmBtnTextContinue, { color: colors.text }]}>Tiếp tục chỉnh sửa</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
       </Modal>
 
       {/* Modal Xem lịch sử lần hoàn thành */}
@@ -2298,13 +2359,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF', fontSize: 14, fontWeight: '800',
   },
 
-  // Hộp thoại xác nhận thay đổi chưa lưu (VIỆC AG)
-  confirmOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  // Hộp thoại xác nhận thay đổi chưa lưu (VIỆC AG & VIỆC AI)
+  confirmOverlayAbsolute: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+    zIndex: 99999,
+    elevation: 99999,
   },
   confirmCard: {
     width: '100%',
