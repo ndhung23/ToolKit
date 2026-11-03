@@ -533,7 +533,11 @@ export function startVideoDownload(downloadUrl, filename, onProgress, mode = 'vi
   const downloadResumable = FileSystem.createDownloadResumable(
     downloadUrl,
     fileUri,
-    {},
+    {
+      headers: {
+        'bypass-tunnel-reminder': '1',
+      },
+    },
     (downloadProgress) => {
       if (cancelled) return;
       if (onProgress && downloadProgress.totalBytesExpectedToWrite > 0) {

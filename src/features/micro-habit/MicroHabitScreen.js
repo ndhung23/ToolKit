@@ -607,6 +607,7 @@ export default function MicroHabitScreen({ navigation, route }) {
 
     setIsSaving(true);
     isBypassingUnsavedCheck.current = true; // Bỏ qua chặn thoát khi người dùng đã bấm lưu
+    const wasEditing = Boolean(editingId);
 
     const trimmedTitle = formTitle.trim();
     const validTime = (formReminderTime || '08:00').trim();
@@ -735,7 +736,7 @@ export default function MicroHabitScreen({ navigation, route }) {
           (activeFilter === 'all' || activeFilter === savedItem.type || (activeFilter === 'urgent' && ['overdue', 'warning'].includes(targetGroup))) &&
           (!debouncedSearch || normalizeHabitSearch(`${savedItem.title || ''} ${savedItem.category || ''}`).includes(normalizeHabitSearch(debouncedSearch)));
 
-        if (!isVisibleUnderCurrentFilter) {
+        if (!wasEditing && !isVisibleUnderCurrentFilter) {
           setActiveStatusFilter(targetGroup);
           setActiveFilter('all');
           setSearchInput('');
@@ -747,13 +748,12 @@ export default function MicroHabitScreen({ navigation, route }) {
         setHighlightHabitId(savedItem.id);
         setTimeout(() => setHighlightHabitId(null), 2500);
 
-        // 3. Cuộn tới thẻ
-        setTimeout(() => {
-          const index = updatedList.findIndex((h) => h.id === savedItem.id);
-          if (index >= 0) {
-            listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 });
-          }
-        }, 200);
+        // 3. Cuộn: Chỉ cuộn lên đầu khi tạo việc mới; nếu chỉnh sửa việc thì giữ nguyên vị trí ban đầu
+        if (!wasEditing) {
+          setTimeout(() => {
+            listRef.current?.scrollToOffset({ offset: 0, animated: true });
+          }, 200);
+        }
       } catch (bgError) {
         console.warn('[MicroHabit] Background post-save warning:', bgError);
       } finally {
@@ -793,6 +793,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     if (isBypassingUnsavedCheck.current || !isFormDirty()) {
       setShowUnsavedConfirm(false);
       setModalVisible(false);
+      setEditingId(null);
       setFormErrors({});
       initialFormSnapshot.current = null;
       if (typeof onConfirmed === 'function') onConfirmed();
@@ -822,6 +823,7 @@ export default function MicroHabitScreen({ navigation, route }) {
     isBypassingUnsavedCheck.current = true;
     setShowUnsavedConfirm(false);
     setModalVisible(false);
+    setEditingId(null);
     setFormErrors({});
     initialFormSnapshot.current = null;
     if (pendingExitActionRef.current) {

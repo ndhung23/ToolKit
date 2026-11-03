@@ -1,6 +1,6 @@
 // scripts/dev-tunnel.js
 // Giữ kết nối Expo Metro Tunnel và Snap Video Resolver Server liên tục.
-// Tự động tạo Cloudflare Quick Tunnel cho Snap Server port 4000 và cấp URL cho Metro.
+// Tự động tạo Localtunnel cho Snap Server port 4000 và cấp URL cho Metro.
 // => App trên iPhone có thể dùng Snap Video mượt mà trên mọi mạng (Wi-Fi khác, 4G, 5G).
 
 const { spawn } = require('child_process');
@@ -8,7 +8,6 @@ const path = require('path');
 const fs = require('fs');
 
 const ENV_LOCAL_PATH = path.join(__dirname, '..', '.env.local');
-const CLOUDFLARED_PATH = path.join(__dirname, '..', 'cloudflared.exe');
 const SNAP_PORT = 4000;
 
 let metroStarted = false;
@@ -52,20 +51,24 @@ function startSnapServer() {
   });
 }
 
-// ─── 2. Cloudflare Quick Tunnel cho Snap Server ─────────────────────────────
+// ─── 2. Localtunnel cho Snap Server (port 4000) ────────────────────────────
 
-function startCloudflareTunnel() {
-  console.log('[SNAP-TUNNEL] Đang khởi tạo Cloudflare Tunnel cho port 4000...');
-  const cfProcess = spawn(CLOUDFLARED_PATH, ['tunnel', '--url', `http://127.0.0.1:${SNAP_PORT}`], {
+function startLocalTunnel() {
+  console.log('[SNAP-TUNNEL] Đang khởi tạo Localtunnel cho port 4000...');
+  const isWindows = process.platform === 'win32';
+  const npx = isWindows ? 'npx.cmd' : 'npx';
+
+  const ltProcess = spawn(npx, ['--yes', 'localtunnel', '--port', String(SNAP_PORT), '--local-host', '127.0.0.1', '--subdomain', 'mma301-snap-tuananh'], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    shell: isWindows,
   });
 
   function handleOutput(data) {
     const text = data.toString();
-    const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
+    const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.loca\.lt/);
     if (match) {
       const publicUrl = match[0];
-      console.log(`[SNAP-TUNNEL] ✅ Cloudflare Public URL: ${publicUrl}`);
+      console.log(`[SNAP-TUNNEL] ✅ Localtunnel Public URL: ${publicUrl}`);
       writeSnapUrl(publicUrl);
 
       if (!metroStarted) {
@@ -75,17 +78,17 @@ function startCloudflareTunnel() {
     }
   }
 
-  cfProcess.stdout.on('data', handleOutput);
-  cfProcess.stderr.on('data', handleOutput);
+  ltProcess.stdout.on('data', handleOutput);
+  ltProcess.stderr.on('data', handleOutput);
 
-  cfProcess.on('close', (code) => {
-    console.warn(`[SNAP-TUNNEL] Cloudflare Tunnel kết thúc (code ${code}). Khởi động lại sau 3s...`);
-    setTimeout(startCloudflareTunnel, 3000);
+  ltProcess.on('close', (code) => {
+    console.warn(`[SNAP-TUNNEL] Localtunnel kết thúc (code ${code}). Khởi động lại sau 3s...`);
+    setTimeout(startLocalTunnel, 3000);
   });
 
-  cfProcess.on('error', (err) => {
-    console.error('[SNAP-TUNNEL] Lỗi Cloudflare Tunnel:', err.message);
-    setTimeout(startCloudflareTunnel, 3000);
+  ltProcess.on('error', (err) => {
+    console.error('[SNAP-TUNNEL] Lỗi Localtunnel:', err.message);
+    setTimeout(startLocalTunnel, 3000);
   });
 }
 
@@ -119,4 +122,4 @@ function startMetroTunnel(snapPublicUrl) {
 
 // ─── Khởi động tuần tự ───────────────────────────────────────────────────────
 startSnapServer();
-startCloudflareTunnel();
+startLocalTunnel();
