@@ -56,7 +56,7 @@ function startSnapServer() {
 
 function startCloudflareTunnel() {
   console.log('[SNAP-TUNNEL] Đang khởi tạo Cloudflare Tunnel cho port 4000...');
-  const cfProcess = spawn(CLOUDFLARED_PATH, ['tunnel', '--url', `http://localhost:${SNAP_PORT}`], {
+  const cfProcess = spawn(CLOUDFLARED_PATH, ['tunnel', '--url', `http://127.0.0.1:${SNAP_PORT}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
