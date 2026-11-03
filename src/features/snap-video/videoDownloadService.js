@@ -10,7 +10,7 @@ import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 
 const REQUEST_TIMEOUT_MS = 75000;
-const SNAP_SERVER_URL = process.env.EXPO_PUBLIC_SNAP_SERVER_URL?.replace(/\/$/, '');
+let cachedActiveServerUrl = null;
 
 function bytesToHex(bytes) {
   return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, '0')).join('');
@@ -27,8 +27,58 @@ async function verifyDownloadedHash(uri, expectedHash) {
   return actualHash;
 }
 
-function getSnapServerEndpoints() {
-  return SNAP_SERVER_URL ? [`${SNAP_SERVER_URL}/api/resolve`] : [];
+// Endpoint resolver đồng bộ dựa trên URL máy chủ đã nhận diện hoặc mặc định
+export function getSnapServerEndpoints() {
+  if (cachedActiveServerUrl) return [`${cachedActiveServerUrl}/api/resolve`];
+  const envUrl = process.env.EXPO_PUBLIC_SNAP_SERVER_URL?.replace(/\/$/, '');
+  const base = envUrl || 'http://10.33.93.212:4000';
+  return [`${base}/api/resolve`];
+}
+
+// Danh sách candidate backend URL: tự động tìm endpoint hoạt động tốt nhất
+export async function getWorkingSnapServerUrl() {
+  if (cachedActiveServerUrl) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch(`${cachedActiveServerUrl}/health`, {
+        signal: controller.signal,
+        headers: getSnapHeaders(),
+      });
+      clearTimeout(timer);
+      if (res.ok) return cachedActiveServerUrl;
+    } catch {
+      cachedActiveServerUrl = null;
+    }
+  }
+
+  const candidates = [];
+  const envUrl = process.env.EXPO_PUBLIC_SNAP_SERVER_URL?.replace(/\/$/, '');
+  if (envUrl) candidates.push(envUrl);
+  candidates.push('http://10.33.93.212:4000');
+  candidates.push('http://192.168.137.1:4000');
+  candidates.push('http://localhost:4000');
+  candidates.push('http://127.0.0.1:4000');
+
+  const uniqueCandidates = [...new Set(candidates.filter(Boolean))];
+
+  for (const url of uniqueCandidates) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2000);
+      const response = await fetch(`${url}/health`, {
+        signal: controller.signal,
+        headers: getSnapHeaders(),
+      });
+      clearTimeout(timer);
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.status === 'ok') {
+        cachedActiveServerUrl = url;
+        return url;
+      }
+    } catch {}
+  }
+  return null;
 }
 
 // Thêm header bypass cho localtunnel (tránh trang xác nhận khi dùng tunnel)
@@ -41,31 +91,31 @@ function getSnapHeaders(extra = {}) {
 }
 
 export async function getSnapServerHealth() {
-  if (!SNAP_SERVER_URL) return { ok: false, code: 'SERVER_NOT_CONFIGURED' };
+  const serverUrl = await getWorkingSnapServerUrl();
+  if (!serverUrl) return { ok: false, code: 'SERVER_UNREACHABLE' };
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(`${SNAP_SERVER_URL}/health`, {
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const response = await fetch(`${serverUrl}/health`, {
       signal: controller.signal,
       headers: getSnapHeaders(),
     });
     clearTimeout(timer);
     const data = await response.json().catch(() => null);
-    return response.ok && data?.status === 'ok' ? { ok: true, ...data } : { ok: false, code: 'SERVER_UNHEALTHY' };
+    return response.ok && data?.status === 'ok' ? { ok: true, serverUrl, ...data } : { ok: false, code: 'SERVER_UNHEALTHY' };
   } catch {
     return { ok: false, code: 'SERVER_UNREACHABLE' };
   }
 }
 
 async function resolveWithSnapBackend(url, mode, quality, signal) {
-  const endpoint = getSnapServerEndpoints()[0];
-  if (!endpoint) return null;
-  const health = await getSnapServerHealth();
-  if (!health.ok) {
-    const error = new Error('Không kết nối được máy chủ tải. Kiểm tra mạng hoặc thử lại sau.');
-    error.code = health.code;
+  const serverUrl = await getWorkingSnapServerUrl();
+  if (!serverUrl) {
+    const error = new Error('Không kết nối được máy chủ tải. Hãy kiểm tra kết nối mạng (cùng Wi-Fi hoặc Hotspot).');
+    error.code = 'SERVER_UNREACHABLE';
     throw error;
   }
+  const endpoint = `${serverUrl}/api/resolve`;
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: getSnapHeaders(),
@@ -73,7 +123,14 @@ async function resolveWithSnapBackend(url, mode, quality, signal) {
     signal,
   });
   const data = await response.json().catch(() => null);
-  if (response.ok && data?.success && data?.url) return data;
+  if (response.ok && data?.success && data?.url) {
+    try {
+      const parsed = new URL(data.url);
+      const serverParsed = new URL(serverUrl);
+      data.url = `${serverParsed.origin}${parsed.pathname}${parsed.search}`;
+    } catch {}
+    return data;
+  }
   const error = new Error(data?.message || 'Máy chủ không thể tạo file tải hợp lệ.');
   error.code = data?.code || 'SERVER_ERROR';
   throw error;
