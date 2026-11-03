@@ -31,12 +31,24 @@ function getSnapServerEndpoints() {
   return SNAP_SERVER_URL ? [`${SNAP_SERVER_URL}/api/resolve`] : [];
 }
 
+// Thêm header bypass cho localtunnel (tránh trang xác nhận khi dùng tunnel)
+function getSnapHeaders(extra = {}) {
+  return {
+    'Content-Type': 'application/json',
+    'bypass-tunnel-reminder': '1',
+    ...extra,
+  };
+}
+
 export async function getSnapServerHealth() {
   if (!SNAP_SERVER_URL) return { ok: false, code: 'SERVER_NOT_CONFIGURED' };
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(`${SNAP_SERVER_URL}/health`, { signal: controller.signal });
+    const response = await fetch(`${SNAP_SERVER_URL}/health`, {
+      signal: controller.signal,
+      headers: getSnapHeaders(),
+    });
     clearTimeout(timer);
     const data = await response.json().catch(() => null);
     return response.ok && data?.status === 'ok' ? { ok: true, ...data } : { ok: false, code: 'SERVER_UNHEALTHY' };
@@ -55,8 +67,10 @@ async function resolveWithSnapBackend(url, mode, quality, signal) {
     throw error;
   }
   const response = await fetch(endpoint, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url, mode, quality }), signal,
+    method: 'POST',
+    headers: getSnapHeaders(),
+    body: JSON.stringify({ url, mode, quality }),
+    signal,
   });
   const data = await response.json().catch(() => null);
   if (response.ok && data?.success && data?.url) return data;
@@ -235,7 +249,7 @@ async function resolveYouTube(url, mode, quality = 'best', signal = null) {
       const timeout = setTimeout(() => c.abort(), 12000);
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getSnapHeaders(),
         body: JSON.stringify({ url, mode, quality }),
         signal: signal || c.signal,
       });
@@ -278,7 +292,7 @@ async function resolveFacebook(url, mode, signal) {
     }
     for (const endpoint of endpoints) {
       const response = await fetch(endpoint, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: getSnapHeaders(),
         body: JSON.stringify({ url: expanded, mode, quality: 'best' }), signal,
       });
       const data = await response.json().catch(() => null);
@@ -374,7 +388,7 @@ async function resolveInstagram(url, mode, quality = 'best', signal = null) {
       const timeout = setTimeout(() => c.abort(), 12000);
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getSnapHeaders(),
         body: JSON.stringify({ url: cleanUrl, mode, quality }),
         signal: signal || c.signal,
       });
