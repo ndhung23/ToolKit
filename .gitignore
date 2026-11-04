@@ -58,3 +58,5 @@ test-links.json
 SMOKE_BASELINE.md
 
 cloudflared.exe
+
+*.apk
